@@ -465,62 +465,33 @@ function animalDisplayName(a) {
 }
 
 async function renderAnimalList() {
-  // HTML já está no index: #modAnimaisList e #modAnimaisForm
   const secList = $("#modAnimaisList");
   const secForm = $("#modAnimaisForm");
-  if (!secList || !secForm) {
-    // fallback caso alguém use HTML antigo
-    const mount = $("#moduleView");
-    if (mount) mount.innerHTML = `
-      <div class="card">
-        <b>HTML do módulo Animais não encontrado</b>
-        <div style="color:#6b7280;margin-top:6px;">
-          Confirme se você está usando o HTML atualizado com #modAnimaisList e #modAnimaisForm.
-        </div>
-      </div>
-    `;
-    return;
-  }
 
-  // lista on / form off
-  secList.hidden = false;
-  secForm.hidden = true;
+  // Garante visibilidade interna
+  if (secList) secList.hidden = false;
+  if (secForm) secForm.hidden = true;
 
-  // header do form escondido quando na lista
+  // Header principal esconde pois a lista já tem seu próprio greeting
   setPageHeadVisible(false);
 
-  // dados do cache
-  const fazenda = await idbGet("fazenda", "current");
-  const farmName = fazenda?.name || "—";
-  const farmLabel = $("#farmCurrent");
-  if (farmLabel) farmLabel.textContent = farmName;
-
+  // Dados do cache
   const all = (await idbGet("animais", "list")) || [];
-  const showSel = $("#animalShow");
   const searchEl = $("#animalSearch");
   const tbody = $("#animalTbody");
   const countPill = $("#animalCountPill");
 
   if (!tbody) return;
 
-  const showMode = showSel ? showSel.value : "ativos";
   const q = normText(searchEl ? searchEl.value : "");
 
   let list = Array.isArray(all) ? all.slice() : [];
-  // normalize local (garante robustez)
   list = list.map(normalizeAnimal);
 
-  // filtro mortos
-  if (showMode === "ativos") {
-    list = list.filter(a => !a.morto && a.ativo && !a.deleted);
-  } else if (showMode === "mortos") {
-    list = list.filter(a => a.morto && !a.deleted);
-  } else {
-    // todos (exceto deleted)
-    list = list.filter(a => !a.deleted);
-  }
+  // Filtro padrão: apenas não deletados (removemos lógica de "mortos" vs "ativos")
+  list = list.filter(a => !a.deleted);
 
-  // search por brinco ou nome
+  // Busca
   if (q) {
     list = list.filter(a => {
       const br = normText(a?.brinco_padrao);
@@ -529,7 +500,7 @@ async function renderAnimalList() {
     });
   }
 
-  // ordena por brinco (numérico se der)
+  // Ordenação
   list.sort((a, b) => {
     const an = Number(String(a?.brinco_padrao || "").replace(/\D+/g, ""));
     const bn = Number(String(b?.brinco_padrao || "").replace(/\D+/g, ""));
@@ -542,7 +513,7 @@ async function renderAnimalList() {
     countPill.textContent = `${n} ${n === 1 ? "Animal" : "Animais"}`;
   }
 
-  // monta linhas
+  // Renderiza Tabela
   tbody.innerHTML = "";
   for (const a of list) {
     const tr = document.createElement("tr");
@@ -552,28 +523,23 @@ async function renderAnimalList() {
     const statusLabel = statusOn ? "Ativo" : (a.morto ? "Morto" : "Inativo");
     const statusClass = statusOn ? "statusBadge" : "statusBadge off";
 
+    // Colunas reduzidas: Brinco, Sexo, Raça, Peso, Status
     tr.innerHTML = `
-      <td style="width:44px;"><input type="checkbox" class="rowChk" /></td>
       <td>${escapeHtml(a?.brinco_padrao || "—")}</td>
       <td>${escapeHtml(renderSex(a?.sexo))}</td>
       <td>${escapeHtml(a?.raca || "—")}</td>
       <td>${escapeHtml(fmtKg(a?.peso_atual_kg))}</td>
-      <td>${escapeHtml(a?.etiquetas || "")}</td>
       <td><span class="${statusClass}">${escapeHtml(statusLabel)}</span></td>
     `;
 
-    tr.onclick = async (e) => {
-      // não abrir edit ao clicar no checkbox
-      if (e?.target && (e.target.matches("input[type='checkbox']") || e.target.closest("input[type='checkbox']"))) {
-        return;
-      }
+    tr.onclick = async () => {
       await openAnimalFormForEdit(a._id);
     };
 
     tbody.appendChild(tr);
   }
 
-  // eventos (não duplicar)
+  // Bind Search
   if (searchEl && !searchEl.__bound) {
     searchEl.__bound = true;
     searchEl.addEventListener("input", async () => {
@@ -581,34 +547,11 @@ async function renderAnimalList() {
     });
   }
 
-  if (showSel && !showSel.__bound) {
-    showSel.__bound = true;
-    showSel.addEventListener("change", async () => {
-      await renderAnimalList();
-    });
-  }
-
+  // Bind Novo Animal
   const btnNovo = $("#btnNovoAnimal");
   if (btnNovo && !btnNovo.__bound) {
     btnNovo.__bound = true;
     btnNovo.onclick = async () => openAnimalFormForCreate();
-  }
-
-  const selAll = $("#animalSelectAll");
-  if (selAll && !selAll.__bound) {
-    selAll.__bound = true;
-    selAll.addEventListener("change", () => {
-      const checked = !!selAll.checked;
-      tbody.querySelectorAll(".rowChk").forEach(chk => {
-        chk.checked = checked;
-      });
-    });
-  }
-
-  const btnCols = $("#btnConfigCols");
-  if (btnCols && !btnCols.__bound) {
-    btnCols.__bound = true;
-    btnCols.onclick = () => toast("Configurar colunas (placeholder)");
   }
 }
 
@@ -767,6 +710,11 @@ async function fillOwnersAndLotesInForm() {
       `<option value="">Selecione…</option>`,
       ...proprietarios.map(p => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`)
     ].join("");
+
+    // Seleciona o primeiro proprietário se houver (index 1 pois 0 é placeholder)
+    if (proprietarios.length > 0) {
+      selOwner.selectedIndex = 1;
+    }
   }
 
   if (selLote) {
@@ -816,10 +764,11 @@ function bindAnimalFormUIOnce() {
   }
 
   // botões voltar
-  const backIds = ["btnVoltarLista", "btnVoltarLista2", "btnVoltarLista3"];
+  const backIds = ["btnVoltarLista", "btnVoltarLista2", "btnVoltarLista3", "btnVoltarTopo"];
   backIds.forEach(id => {
     const b = $("#" + id);
-    if (b) b.addEventListener("click", async () => {
+    if (b) b.addEventListener("click", async (e) => {
+      e.preventDefault(); // prevenir behavior indesejado
       await openAnimalList();
     });
   });
@@ -844,9 +793,10 @@ function bindAnimalFormUIOnce() {
 }
 
 function applyAdvancedVisibility() {
-  // seus campos avançados no HTML novo não tem classe .adv,
-  // então aqui só deixo o toggle funcionando para você evoluir depois
-  // (se quiser, posso marcar os campos avançados com class="adv" no HTML e ativar aqui).
+  const group = $("#advancedGroup");
+  if (group) {
+    group.style.display = state.advanced ? "block" : "none";
+  }
 }
 
 async function openAnimalList() {
@@ -1102,9 +1052,16 @@ async function renderActiveModule() {
     return;
   }
 
+  // 1. Controle de visibilidade global (Container vs Generic View)
+  const animalContainer = $("#animalModuleContainer");
+  const moduleView = $("#moduleView");
+
   if (m.key === "animal_create") {
-    // garante módulos existentes no HTML novo
-    // e renderiza a view correta (list ou form)
+    // Exibe container fixo de animais
+    if (animalContainer) animalContainer.hidden = false;
+    if (moduleView) moduleView.hidden = true;
+
+    // Renderiza a sub-view correta (lista ou form)
     if (state.animalView === "form") {
       if (state.animalEditingId) await openAnimalFormForEdit(state.animalEditingId);
       else await openAnimalFormForCreate();
@@ -1114,13 +1071,16 @@ async function renderActiveModule() {
     return;
   }
 
-  // default
+  // Outros módulos: esconde animais, mostra view genérica
+  if (animalContainer) animalContainer.hidden = true;
+  if (moduleView) moduleView.hidden = false;
+
+  // default render
   setPageHeadVisible(true);
   setPageHeadTexts(m.pageTitle || m.label, m.pageSub || "");
 
-  const mount = $("#moduleView");
-  if (mount) {
-    mount.innerHTML = `
+  if (moduleView) {
+    moduleView.innerHTML = `
       <div class="card">
         <b>${escapeHtml(m.label)}</b>
         <div style="color:#6b7280;margin-top:6px;">Módulo ainda não desenhado no novo layout.</div>
