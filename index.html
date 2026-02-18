@@ -625,25 +625,9 @@
                 /* Mais espaço para nao cobrir o ultimo item */
             }
 
-            /* Bottom Nav Scrollable */
+            /* Bottom Nav SCROLLABLE REMOVED - User Request */
             .sidebar {
-                position: fixed;
-                bottom: 0;
-                left: 0;
-                right: 0;
-                width: 100%;
-                height: auto;
-                z-index: 1000;
-                background: #fff;
-                border-top: 1px solid rgba(0, 0, 0, 0.06);
-                border-right: none;
-                padding: 10px 0;
-                /* Scroll horizontal setup */
-                justify-content: flex-start;
-                overflow-x: auto;
-                scroll-behavior: smooth;
-                -webkit-overflow-scrolling: touch;
-                /* Smooth scroll on iOS */
+                display: none !important;
             }
 
             /* Esconde scrollbar mas permite scroll */
@@ -712,7 +696,7 @@
 
             /* Topbar fake */
             .main:before {
-                content: "BOVICHAIN";
+                /*content: "BOVICHAIN"; */
                 display: flex;
                 align-items: center;
                 padding: 0 20px;
@@ -1137,6 +1121,282 @@
         .moduleSection[hidden] {
             display: none !important;
         }
+
+        /* Dashboard Styles Refined */
+        #modDashboard {
+            padding-bottom: 40px;
+        }
+
+        .dashHeader {
+            background: var(--sidebar);
+
+            /* Lime Theme */
+            margin: -20px -20px 24px -20px;
+            padding: 20px 24px 30px;
+            border-bottom-left-radius: 32px;
+            border-bottom-right-radius: 32px;
+            color: #111827;
+            /* Dark Text */
+            box-shadow: 0 4px 20px rgba(17, 24, 39, 0.1);
+            text-align: center;
+        }
+
+        .dashLogo {
+            display: block;
+            margin: 0 auto 20px auto;
+            width: 180px;
+            height: auto;
+            object-fit: contain;
+        }
+
+        .dashProfile {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            text-align: left;
+        }
+
+        .dashAvatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 16px;
+            background: rgba(17, 24, 39, 0.05);
+            /* Dark transparent */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 700;
+            color: #111827;
+            border: 1px solid rgba(17, 24, 39, 0.1);
+            position: relative;
+        }
+
+        .dashAvatar:after {
+            content: "";
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            width: 12px;
+            height: 12px;
+            background: #10b981;
+            /* Green Status */
+            border: 2px solid #edff77;
+            /* Match Header BG */
+            border-radius: 50%;
+        }
+
+        .dashWelcome {
+            flex: 1;
+        }
+
+        .dashSub {
+            font-size: 12px;
+            opacity: 0.8;
+            font-weight: 500;
+            margin-bottom: 2px;
+            color: #374151;
+            /* Dark Gray */
+        }
+
+        .dashName {
+            font-size: 18px;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            color: #111827;
+            /* Dark Graphite */
+        }
+
+        .dashSectionTitle {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 12px;
+            padding: 0 4px;
+            margin-top: 24px;
+        }
+
+        /* First title adjustment */
+        .dashSectionTitle:first-of-type {
+            margin-top: 0;
+        }
+
+        .dashModules {
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+            padding: 4px 4px 12px;
+            margin: 0 -4px;
+            scroll-behavior: smooth;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .dashModules::-webkit-scrollbar {
+            display: none;
+        }
+
+        .dashModCard {
+            flex: 0 0 100px;
+            height: 90px;
+            background: #fff;
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.03);
+            border: 1px solid #f3f4f6;
+            transition: .2s;
+        }
+
+        .dashModCard:active {
+            transform: scale(0.96);
+        }
+
+        .dashModIcon {
+            font-size: 28px;
+        }
+
+        .dashModTitle {
+            font-size: 12px;
+            font-weight: 600;
+            color: #374151;
+            text-align: center;
+        }
+
+        /* Chart Containers */
+        .dashContainer {
+            padding: 0 4px;
+        }
+
+        .dashChartCard {
+            background: #fff;
+            border-radius: 20px;
+            padding: 16px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+            border: 1px solid #f3f4f6;
+        }
+
+        .dashChartCard.row-based {
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+        }
+
+        .dashChartCard.column-based {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        /* Donut Chart */
+        .donutWrapper {
+            width: 100px;
+            height: 100px;
+            position: relative;
+        }
+
+        .donutCenter {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 800;
+            color: #9cb3e4 !important;
+            line-height: 1;
+        }
+
+        .circular-chart.dual .circle-bg {
+            stroke: #e5e7eb;
+            /* Track: Neutral Gray */
+            stroke-width: 2.5;
+            /* Thinner border */
+            fill: none;
+            /* Transparent to show card blue BG */
+        }
+
+        .circular-chart.dual .circle {
+            stroke: #3b82f6;
+            stroke-width: 2.5;
+            /* Match track width */
+            stroke-linecap: round;
+            /* Round caps for cleaner look */
+        }
+
+        .chartLegend {
+            font-size: 13px;
+            color: #4b5563;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+
+        .dot.blue {
+            background: #3b82f6;
+        }
+
+        .dot.pink {
+            background: #ec4899;
+        }
+
+        /* List Items (Cat, Lote) */
+        .statRow {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f9fafb;
+        }
+
+        .statRow:last-child {
+            border-bottom: none;
+        }
+
+        .statLabel {
+            font-size: 13px;
+            font-weight: 500;
+            color: #374151;
+        }
+
+        .statVal {
+            font-size: 13px;
+            font-weight: 700;
+            color: #111827;
+        }
+
+        .statBarBg {
+            height: 6px;
+            background: #f3f4f6;
+            border-radius: 3px;
+            margin-top: 4px;
+            overflow: hidden;
+        }
+
+        .statBarFill {
+            height: 100%;
+            background: #edff77;
+            border-radius: 3px;
+        }
+
+        .statSub {
+            font-size: 11px;
+            color: #9ca3af;
+        }
     </style>
 </head>
 
@@ -1490,8 +1750,9 @@
                     <!-- Header Personalizado -->
                     <!-- Header Personalizado -->
                     <div class="dashHeader">
-                        <img src="https://e45a1d9b2fd81a177eaa3a70ba83bda4.cdn.bubble.io/f1750077006501x159873402843107020/bovichain-icon.svg"
+                        <img src="https://e45a1d9b2fd81a177eaa3a70ba83bda4.cdn.bubble.io/f1771430285555x676420989400587900/Bovichain-logo.png"
                             class="dashLogo" alt="Logo">
+                            <br>
                         <div class="dashProfile">
                             <div class="dashAvatar" id="dashAvatar">U</div>
                             <div class="dashWelcome">
@@ -1520,14 +1781,12 @@
                             <div class="donutWrapper">
                                 <svg viewBox="0 0 36 36" class="circular-chart dual">
                                     <path class="circle-bg"
-                                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                        style="stroke: #ec4899;" />
+                                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                                     <path class="circle" id="chartPathSexM" stroke-dasharray="0, 100"
-                                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                        style="stroke: #3b82f6;" />
+                                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                                 </svg>
                                 <div class="donutCenter" id="chartTotalSex">0<br><span
-                                        style="font-size:10px;font-weight:400;color:#6b7280">Total</span></div>
+                                        style="font-size:10px;font-weight:400;color:#c0cfec">Total</span></div>
                             </div>
                             <div class="chartLegend">
                                 <div><span class="dot blue"></span> Macho <b id="lblM">0</b></div>
@@ -1558,277 +1817,6 @@
             </section>
         </main>
     </div>
-
-    <!-- STYLE FOR DASHBOARD -->
-    <style>
-        /* Dashboard Styles Refined */
-        #modDashboard {
-            padding-bottom: 40px;
-        }
-
-        .dashHeader {
-            background: #edff77;
-            /* Lime Theme */
-            margin: -20px -20px 24px -20px;
-            padding: 20px 24px 30px;
-            border-bottom-left-radius: 32px;
-            border-bottom-right-radius: 32px;
-            color: #111827;
-            /* Dark Text */
-            box-shadow: 0 4px 20px rgba(17, 24, 39, 0.1);
-            text-align: center;
-        }
-
-        .dashLogo {
-            display: block;
-            margin: 0 auto 20px auto;
-            width: 48px;
-            height: auto;
-        }
-
-        .dashProfile {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            text-align: left;
-        }
-
-        .dashAvatar {
-            width: 50px;
-            height: 50px;
-            border-radius: 16px;
-            background: rgba(17, 24, 39, 0.05);
-            /* Dark transparent */
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 18px;
-            font-weight: 700;
-            color: #111827;
-            border: 1px solid rgba(17, 24, 39, 0.1);
-            position: relative;
-        }
-
-        .dashAvatar:after {
-            content: "";
-            position: absolute;
-            bottom: -2px;
-            right: -2px;
-            width: 12px;
-            height: 12px;
-            background: #10b981;
-            /* Green Status */
-            border: 2px solid #edff77;
-            /* Match Header BG */
-            border-radius: 50%;
-        }
-
-        .dashWelcome {
-            flex: 1;
-        }
-
-        .dashSub {
-            font-size: 12px;
-            opacity: 0.8;
-            font-weight: 500;
-            margin-bottom: 2px;
-            color: #374151;
-            /* Dark Gray */
-        }
-
-        .dashName {
-            font-size: 18px;
-            font-weight: 800;
-            letter-spacing: -0.02em;
-            color: #111827;
-            /* Dark Graphite */
-        }
-
-        .dashSectionTitle {
-            font-size: 16px;
-            font-weight: 700;
-            color: #1f2937;
-            margin-bottom: 12px;
-            padding: 0 4px;
-            margin-top: 24px;
-        }
-
-        /* First title adjustment */
-        .dashSectionTitle:first-of-type {
-            margin-top: 0;
-        }
-
-        .dashModules {
-            display: flex;
-            gap: 12px;
-            overflow-x: auto;
-            padding: 4px 4px 12px;
-            margin: 0 -4px;
-            scroll-behavior: smooth;
-            -webkit-overflow-scrolling: touch;
-        }
-
-        .dashModules::-webkit-scrollbar {
-            display: none;
-        }
-
-        .dashModCard {
-            flex: 0 0 100px;
-            height: 90px;
-            background: #fff;
-            border-radius: 16px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.03);
-            border: 1px solid #f3f4f6;
-            transition: .2s;
-        }
-
-        .dashModCard:active {
-            transform: scale(0.96);
-        }
-
-        .dashModIcon {
-            font-size: 28px;
-        }
-
-        .dashModTitle {
-            font-size: 12px;
-            font-weight: 600;
-            color: #374151;
-            text-align: center;
-        }
-
-        /* Chart Containers */
-        .dashContainer {
-            padding: 0 4px;
-        }
-
-        .dashChartCard {
-            background: #fff;
-            border-radius: 20px;
-            padding: 16px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
-            border: 1px solid #f3f4f6;
-        }
-
-        .dashChartCard.row-based {
-            display: flex;
-            align-items: center;
-            justify-content: space-around;
-        }
-
-        .dashChartCard.column-based {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        /* Donut Chart */
-        .donutWrapper {
-            width: 100px;
-            height: 100px;
-            position: relative;
-        }
-
-        .donutCenter {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            font-weight: 800;
-            color: #111827;
-            line-height: 1;
-        }
-
-        .circular-chart.dual .circle-bg {
-            stroke: #ec4899;
-            stroke-width: 4;
-        }
-
-        .circular-chart.dual .circle {
-            stroke: #3b82f6;
-            stroke-width: 4;
-            stroke-linecap: butt;
-        }
-
-        .chartLegend {
-            font-size: 13px;
-            color: #4b5563;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .dot {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            margin-right: 6px;
-        }
-
-        .dot.blue {
-            background: #3b82f6;
-        }
-
-        .dot.pink {
-            background: #ec4899;
-        }
-
-        /* List Items (Cat, Lote) */
-        .statRow {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid #f9fafb;
-        }
-
-        .statRow:last-child {
-            border-bottom: none;
-        }
-
-        .statLabel {
-            font-size: 13px;
-            font-weight: 500;
-            color: #374151;
-        }
-
-        .statVal {
-            font-size: 13px;
-            font-weight: 700;
-            color: #111827;
-        }
-
-        .statBarBg {
-            height: 6px;
-            background: #f3f4f6;
-            border-radius: 3px;
-            margin-top: 4px;
-            overflow: hidden;
-        }
-
-        .statBarFill {
-            height: 100%;
-            background: #edff77;
-            border-radius: 3px;
-        }
-
-        .statSub {
-            font-size: 11px;
-            color: #9ca3af;
-        }
-    </style>
 
     <!-- LOADING OVERLAY -->
     <div id="bootOverlay" style="display:none;">

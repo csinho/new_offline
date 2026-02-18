@@ -113,10 +113,18 @@ const MODULE_CATALOG = {
   vaccine: {
     key: "vaccine",
     label: "Vacinação",
-    icon: "💉", // Added icon
+    icon: "💉",
     pageTitle: "Vacinação",
     pageSub: "Registre vacinas offline",
     storageKey: "vacinacao",
+  },
+  lotes: {
+    key: "lotes",
+    label: "Lotes",
+    icon: "📦",
+    pageTitle: "Gerenciar Lotes",
+    pageSub: "Organize seus animais em lotes",
+    storageKey: "lotes",
   },
 };
 
@@ -1235,38 +1243,31 @@ async function renderDashboard() {
   }
 
   // --- CHART 3: PESO JMEDIO POR LOTE (Avg Weight) ---
-  const loteMap = {};
-  activeAnimais.forEach(a => {
-    const l = a.lote || "Sem Lote";
-    if (!loteMap[l]) loteMap[l] = { sum: 0, count: 0 };
-    const w = parseFloat(a.peso_atual_kg) || parseFloat(a.peso_entrada_kg) || 0;
-    if (w > 0) {
-      loteMap[l].sum += w;
-      loteMap[l].count += 1;
-    }
-  });
+  // User Requested: Use data directly from 'lotes' table (nome_lote, peso_medio)
+  const lotesList = (await idbGet("lotes", "list")) || [];
 
-  const loteList = Object.entries(loteMap)
-    .map(([lote, data]) => ({
-      lote,
-      avg: data.count > 0 ? (data.sum / data.count) : 0
+  const loteAgg = lotesList
+    .map(l => ({
+      name: l.nome_lote || "Sem Nome",
+      avg: parseFloat(l.peso_medio) || 0
     }))
     .filter(i => i.avg > 0)
     .sort((a, b) => b.avg - a.avg);
 
   const elListLote = $("#chartListLote");
   if (elListLote) {
-    if (loteList.length === 0) {
+    if (loteAgg.length === 0) {
       elListLote.innerHTML = `<div style="text-align:center; color:#9ca3af; padding:20px;">Nenhum dado de peso</div>`;
     } else {
       elListLote.innerHTML = "";
-      const maxAvg = loteList[0].avg;
-      loteList.slice(0, 5).forEach(item => {
+      const maxAvg = loteAgg[0].avg;
+      loteAgg.slice(0, 5).forEach(item => { // Top 5
         const visualPct = (item.avg / maxAvg) * 100;
+
         const row = document.createElement("div");
         row.innerHTML = `
                 <div class="statRow">
-                    <span class="statLabel">${item.lote}</span>
+                    <span class="statLabel">${escapeHtml(item.name)}</span>
                     <span class="statVal">${item.avg.toFixed(1)} kg</span>
                 </div>
                 <div class="statBarBg">
