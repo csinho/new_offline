@@ -624,8 +624,13 @@ async function renderAnimalList() {
     tr.dataset.id = a._id || "";
 
     const statusOn = (a.ativo && !a.morto && !a.deleted);
-    const statusLabel = statusOn ? "Ativo" : (a.morto ? "Morto" : "Inativo");
+    let statusLabel = statusOn ? "Ativo" : (a.morto ? "Morto" : "Inativo");
     const statusClass = statusOn ? "statusBadge" : "statusBadge off";
+
+    // Sync pending indicator
+    if (a._sync === "pending") {
+      statusLabel += " 🕒"; // Clock icon for pending
+    }
 
     // Colunas reduzidas: Brinco, Sexo, Raça, Peso, Status
     tr.innerHTML = `
@@ -1235,7 +1240,13 @@ async function renderDashboard() {
   const elName = $("#dashName");
   const elAvatar = $("#dashAvatar");
 
-  if (elName) elName.textContent = name;
+  // Check for pending sync items to show indicator in header
+  const allAnimais = (await idbGet("animais", "list")) || [];
+  const hasPending = allAnimais.some(a => a._sync === "pending");
+
+  if (elName) {
+    elName.innerHTML = escapeHtml(name) + (hasPending ? " <span style='font-size:14px; vertical-align:middle' title='Dados pendentes'>☁️</span>" : "");
+  }
   if (elAvatar) elAvatar.textContent = firstLetter;
 
   // 2. Modules Carousel
@@ -1369,8 +1380,15 @@ async function renderDashboard() {
 async function openDashboard() {
   state.view = "dashboard";
 
-  // Hide all modules
+  // Hide all sections
   document.querySelectorAll(".moduleSection").forEach(el => el.hidden = true);
+
+  // Explicitly hide and clear generic module view to prevent overlap/stale content
+  const modView = document.getElementById("moduleView");
+  if (modView) {
+    modView.hidden = true;
+    modView.innerHTML = ""; // Reset content
+  }
 
   // Show Dashboard
   const dash = $("#modDashboard");
