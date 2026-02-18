@@ -105,6 +105,7 @@ const MODULE_CATALOG = {
   animal_create: {
     key: "animal_create",
     label: "Animais",
+    icon: "🐮", // Added icon
     pageTitle: "Animais",
     pageSub: "Gerencie todos os seus animais com facilidade",
     storageKey: "animais", // store do IDB
@@ -112,6 +113,7 @@ const MODULE_CATALOG = {
   vaccine: {
     key: "vaccine",
     label: "Vacinação",
+    icon: "💉", // Added icon
     pageTitle: "Vacinação",
     pageSub: "Registre vacinas offline",
     storageKey: "vacinacao",
@@ -1174,31 +1176,106 @@ async function renderDashboard() {
 
   // 3. Charts Stats
   const animais = (await idbGet("animais", "list")) || [];
-  const total = animais.length;
-  const machos = animais.filter(a => a.sexo === "M").length;
-  const femeas = animais.filter(a => a.sexo === "F").length;
+  const activeAnimais = animais.filter(a => !a.deleted);
+  const total = activeAnimais.length;
 
-  $("#chartCountM").textContent = machos;
-  $("#chartCountF").textContent = femeas;
+  // --- CHART 1: SEXO (Donut) ---
+  const machos = activeAnimais.filter(a => a.sexo === "M").length;
+  const femeas = activeAnimais.filter(a => a.sexo === "F").length;
 
-  // Visual Circles
+  // Update Text
+  const elTotalSex = $("#chartTotalSex");
+  if (elTotalSex) elTotalSex.innerHTML = `${total}<br><span style="font-size:10px;font-weight:400;color:#6b7280">Total</span>`;
+
+  const lblM = $("#lblM"); if (lblM) lblM.textContent = machos;
+  const lblF = $("#lblF"); if (lblF) lblF.textContent = femeas;
+
+  // Update Visual Path
   const pctM = total > 0 ? (machos / total) * 100 : 0;
-  const pctF = total > 0 ? (femeas / total) * 100 : 0;
-
-  const pathM = document.querySelector("#chartPathM");
-  const pathF = document.querySelector("#chartPathF");
-
-  if (pathM) {
-    pathM.style.strokeDasharray = `${pctM}, 100`;
-    pathM.style.animation = 'none';
-    pathM.offsetHeight; /* trigger reflow */
-    pathM.style.animation = 'progress 1s ease-out forwards';
+  const pathSexM = document.querySelector("#chartPathSexM");
+  if (pathSexM) {
+    pathSexM.style.strokeDasharray = `${pctM}, 100`;
+    pathSexM.style.animation = 'none';
+    pathSexM.offsetHeight;
+    pathSexM.style.animation = 'progress 1s ease-out forwards';
   }
-  if (pathF) {
-    pathF.style.strokeDasharray = `${pctF}, 100`;
-    pathF.style.animation = 'none';
-    pathF.offsetHeight; /* trigger reflow */
-    pathF.style.animation = 'progress 1s ease-out forwards';
+
+  // --- CHART 2: CATEGORIA (Count) ---
+  const catMap = {};
+  activeAnimais.forEach(a => {
+    const c = a.categoria || "Sem Categoria";
+    catMap[c] = (catMap[c] || 0) + 1;
+  });
+  const catList = Object.entries(catMap)
+    .map(([cat, count]) => ({ cat, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const elListCat = $("#chartListCat");
+  if (elListCat) {
+    if (catList.length === 0) {
+      elListCat.innerHTML = `<div style="text-align:center; color:#9ca3af; padding:20px;">Nenhum dado</div>`;
+    } else {
+      elListCat.innerHTML = "";
+      const maxVal = catList[0].count;
+      catList.slice(0, 5).forEach(item => {
+        const visualPct = (item.count / maxVal) * 100;
+        const row = document.createElement("div");
+        row.innerHTML = `
+                <div class="statRow">
+                    <span class="statLabel">${item.cat}</span>
+                    <span class="statVal">${item.count}</span>
+                </div>
+                <div class="statBarBg">
+                    <div class="statBarFill" style="width: ${visualPct}%"></div>
+                </div>
+              `;
+        elListCat.appendChild(row);
+      });
+    }
+  }
+
+  // --- CHART 3: PESO JMEDIO POR LOTE (Avg Weight) ---
+  const loteMap = {};
+  activeAnimais.forEach(a => {
+    const l = a.lote || "Sem Lote";
+    if (!loteMap[l]) loteMap[l] = { sum: 0, count: 0 };
+    const w = parseFloat(a.peso_atual_kg) || parseFloat(a.peso_entrada_kg) || 0;
+    if (w > 0) {
+      loteMap[l].sum += w;
+      loteMap[l].count += 1;
+    }
+  });
+
+  const loteList = Object.entries(loteMap)
+    .map(([lote, data]) => ({
+      lote,
+      avg: data.count > 0 ? (data.sum / data.count) : 0
+    }))
+    .filter(i => i.avg > 0)
+    .sort((a, b) => b.avg - a.avg);
+
+  const elListLote = $("#chartListLote");
+  if (elListLote) {
+    if (loteList.length === 0) {
+      elListLote.innerHTML = `<div style="text-align:center; color:#9ca3af; padding:20px;">Nenhum dado de peso</div>`;
+    } else {
+      elListLote.innerHTML = "";
+      const maxAvg = loteList[0].avg;
+      loteList.slice(0, 5).forEach(item => {
+        const visualPct = (item.avg / maxAvg) * 100;
+        const row = document.createElement("div");
+        row.innerHTML = `
+                <div class="statRow">
+                    <span class="statLabel">${item.lote}</span>
+                    <span class="statVal">${item.avg.toFixed(1)} kg</span>
+                </div>
+                <div class="statBarBg">
+                    <div class="statBarFill" style="width: ${visualPct}%"></div>
+                </div>
+              `;
+        elListLote.appendChild(row);
+      });
+    }
   }
 }
 

@@ -1488,7 +1488,10 @@
                 <!-- DASHBOARD (Mobile First View) -->
                 <section class="moduleSection" id="modDashboard">
                     <!-- Header Personalizado -->
+                    <!-- Header Personalizado -->
                     <div class="dashHeader">
+                        <img src="https://e45a1d9b2fd81a177eaa3a70ba83bda4.cdn.bubble.io/f1750077006501x159873402843107020/bovichain-icon.svg"
+                            class="dashLogo" alt="Logo">
                         <div class="dashProfile">
                             <div class="dashAvatar" id="dashAvatar">U</div>
                             <div class="dashWelcome">
@@ -1509,40 +1512,47 @@
                     </div>
 
                     <!-- Charts Section -->
-                    <div class="dashSectionTitle">Rebanho Atual</div>
-                    <div class="dashCharts">
-
-                        <!-- Chart Machos -->
-                        <div class="dashChartCard">
-                            <div class="chartTitle">Machos</div>
-                            <div class="chartValue" id="chartCountM">0</div>
-                            <div class="chartVisual">
-                                <svg viewBox="0 0 36 36" class="circular-chart blue">
+                    <!-- Charts Section -->
+                    <div class="dashSectionTitle">Sexo dos Animais</div>
+                    <div class="dashContainer">
+                        <div class="dashChartCard row-based">
+                            <!-- Donut Chart Sexo -->
+                            <div class="donutWrapper">
+                                <svg viewBox="0 0 36 36" class="circular-chart dual">
                                     <path class="circle-bg"
-                                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                                    <path class="circle" id="chartPathM" stroke-dasharray="0, 100"
-                                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                        style="stroke: #ec4899;" />
+                                    <path class="circle" id="chartPathSexM" stroke-dasharray="0, 100"
+                                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                        style="stroke: #3b82f6;" />
                                 </svg>
-                                <div class="chartIcon">♂</div>
+                                <div class="donutCenter" id="chartTotalSex">0<br><span
+                                        style="font-size:10px;font-weight:400;color:#6b7280">Total</span></div>
+                            </div>
+                            <div class="chartLegend">
+                                <div><span class="dot blue"></span> Macho <b id="lblM">0</b></div>
+                                <div><span class="dot pink"></span> Fêmea <b id="lblF">0</b></div>
                             </div>
                         </div>
-
-                        <!-- Chart Fêmeas -->
-                        <div class="dashChartCard">
-                            <div class="chartTitle">Fêmeas</div>
-                            <div class="chartValue" id="chartCountF">0</div>
-                            <div class="chartVisual">
-                                <svg viewBox="0 0 36 36" class="circular-chart pink">
-                                    <path class="circle-bg"
-                                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                                    <path class="circle" id="chartPathF" stroke-dasharray="0, 100"
-                                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                                </svg>
-                                <div class="chartIcon">♀</div>
-                            </div>
-                        </div>
-
                     </div>
+
+                    <div class="dashSectionTitle">Total por Categoria</div>
+                    <div class="dashContainer">
+                        <div class="dashChartCard column-based" id="chartListCat">
+                            <!-- Injected rows -->
+                            <div style="text-align:center; color:#9ca3af; padding:20px;">Carregando...</div>
+                        </div>
+                    </div>
+
+                    <div class="dashSectionTitle">Peso Médio por Lote (KG)</div>
+                    <div class="dashContainer">
+                        <div class="dashChartCard column-based" id="chartListLote">
+                            <!-- Injected rows -->
+                            <div style="text-align:center; color:#9ca3af; padding:20px;">Carregando...</div>
+                        </div>
+                    </div>
+
+                    <div style="height: 40px;"></div>
                 </section>
 
             </section>
@@ -1551,53 +1561,51 @@
 
     <!-- STYLE FOR DASHBOARD -->
     <style>
-        /* Dashboard Styles */
+        /* Dashboard Styles Refined */
         #modDashboard {
             padding-bottom: 40px;
         }
 
         .dashHeader {
-            background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
-            /* Purple theme from ref */
+            background: #edff77;
+            /* Lime Theme */
             margin: -20px -20px 24px -20px;
-            padding: 60px 24px 30px;
+            padding: 20px 24px 30px;
             border-bottom-left-radius: 32px;
             border-bottom-right-radius: 32px;
-            color: #fff;
-            box-shadow: 0 10px 30px rgba(124, 58, 237, 0.2);
+            color: #111827;
+            /* Dark Text */
+            box-shadow: 0 4px 20px rgba(17, 24, 39, 0.1);
+            text-align: center;
         }
 
-        @media (min-width: 981px) {
-            .dashHeader {
-                margin: -16px -20px 24px;
-                border-radius: 0 0 24px 24px;
-                padding-top: 30px;
-            }
-
-            /* Esconde dashboard em desktop se nao for o foco, mas user pediu mobile first. 
-               Vamos assumir que desktop pode ver também ou manter sidebar. 
-               Por enquanto focado no mobile. */
+        .dashLogo {
+            display: block;
+            margin: 0 auto 20px auto;
+            width: 48px;
+            height: auto;
         }
 
         .dashProfile {
             display: flex;
             align-items: center;
             gap: 16px;
+            text-align: left;
         }
 
         .dashAvatar {
-            width: 56px;
-            height: 56px;
-            border-radius: 18px;
-            background: rgba(255, 255, 255, 0.2);
-            backdrop-filter: blur(4px);
+            width: 50px;
+            height: 50px;
+            border-radius: 16px;
+            background: rgba(17, 24, 39, 0.05);
+            /* Dark transparent */
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 20px;
-            font-weight: 800;
-            color: #fff;
-            border: 2px solid rgba(255, 255, 255, 0.3);
+            font-size: 18px;
+            font-weight: 700;
+            color: #111827;
+            border: 1px solid rgba(17, 24, 39, 0.1);
             position: relative;
         }
 
@@ -1606,11 +1614,12 @@
             position: absolute;
             bottom: -2px;
             right: -2px;
-            width: 14px;
-            height: 14px;
-            background: #4ade80;
-            /* Online/Active */
-            border: 2px solid #6d28d9;
+            width: 12px;
+            height: 12px;
+            background: #10b981;
+            /* Green Status */
+            border: 2px solid #edff77;
+            /* Match Header BG */
             border-radius: 50%;
         }
 
@@ -1619,34 +1628,42 @@
         }
 
         .dashSub {
-            font-size: 13px;
+            font-size: 12px;
             opacity: 0.8;
-            font-weight: 600;
+            font-weight: 500;
             margin-bottom: 2px;
+            color: #374151;
+            /* Dark Gray */
         }
 
         .dashName {
-            font-size: 20px;
+            font-size: 18px;
             font-weight: 800;
             letter-spacing: -0.02em;
+            color: #111827;
+            /* Dark Graphite */
         }
 
         .dashSectionTitle {
-            font-size: 18px;
-            font-weight: 800;
-            color: #111827;
-            margin-bottom: 16px;
+            font-size: 16px;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 12px;
             padding: 0 4px;
+            margin-top: 24px;
+        }
+
+        /* First title adjustment */
+        .dashSectionTitle:first-of-type {
+            margin-top: 0;
         }
 
         .dashModules {
             display: flex;
-            gap: 16px;
+            gap: 12px;
             overflow-x: auto;
-            padding: 4px 4px 24px;
-            /* Padding bottom for shadow */
+            padding: 4px 4px 12px;
             margin: 0 -4px;
-            /* Compensate padding */
             scroll-behavior: smooth;
             -webkit-overflow-scrolling: touch;
         }
@@ -1656,150 +1673,160 @@
         }
 
         .dashModCard {
-            flex: 0 0 110px;
-            height: 110px;
+            flex: 0 0 100px;
+            height: 90px;
             background: #fff;
-            border-radius: 20px;
+            border-radius: 16px;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 10px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.04);
-            border: 1px solid rgba(0, 0, 0, 0.03);
-            transition: .2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            cursor: pointer;
+            gap: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.03);
+            border: 1px solid #f3f4f6;
+            transition: .2s;
         }
 
-        .dashModCard:hover,
         .dashModCard:active {
-            transform: translateY(-4px);
-            box-shadow: 0 14px 30px rgba(0, 0, 0, 0.08);
-            border-color: var(--btn);
+            transform: scale(0.96);
         }
 
         .dashModIcon {
-            font-size: 32px;
+            font-size: 28px;
         }
 
         .dashModTitle {
-            font-size: 13px;
-            font-weight: 700;
+            font-size: 12px;
+            font-weight: 600;
             color: #374151;
             text-align: center;
         }
 
-        /* Charts */
-        .dashCharts {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
+        /* Chart Containers */
+        .dashContainer {
+            padding: 0 4px;
         }
 
         .dashChartCard {
             background: #fff;
-            border-radius: 24px;
-            padding: 20px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.04);
-            border: 1px solid rgba(0, 0, 0, 0.03);
-            position: relative;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
+            border-radius: 20px;
+            padding: 16px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+            border: 1px solid #f3f4f6;
         }
 
-        .chartTitle {
-            font-size: 13px;
-            font-weight: 700;
-            color: #6b7280;
-            margin-bottom: 6px;
-        }
-
-        .chartValue {
-            font-size: 28px;
-            font-weight: 900;
-            color: #111827;
-            margin-bottom: 12px;
-            z-index: 2;
-        }
-
-        .chartVisual {
-            width: 80px;
-            height: 80px;
-            align-self: flex-end;
-            position: relative;
+        .dashChartCard.row-based {
             display: flex;
             align-items: center;
-            justify-content: center;
+            justify-content: space-around;
         }
 
-        .chartIcon {
+        .dashChartCard.column-based {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        /* Donut Chart */
+        .donutWrapper {
+            width: 100px;
+            height: 100px;
+            position: relative;
+        }
+
+        .donutCenter {
             position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
             font-size: 20px;
-            color: #9ca3af;
-            font-weight: 900;
+            font-weight: 800;
+            color: #111827;
+            line-height: 1;
         }
 
-        /* SVG Circular Chart */
-        .circular-chart {
-            display: block;
-            margin: 0 auto;
-            max-width: 100%;
-            max-height: 100%;
-        }
-
-        .circle-bg {
-            fill: none;
-            stroke: #f3f4f6;
-            stroke-width: 3.8;
-        }
-
-        .circle {
-            fill: none;
-            stroke-width: 2.8;
-            stroke-linecap: round;
-            animation: progress 1s ease-out forwards;
-        }
-
-        @keyframes progress {
-            0% {
-                stroke-dasharray: 0 100;
-            }
-        }
-
-        .circular-chart.blue .circle {
-            stroke: #3b82f6;
-        }
-
-        .circular-chart.pink .circle {
+        .circular-chart.dual .circle-bg {
             stroke: #ec4899;
+            stroke-width: 4;
         }
 
-        /* Mobile overrides to hide Sidebar/Nav and Topbar */
-        @media (max-width: 980px) {
-            .app {
-                display: block;
-            }
+        .circular-chart.dual .circle {
+            stroke: #3b82f6;
+            stroke-width: 4;
+            stroke-linecap: butt;
+        }
 
-            .sidebar {
-                display: none;
-                /* User requested: Não teremos mais um menu */
-            }
+        .chartLegend {
+            font-size: 13px;
+            color: #4b5563;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
 
-            .topbar {
-                display: none;
-            }
+        .dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
 
-            .content {
-                padding: 0 20px 20px;
-                /* Remove top padding since Header has negative margin */
-            }
+        .dot.blue {
+            background: #3b82f6;
+        }
 
-            /* Adjust TopBar fake logic from previous step, or remove it */
-            .main:before {
-                display: none;
-                /* Remove fake Bovichain header, using Dash Header instead */
-            }
+        .dot.pink {
+            background: #ec4899;
+        }
+
+        /* List Items (Cat, Lote) */
+        .statRow {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f9fafb;
+        }
+
+        .statRow:last-child {
+            border-bottom: none;
+        }
+
+        .statLabel {
+            font-size: 13px;
+            font-weight: 500;
+            color: #374151;
+        }
+
+        .statVal {
+            font-size: 13px;
+            font-weight: 700;
+            color: #111827;
+        }
+
+        .statBarBg {
+            height: 6px;
+            background: #f3f4f6;
+            border-radius: 3px;
+            margin-top: 4px;
+            overflow: hidden;
+        }
+
+        .statBarFill {
+            height: 100%;
+            background: #edff77;
+            border-radius: 3px;
+        }
+
+        .statSub {
+            font-size: 11px;
+            color: #9ca3af;
         }
     </style>
 
