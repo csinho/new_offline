@@ -184,11 +184,19 @@
             font-weight: 700;
             cursor: pointer;
             box-shadow: 0 10px 20px rgba(17, 24, 39, .05);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
         }
 
         .btn.primary {
             background: var(--btn);
             color: var(--btnText);
+        }
+
+        .btn.ghost {
+            background: #fff;
         }
 
         .toggleRow {
@@ -202,6 +210,10 @@
             font-weight: 700;
             font-size: 13px;
             color: var(--text);
+        }
+
+        .hidden {
+            display: none !important;
         }
 
         /* Switch */
@@ -424,6 +436,7 @@
             color: #6b7280;
             cursor: pointer;
             position: relative;
+            user-select: none;
         }
 
         .tab.active {
@@ -593,6 +606,166 @@
             font-size: 12px;
             opacity: .75;
         }
+
+        /* ==========================================================
+           NOVO: MÓDULO ANIMAIS (LISTA + FORM)
+        ========================================================== */
+
+        /* header da lista (igual ao print) */
+        .listHeader {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            margin-bottom: 14px;
+        }
+
+        .listHeaderLeft h2 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 900;
+        }
+
+        .listHeaderLeft p {
+            margin: 6px 0 0;
+            color: var(--muted);
+            font-weight: 700;
+        }
+
+        .listHeaderRight {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .searchWrap {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #fff;
+            border: 1px solid rgba(0, 0, 0, .08);
+            border-radius: 999px;
+            padding: 10px 14px;
+            min-width: min(560px, 70vw);
+            box-shadow: 0 10px 20px rgba(17, 24, 39, .04);
+        }
+
+        .searchWrap span {
+            opacity: .6;
+            font-weight: 900;
+        }
+
+        .searchWrap input {
+            border: 0;
+            outline: none;
+            height: auto;
+            padding: 0;
+            width: 100%;
+        }
+
+        .listTools {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+
+        .countPill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #111827;
+            color: #fff;
+            border-radius: 999px;
+            padding: 6px 10px;
+            font-size: 12px;
+            font-weight: 900;
+        }
+
+        .toolRow {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .toolRow label {
+            font-size: 12px;
+            color: var(--muted);
+            font-weight: 900;
+        }
+
+        .toolRow select {
+            height: 38px;
+            border-radius: 999px;
+        }
+
+        .tableWrap {
+            overflow: auto;
+            border-top: 1px solid rgba(0, 0, 0, .06);
+            margin-top: 10px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            min-width: 860px;
+        }
+
+        thead th {
+            background: #f3f4f6;
+            font-size: 13px;
+            font-weight: 900;
+            text-align: left;
+            padding: 12px 12px;
+            border-bottom: 1px solid rgba(0, 0, 0, .06);
+        }
+
+        tbody td {
+            padding: 12px 12px;
+            border-bottom: 1px solid rgba(0, 0, 0, .06);
+            font-weight: 700;
+            font-size: 14px;
+        }
+
+        tbody tr:hover td {
+            background: rgba(0, 0, 0, .02);
+            cursor: pointer;
+        }
+
+        .statusBadge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 6px 12px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 900;
+            background: rgba(22, 163, 74, .16);
+            color: rgba(22, 163, 74, .95);
+            border: 1px solid rgba(22, 163, 74, .25);
+        }
+
+        .statusBadge.off {
+            background: rgba(239, 68, 68, .14);
+            color: rgba(239, 68, 68, .95);
+            border-color: rgba(239, 68, 68, .25);
+        }
+
+        /* área do form (aba 2) */
+        .moduleSection {
+            display: block;
+        }
+
+        .moduleSection[hidden] {
+            display: none !important;
+        }
     </style>
 </head>
 
@@ -622,13 +795,14 @@
             </div>
 
             <section class="content">
-                <div class="pageHead">
+                <!-- HEADER DO FORM (fica visível quando estiver no modo criar/editar) -->
+                <div class="pageHead" id="pageHead">
                     <div>
                         <h1 class="pageTitle" id="pageTitle">Informações do animal</h1>
                         <p class="pageSub" id="pageSub">Cadastre ou atualize aqui</p>
                     </div>
 
-                    <div class="actions">
+                    <div class="actions" id="pageActions">
                         <button class="btn" id="btnBioId">BioID</button>
                         <button class="btn primary" id="btnSave">Salvar</button>
 
@@ -642,7 +816,304 @@
                     </div>
                 </div>
 
-                <div id="moduleView"></div>
+                <div id="moduleView">
+
+                    <!-- ==========================================================
+                         MÓDULO: ANIMAIS (LISTA)
+                         - listagem + busca + novo animal
+                    =========================================================== -->
+                    <section class="moduleSection" id="modAnimaisList">
+                        <div class="listHeader">
+                            <div class="listHeaderLeft">
+                                <h2>Animais</h2>
+                                <p>Gerencie todos os seus animais com facilidade</p>
+                            </div>
+
+                            <div class="listHeaderRight">
+                                <div class="searchWrap">
+                                    <span>🔍</span>
+                                    <input id="animalSearch" type="text" placeholder="Buscar por brinco ou nome..."
+                                        autocomplete="off" />
+                                </div>
+
+                                <button class="btn primary" id="btnNovoAnimal">
+                                    🐮 Novo Animal
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="listTools">
+                                <div class="countPill" id="animalCountPill">0 Animais</div>
+
+                                <div class="toolRow">
+                                    <label for="animalShow">Mostrar animais mortos:</label>
+                                    <select id="animalShow">
+                                        <option value="ativos" selected>não</option>
+                                        <option value="todos">todos</option>
+                                        <option value="mortos">sim</option>
+                                    </select>
+
+                                    <button class="btn ghost" id="btnConfigCols">▦ Configurar Colunas</button>
+                                </div>
+                            </div>
+
+                            <div class="tableWrap">
+                                <table id="animalTable">
+                                    <thead>
+                                        <tr>
+                                            <th style="width:44px;"><input type="checkbox" id="animalSelectAll" />
+                                            </th>
+                                            <th>Brinco</th>
+                                            <th>Sexo</th>
+                                            <th>Raça</th>
+                                            <th>Peso</th>
+                                            <th>Etiquetas</th>
+                                            <th style="width:130px;">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="animalTbody">
+                                        <!-- linhas via JS -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- ==========================================================
+                         MÓDULO: ANIMAIS (FORM)
+                         - formulário de criar/editar (mesma tela)
+                    =========================================================== -->
+                    <section class="moduleSection" id="modAnimaisForm" hidden>
+
+                        <div class="card">
+                            <div class="grid" style="align-items:start;">
+                                <!-- Fazenda selecionada -->
+                                <div class="field" style="grid-column: span 7;">
+                                    <div class="dashedBox" style="margin-bottom:0;">
+                                        <div class="dashedLeft">
+                                            <div class="farmIcon">🏡</div>
+                                            <div class="dashedText">
+                                                <div class="k">Fazenda Selecionada</div>
+                                                <div class="v" id="fazendaSelecionadaNome">—</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Proprietário -->
+                                <div class="field" style="grid-column: span 5;">
+                                    <div class="label">Proprietário <span class="req">*</span></div>
+                                    <select id="animalOwnerSelect"></select>
+                                </div>
+                            </div>
+
+                            <!-- Tipo de entrada -->
+                            <div class="field" style="margin-top:14px;">
+                                <div class="label">Selecione o tipo de entrada <span class="req">*</span></div>
+                                <div class="chips" id="tipoEntradaChips">
+                                    <div class="chip" data-value="Nascimento"><span class="box">✓</span>Nascimento</div>
+                                    <div class="chip active" data-value="Compra"><span class="box">✓</span>Compra</div>
+                                    <div class="chip" data-value="Doação"><span class="box">✓</span>Doação</div>
+                                    <div class="chip" data-value="Empréstimo"><span class="box">✓</span>Empréstimo</div>
+                                    <div class="chip" data-value="Ajuste inventário"><span class="box">✓</span>Ajuste
+                                        inventário</div>
+                                </div>
+                            </div>
+
+                            <!-- Linha principal -->
+                            <div class="grid" style="margin-top:6px;">
+                                <div class="field" style="grid-column: span 2;">
+                                    <div class="label">Tipo de animal <span class="req">*</span></div>
+                                    <select id="animalTipo">
+                                        <option value="Físico" selected>Físico</option>
+                                        <option value="Genealogia">Genealogia</option>
+                                    </select>
+                                </div>
+
+                                <div class="field" style="grid-column: span 2;">
+                                    <div class="label">Brinco padrão <span class="req">*</span></div>
+                                    <input id="animalBrinco" placeholder="ID" />
+                                </div>
+
+                                <div class="field" style="grid-column: span 2;">
+                                    <div class="label">Sexo <span class="req">*</span></div>
+                                    <select id="animalSexo">
+                                        <option value="" selected disabled>Sexo</option>
+                                        <option value="M">Macho</option>
+                                        <option value="F">Fêmea</option>
+                                    </select>
+                                </div>
+
+                                <div class="field" style="grid-column: span 2;">
+                                    <div class="label">Peso atual em kg</div>
+                                    <input id="animalPesoAtual" type="number" min="0" step="0.1" value="0" />
+                                </div>
+
+                                <div class="field" style="grid-column: span 2;">
+                                    <div class="label">Data de nascimento <span class="req">*</span></div>
+                                    <input id="animalNasc" type="date" />
+                                </div>
+
+                                <div class="field" style="grid-column: span 2;">
+                                    <div class="label">Categoria <span class="req">*</span></div>
+                                    <select id="animalCategoria">
+                                        <option value="" selected disabled>Categoria</option>
+                                        <option value="Bezerro">Bezerro</option>
+                                        <option value="Garrote">Garrote</option>
+                                        <option value="Touro">Touro</option>
+                                        <option value="Bezerra">Bezerra</option>
+                                        <option value="Novilha">Novilha</option>
+                                        <option value="Vaca">Vaca</option>
+                                    </select>
+                                </div>
+
+                                <div class="field" style="grid-column: span 12;">
+                                    <div class="label">Raça <span class="req">*</span></div>
+                                    <input id="animalRaca" placeholder="Raça" />
+                                </div>
+                            </div>
+
+                            <!-- Tabs -->
+                            <div class="tabs" style="margin-top:14px;">
+                                <div class="tab active" data-tab="dados">Dados adicionais</div>
+                                <div class="tab" data-tab="genealogia">Genealogia</div>
+                                <div class="tab" data-tab="aquisicao">Aquisição</div>
+                            </div>
+
+                            <!-- Painel: Dados adicionais -->
+                            <div class="tabPanel active" id="tab-dados">
+                                <div class="grid">
+                                    <div class="field" style="grid-column: span 4;">
+                                        <div class="label">Nome completo</div>
+                                        <input id="animalNome" placeholder="Brinco de manejo" />
+                                    </div>
+                                    <div class="field" style="grid-column: span 4;">
+                                        <div class="label">Finalidade</div>
+                                        <select id="animalFinalidade">
+                                            <option value="" selected>Finalidade</option>
+                                            <option value="Corte">Corte</option>
+                                            <option value="Leite">Leite</option>
+                                            <option value="Reprodução">Reprodução</option>
+                                        </select>
+                                    </div>
+                                    <div class="field" style="grid-column: span 4;">
+                                        <div class="label">Peso no nascimento em kg</div>
+                                        <input id="animalPesoNasc" type="number" min="0" step="0.1" value="0" />
+                                    </div>
+
+                                    <div class="field" style="grid-column: span 4;">
+                                        <div class="label">SISBOV</div>
+                                        <input id="animalSisbov" placeholder="SISBOV" />
+                                    </div>
+                                    <div class="field" style="grid-column: span 4;">
+                                        <div class="label">Identificação eletrônica</div>
+                                        <input id="animalEletronica" placeholder="Identificação eletrônica" />
+                                    </div>
+                                    <div class="field" style="grid-column: span 4;">
+                                        <div class="label">RGD</div>
+                                        <input id="animalRgd" placeholder="RGD" />
+                                    </div>
+
+                                    <div class="field" style="grid-column: span 4;">
+                                        <div class="label">RGN</div>
+                                        <input id="animalRgn" placeholder="RGN" />
+                                    </div>
+                                    <div class="field" style="grid-column: span 4;">
+                                        <div class="label">Lote</div>
+                                        <select id="animalLote">
+                                            <option value="">Lote</option>
+                                        </select>
+                                    </div>
+                                    <div class="field" style="grid-column: span 4;">
+                                        <div class="label">Pasto</div>
+                                        <select id="animalPasto">
+                                            <option value="">Pasto</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="field" style="grid-column: span 12;">
+                                        <div class="label">Etiquetas</div>
+                                        <input id="animalEtiquetas" placeholder="Etiqueta" />
+                                    </div>
+
+                                    <div class="field" style="grid-column: span 12;">
+                                        <div class="label">Observações</div>
+                                        <textarea id="animalObs"
+                                            placeholder="Digite aqui suas observações sobre o animal..."></textarea>
+                                    </div>
+                                </div>
+
+                                <div class="footerSave">
+                                    <button class="btn" id="btnVoltarLista">Voltar</button>
+                                </div>
+                            </div>
+
+                            <!-- Painel: Genealogia -->
+                            <div class="tabPanel" id="tab-genealogia">
+                                <div class="togglePills">
+                                    <div class="pill">
+                                        <span>Mãe Cadastrada</span>
+                                        <label class="switch">
+                                            <input type="checkbox" id="maeCad" />
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
+
+                                    <div class="pill">
+                                        <span>Pai Cadastrado</span>
+                                        <label class="switch">
+                                            <input type="checkbox" id="paiCad" />
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="grid">
+                                    <div class="field" style="grid-column: span 6;">
+                                        <div class="label">Mãe (vinculado)</div>
+                                        <input id="animalMae" placeholder="Digite o nome para pesquisar" />
+                                    </div>
+                                    <div class="field" style="grid-column: span 6;">
+                                        <div class="label">Pai (vinculado)</div>
+                                        <input id="animalPai" placeholder="Digite o nome para pesquisar" />
+                                    </div>
+                                </div>
+
+                                <div class="footerSave">
+                                    <button class="btn" id="btnVoltarLista2">Voltar</button>
+                                </div>
+                            </div>
+
+                            <!-- Painel: Aquisição -->
+                            <div class="tabPanel" id="tab-aquisicao">
+                                <div class="grid">
+                                    <div class="field" style="grid-column: span 6;">
+                                        <div class="label">Nº GTA</div>
+                                        <input id="animalGta" placeholder="12345" />
+                                    </div>
+                                    <div class="field" style="grid-column: span 6;">
+                                        <div class="label">Estado (UF)</div>
+                                        <select id="animalUf">
+                                            <option value="BA">BA</option>
+                                            <option value="SP">SP</option>
+                                            <option value="MG">MG</option>
+                                            <option value="GO">GO</option>
+                                            <option value="MT">MT</option>
+                                            <option value="MS">MS</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="footerSave">
+                                    <button class="btn" id="btnVoltarLista3">Voltar</button>
+                                </div>
+                            </div>
+
+                        </div>
+                    </section>
+
+                </div>
             </section>
         </main>
     </div>
@@ -658,7 +1129,6 @@
             <div class="bootHint" id="bootHint"></div>
         </div>
     </div>
-
 
     <div class="toast" id="toast"></div>
 

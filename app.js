@@ -9,6 +9,10 @@ const state = {
   advanced: false,
   ctx: { fazendaId: "", ownerId: "" },
   bootstrapReady: false,
+
+  // NOVO: controle de view do módulo animais
+  animalView: "list", // "list" | "form"
+  animalEditingId: null, // _id do animal em edição (ou null = criando)
 };
 
 // ---------------- UI helpers ----------------
@@ -29,6 +33,7 @@ function toCloneable(obj) {
 
 function toast(msg) {
   const wrap = $("#toast");
+  if (!wrap) return;
   const el = document.createElement("div");
   el.textContent = msg;
   wrap.appendChild(el);
@@ -82,13 +87,26 @@ function prettifyKey(k) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function setPageHeadVisible(visible) {
+  const head = $("#pageHead");
+  if (!head) return;
+  head.classList.toggle("hidden", !visible);
+}
+
+function setPageHeadTexts(title, sub) {
+  const t = $("#pageTitle");
+  const s = $("#pageSub");
+  if (t) t.textContent = title || "";
+  if (s) s.textContent = sub || "";
+}
+
 // ---------------- URL / modules ----------------
 const MODULE_CATALOG = {
   animal_create: {
     key: "animal_create",
     label: "Animais",
-    pageTitle: "Informações do animal",
-    pageSub: "Cadastre ou atualize aqui",
+    pageTitle: "Animais",
+    pageSub: "Gerencie todos os seus animais com facilidade",
     storageKey: "animais", // store do IDB
   },
   vaccine: {
@@ -103,7 +121,7 @@ const MODULE_CATALOG = {
 function parseFromURL() {
   const u = new URL(location.href);
   const rawModules = (u.searchParams.get("modules") || "").trim();
-  const modules = rawModules.split(",").map(s => s.trim()).filter(Boolean);
+  const modules = rawModules.split(",").map((s) => s.trim()).filter(Boolean);
   const fazendaId = (u.searchParams.get("fazenda") || "").trim();
   const ownerId = (u.searchParams.get("owner") || "").trim();
 
@@ -132,6 +150,59 @@ function getEndpointUrl({ fazendaId, ownerId }) {
   u.searchParams.set("fazenda", fazendaId);
   u.searchParams.set("owner", ownerId);
   return u.toString();
+}
+
+/**
+ * Sanitiza números vindos estranhos:
+ * - null/undefined/"": -> 0 (quando for campo numérico)
+ * - "22,5" -> 22.5
+ * - NaN -> 0
+ */
+function toNumberOrZero(v) {
+  if (v === null || v === undefined) return 0;
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  const s = String(v).trim();
+  if (!s) return 0;
+  const n = Number(s.replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function normalizeAnimal(a = {}) {
+  const out = { ...a };
+  // garante ids/strings
+  out._id = String(out._id || "");
+  out.brinco_padrao = String(out.brinco_padrao || "");
+  out.nome_completo = String(out.nome_completo || "");
+  out.raca = String(out.raca || "");
+  out.sexo = String(out.sexo || "");
+  out.categoria = String(out.categoria || "");
+  out.data_nascimento = out.data_nascimento ? String(out.data_nascimento) : "";
+
+  // flags
+  out.deleted = !!out.deleted;
+  out.ativo = out.ativo !== false;
+  out.morto = !!out.morto;
+
+  // números
+  out.peso_atual_kg = toNumberOrZero(out.peso_atual_kg);
+  out.peso_nascimento = toNumberOrZero(out.peso_nascimento);
+
+  // listas
+  if (!Array.isArray(out.list_lotes)) out.list_lotes = [];
+  return out;
+}
+
+function normalizeLote(l = {}) {
+  const out = { ...l };
+  out._id = String(out._id || "");
+  out.nome_lote = String(out.nome_lote || "");
+  out.status = String(out.status || "");
+  out.categoria_lote = String(out.categoria_lote || "");
+  out.tipo_lote = String(out.tipo_lote || "");
+
+  out.qtd_animais = toNumberOrZero(out.qtd_animais);
+  out.peso_medio = toNumberOrZero(out.peso_medio);
+  return out;
 }
 
 async function bootstrapData() {
@@ -203,8 +274,14 @@ async function bootstrapData() {
     // ✅ Sanitiza/clone-safe (evita DataCloneError / undefined etc)
     const fazenda = toCloneable(fazendaRaw);
     const owner = toCloneable(ownerRaw);
-    const animais = toCloneable(Array.isArray(animaisRaw) ? animaisRaw : []);
-    const lotes = toCloneable(Array.isArray(lotesRaw) ? lotesRaw : []);
+
+    // normaliza listas
+    const animais = toCloneable(
+      (Array.isArray(animaisRaw) ? animaisRaw : []).map(normalizeAnimal)
+    );
+    const lotes = toCloneable(
+      (Array.isArray(lotesRaw) ? lotesRaw : []).map(normalizeLote)
+    );
     const vacinacao = toCloneable(Array.isArray(vacinacaoRaw) ? vacinacaoRaw : []);
     const proprietarios = toCloneable(Array.isArray(proprietariosRaw) ? proprietariosRaw : []);
 
@@ -263,10 +340,10 @@ async function bootstrapData() {
   }
 }
 
-
 // ---------------- Sidebar ----------------
 function renderSidebar() {
   const nav = $("#moduleNav");
+  if (!nav) return;
   nav.innerHTML = "";
 
   for (const m of state.modules) {
@@ -275,6 +352,13 @@ function renderSidebar() {
     item.innerHTML = `<span class="navIcon"></span><span>${escapeHtml(m.label)}</span>`;
     item.onclick = async () => {
       state.activeKey = m.key;
+
+      // reset view do módulo animais ao trocar de módulo
+      if (m.key === "animal_create") {
+        state.animalView = "list";
+        state.animalEditingId = null;
+      }
+
       renderSidebar();
       await renderActiveModule();
     };
@@ -300,11 +384,12 @@ function writeForm(root, data) {
   qAll(root, "[data-key]").forEach((el) => {
     const k = el.dataset.key;
     if (!k) return;
+
+    if (!(k in (data || {}))) return;
     const v = data?.[k];
-    if (v == null) return;
 
     if (el.type === "checkbox") el.checked = v === "1" || v === true;
-    else el.value = String(v);
+    else el.value = String(v ?? "");
   });
 }
 
@@ -326,417 +411,671 @@ function monthDiff(fromDate, toDate) {
   return Math.max(0, total);
 }
 
-// ---------------- Render: animal_create ----------------
-async function renderAnimalCreate() {
-  const mount = $("#moduleView");
-  mount.innerHTML = "";
+function isoToDateInput(iso) {
+  if (!iso) return "";
+  // se já for yyyy-mm-dd, retorna
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
 
-  // carrega dados cacheados
+function dateInputToISO(dateStr) {
+  if (!dateStr) return "";
+  // salva como ISO Z meia-noite local
+  const d = new Date(dateStr + "T03:00:00.000Z"); // mantém seu padrão BR (-03)
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString();
+}
+
+// ---------------- Animal module: LIST + SEARCH ----------------
+
+function normText(v) {
+  return String(v ?? "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function normBrinco(v) {
+  return normText(v);
+}
+
+function renderSex(v) {
+  if (v === "M") return "M ♂";
+  if (v === "F") return "F ♀";
+  return "—";
+}
+
+function fmtKg(v) {
+  const n = toNumberOrZero(v);
+  // sem Intl pra não “quebrar” em ambientes ruins
+  const s = String(n).replace(".", ",");
+  return `${s} KG`;
+}
+
+function animalDisplayName(a) {
+  const name = String(a?.nome_completo || "").trim();
+  if (name) return name;
+  const br = String(a?.brinco_padrao || "").trim();
+  return br ? `Animal ${br}` : "Animal";
+}
+
+async function renderAnimalList() {
+  // HTML já está no index: #modAnimaisList e #modAnimaisForm
+  const secList = $("#modAnimaisList");
+  const secForm = $("#modAnimaisForm");
+  if (!secList || !secForm) {
+    // fallback caso alguém use HTML antigo
+    const mount = $("#moduleView");
+    if (mount) mount.innerHTML = `
+      <div class="card">
+        <b>HTML do módulo Animais não encontrado</b>
+        <div style="color:#6b7280;margin-top:6px;">
+          Confirme se você está usando o HTML atualizado com #modAnimaisList e #modAnimaisForm.
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  // lista on / form off
+  secList.hidden = false;
+  secForm.hidden = true;
+
+  // header do form escondido quando na lista
+  setPageHeadVisible(false);
+
+  // dados do cache
   const fazenda = await idbGet("fazenda", "current");
-  const proprietarios = (await idbGet("fazenda", "list_proprietarios")) || [];
-  const lotes = (await idbGet("lotes", "list")) || [];
-
-  // labels
   const farmName = fazenda?.name || "—";
-  $("#farmCurrent").textContent = farmName;
+  const farmLabel = $("#farmCurrent");
+  if (farmLabel) farmLabel.textContent = farmName;
 
-  // draft
-  const draftKey = `draft:animal_create:${state.ctx.fazendaId}:${state.ctx.ownerId}`;
-  const draft = (await idbGet("drafts", draftKey)) || {};
+  const all = (await idbGet("animais", "list")) || [];
+  const showSel = $("#animalShow");
+  const searchEl = $("#animalSearch");
+  const tbody = $("#animalTbody");
+  const countPill = $("#animalCountPill");
 
-  const card = document.createElement("div");
-  card.className = "card";
+  if (!tbody) return;
 
-  // monta options de proprietários
-  const ownerOptions = [
-    `<option value="">Selecione…</option>`,
-    ...proprietarios.map(p => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`)
-  ].join("");
+  const showMode = showSel ? showSel.value : "ativos";
+  const q = normText(searchEl ? searchEl.value : "");
 
-  // monta options de lotes
-  const loteOptions = [
-    `<option value="">Lote</option>`,
-    ...lotes.map(l => `<option value="${escapeHtml(l._id)}">${escapeHtml(l.nome_lote || "—")}</option>`)
-  ].join("");
+  let list = Array.isArray(all) ? all.slice() : [];
+  // normalize local (garante robustez)
+  list = list.map(normalizeAnimal);
 
-  card.innerHTML = `
-    <div class="dashedBox">
-      <div class="dashedLeft">
-        <div class="farmIcon">⌂</div>
-        <div class="dashedText">
-          <div class="k">Fazenda Selecionada</div>
-          <div class="v" id="farmSelectedLabel">${escapeHtml(farmName)}</div>
-        </div>
-      </div>
+  // filtro mortos
+  if (showMode === "ativos") {
+    list = list.filter(a => !a.morto && a.ativo && !a.deleted);
+  } else if (showMode === "mortos") {
+    list = list.filter(a => a.morto && !a.deleted);
+  } else {
+    // todos (exceto deleted)
+    list = list.filter(a => !a.deleted);
+  }
 
-      <div class="field" style="max-width:280px; width:100%;">
-        <div class="label">Proprietário<span class="req">*</span></div>
-        <select data-key="owner" data-required="1">${ownerOptions}</select>
-      </div>
-    </div>
-
-    <div class="label" style="margin-top:6px;">Selecione o tipo de entrada<span class="req">*</span></div>
-    <div class="chips" id="entryChips"></div>
-    <input type="hidden" data-key="entry_type" data-required="1" />
-
-    <div class="grid" style="margin-top:10px;">
-      <div class="field" style="grid-column: span 2;">
-        <div class="label">Tipo de animal<span class="req">*</span></div>
-        <select data-key="animal_type" data-required="1">
-          <option value="">Selecione…</option>
-          <option value="fisico">Físico</option>
-          <option value="genealogia">Genealogia</option>
-        </select>
-      </div>
-
-      <div class="field" style="grid-column: span 2;">
-        <div class="label">Brinco padrão<span class="req">*</span></div>
-        <input data-key="brinco_padrao" data-required="1" placeholder="ID" />
-      </div>
-
-      <div class="field" style="grid-column: span 2;">
-        <div class="label">Sexo<span class="req">*</span></div>
-        <select data-key="sexo" data-required="1">
-          <option value="">Sexo</option>
-          <option value="M">Macho</option>
-          <option value="F">Fêmea</option>
-        </select>
-      </div>
-
-      <div class="field" style="grid-column: span 2;">
-        <div class="label">Peso atual em kg</div>
-        <input data-key="peso_atual_kg" type="number" placeholder="0" />
-      </div>
-
-      <div class="field" style="grid-column: span 2;">
-        <div class="label">Data de nascimento<span class="req">*</span></div>
-        <input data-key="data_nascimento" type="date" data-required="1" />
-      </div>
-
-      <div class="field" style="grid-column: span 1;">
-        <div class="label">Idade<span class="req">*</span></div>
-        <input data-key="idade" class="disabled" placeholder="0 mês" disabled />
-      </div>
-
-      <div class="field" style="grid-column: span 1;">
-        <div class="label">Categoria<span class="req">*</span></div>
-        <select data-key="categoria" data-required="1">
-          <option value="">Categoria</option>
-          <option value="Bezerro">Bezerro</option>
-          <option value="Garrote">Garrote</option>
-          <option value="Touro">Touro</option>
-          <option value="Bezerra">Bezerra</option>
-          <option value="Vaca">Vaca</option>
-        </select>
-      </div>
-
-      <div class="field" style="grid-column: span 12;">
-        <div class="label">Raça<span class="req">*</span></div>
-        <input data-key="raca" data-required="1" placeholder="Raça" />
-      </div>
-    </div>
-  `;
-  mount.appendChild(card);
-
-  const card2 = document.createElement("div");
-  card2.className = "card";
-  card2.innerHTML = `
-    <div class="tabs">
-      <div class="tab active" data-tab="extra">Dados adicionais</div>
-      <div class="tab" data-tab="gen">Genealogia</div>
-      <div class="tab" data-tab="acq">Aquisição</div>
-    </div>
-
-    <div class="tabPanel active" data-panel="extra">
-      <div class="grid">
-        <div class="field" style="grid-column: span 4;">
-          <div class="label">Nome completo</div>
-          <input data-key="nome_completo" placeholder="Brinco de manejo" />
-        </div>
-
-        <div class="field" style="grid-column: span 4;">
-          <div class="label">Finalidade</div>
-          <select data-key="finalidade">
-            <option value="">Finalidade</option>
-            <option value="Corte">Corte</option>
-            <option value="Leite">Leite</option>
-            <option value="Reprodução">Reprodução</option>
-          </select>
-        </div>
-
-        <div class="field" style="grid-column: span 4;">
-          <div class="label">Peso no nascimento em kg</div>
-          <input data-key="peso_nascimento" type="number" placeholder="0" />
-        </div>
-
-        <div class="field adv" style="grid-column: span 4;">
-          <div class="label">SISBOV</div>
-          <input data-key="sisbov" placeholder="SISBOV" />
-        </div>
-
-        <div class="field adv" style="grid-column: span 4;">
-          <div class="label">Identificação eletrônica</div>
-          <input data-key="identificacao_eletronica" placeholder="Identificação eletrônica" />
-        </div>
-
-        <div class="field adv" style="grid-column: span 4;">
-          <div class="label">RGD</div>
-          <input data-key="rgd" placeholder="RGD" />
-        </div>
-
-        <div class="field adv" style="grid-column: span 4;">
-          <div class="label">RGN</div>
-          <input data-key="rgn" placeholder="RGN" />
-        </div>
-
-        <div class="field adv" style="grid-column: span 4;">
-          <div class="label">Lote</div>
-          <select data-key="lote">${loteOptions}</select>
-        </div>
-
-        <div class="field adv" style="grid-column: span 4;">
-          <div class="label">Pasto</div>
-          <select data-key="pasto">
-            <option value="">Pasto</option>
-            <option value="Pasto 1">Pasto 1</option>
-            <option value="Pasto 2">Pasto 2</option>
-          </select>
-        </div>
-
-        <div class="field adv" style="grid-column: span 12;">
-          <div class="label">Etiquetas</div>
-          <input data-key="etiquetas" placeholder="Etiqueta" />
-        </div>
-
-        <div class="field" style="grid-column: span 12;">
-          <div class="label">Observações</div>
-          <textarea data-key="observacoes" placeholder="Digite aqui suas observações sobre o animal..."></textarea>
-        </div>
-      </div>
-
-      <div class="footerSave">
-        <button class="btn primary" id="btnSaveBottom">Salvar</button>
-      </div>
-    </div>
-
-    <div class="tabPanel" data-panel="gen">
-      <div class="togglePills">
-        <div class="pill">
-          <span>Mãe Cadastrada</span>
-          <label class="switch">
-            <input type="checkbox" data-key="mae_cadastrada" />
-            <span class="slider"></span>
-          </label>
-        </div>
-
-        <div class="pill">
-          <span>Pai Cadastrado</span>
-          <label class="switch">
-            <input type="checkbox" data-key="pai_cadastrado" />
-            <span class="slider"></span>
-          </label>
-        </div>
-      </div>
-
-      <div class="grid">
-        <div class="field" style="grid-column: span 6;">
-          <div class="label">Mãe (vinculado)</div>
-          <input data-key="mae_vinculo" placeholder="Digite o nome para pesquisar" />
-        </div>
-
-        <div class="field" style="grid-column: span 6;">
-          <div class="label">Pai (vinculado)</div>
-          <input data-key="pai_vinculo" placeholder="Digite o nome para pesquisar" />
-        </div>
-      </div>
-
-      <div class="footerSave">
-        <button class="btn primary" id="btnSaveBottom2">Salvar</button>
-      </div>
-    </div>
-
-    <div class="tabPanel" data-panel="acq">
-      <div class="grid">
-        <div class="field" style="grid-column: span 8;">
-          <div class="label">Nº GTA</div>
-          <input data-key="gta" placeholder="12345" />
-        </div>
-
-        <div class="field" style="grid-column: span 4;">
-          <div class="label">Estado (UF)</div>
-          <select data-key="uf">
-            <option value="">Selecione…</option>
-            <option value="BA">BA</option>
-            <option value="GO">GO</option>
-            <option value="MG">MG</option>
-            <option value="MT">MT</option>
-            <option value="SP">SP</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="footerSave">
-        <button class="btn primary" id="btnSaveBottom3">Salvar</button>
-      </div>
-    </div>
-  `;
-  mount.appendChild(card2);
-
-  // Tipo de entrada (apenas 1 — como você confirmou)
-  const chipWrap = card.querySelector("#entryChips");
-  const hiddenEntry = card.querySelector("[data-key='entry_type']");
-
-  const entryOptions = [
-    { key: "Nascimento", label: "Nascimento" },
-    { key: "Compra", label: "Compra" },
-    { key: "Doação", label: "Doação" },
-    { key: "Empréstimo", label: "Empréstimo" },
-    { key: "Ajuste inventário", label: "Ajuste inventário" },
-  ];
-
-  function setActiveChip(val) {
-    hiddenEntry.value = val || "";
-    chipWrap.querySelectorAll(".chip").forEach((c) => {
-      c.classList.toggle("active", c.dataset.value === val);
-      const box = c.querySelector(".box");
-      if (box) box.textContent = c.dataset.value === val ? "✓" : "";
+  // search por brinco ou nome
+  if (q) {
+    list = list.filter(a => {
+      const br = normText(a?.brinco_padrao);
+      const nm = normText(a?.nome_completo);
+      return br.includes(q) || nm.includes(q);
     });
   }
 
-  for (const opt of entryOptions) {
-    const chip = document.createElement("div");
-    chip.className = "chip";
-    chip.dataset.value = opt.key;
-    chip.innerHTML = `<span class="box"></span><span>${escapeHtml(opt.label)}</span>`;
-    chip.onclick = () => setActiveChip(opt.key);
-    chipWrap.appendChild(chip);
-  }
-
-  // Tabs internas
-  function setTab(tabKey) {
-    card2.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === tabKey));
-    card2.querySelectorAll(".tabPanel").forEach((p) => p.classList.toggle("active", p.dataset.panel === tabKey));
-  }
-  card2.querySelectorAll(".tab").forEach((t) => {
-    t.onclick = () => setTab(t.dataset.tab);
+  // ordena por brinco (numérico se der)
+  list.sort((a, b) => {
+    const an = Number(String(a?.brinco_padrao || "").replace(/\D+/g, ""));
+    const bn = Number(String(b?.brinco_padrao || "").replace(/\D+/g, ""));
+    if (Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return an - bn;
+    return String(a?.brinco_padrao || "").localeCompare(String(b?.brinco_padrao || ""));
   });
 
-  // Toggle avançado
-  function applyAdvanced() {
-    card2.querySelectorAll(".adv").forEach((el) => {
-      el.style.display = state.advanced ? "" : "none";
+  if (countPill) {
+    const n = list.length;
+    countPill.textContent = `${n} ${n === 1 ? "Animal" : "Animais"}`;
+  }
+
+  // monta linhas
+  tbody.innerHTML = "";
+  for (const a of list) {
+    const tr = document.createElement("tr");
+    tr.dataset.id = a._id || "";
+
+    const statusOn = (a.ativo && !a.morto && !a.deleted);
+    const statusLabel = statusOn ? "Ativo" : (a.morto ? "Morto" : "Inativo");
+    const statusClass = statusOn ? "statusBadge" : "statusBadge off";
+
+    tr.innerHTML = `
+      <td style="width:44px;"><input type="checkbox" class="rowChk" /></td>
+      <td>${escapeHtml(a?.brinco_padrao || "—")}</td>
+      <td>${escapeHtml(renderSex(a?.sexo))}</td>
+      <td>${escapeHtml(a?.raca || "—")}</td>
+      <td>${escapeHtml(fmtKg(a?.peso_atual_kg))}</td>
+      <td>${escapeHtml(a?.etiquetas || "")}</td>
+      <td><span class="${statusClass}">${escapeHtml(statusLabel)}</span></td>
+    `;
+
+    tr.onclick = async (e) => {
+      // não abrir edit ao clicar no checkbox
+      if (e?.target && (e.target.matches("input[type='checkbox']") || e.target.closest("input[type='checkbox']"))) {
+        return;
+      }
+      await openAnimalFormForEdit(a._id);
+    };
+
+    tbody.appendChild(tr);
+  }
+
+  // eventos (não duplicar)
+  if (searchEl && !searchEl.__bound) {
+    searchEl.__bound = true;
+    searchEl.addEventListener("input", async () => {
+      await renderAnimalList();
     });
   }
 
-  // idade auto
-  const birthEl = card.querySelector("[data-key='data_nascimento']");
-  const ageEl = card.querySelector("[data-key='idade']");
-  function updateAge() {
-    const v = birthEl.value;
-    if (!v) { ageEl.value = ""; return; }
-    const bd = new Date(v + "T00:00:00");
-    const m = monthDiff(bd, new Date());
-    ageEl.value = `${m} ${m === 1 ? "mês" : "meses"}`;
+  if (showSel && !showSel.__bound) {
+    showSel.__bound = true;
+    showSel.addEventListener("change", async () => {
+      await renderAnimalList();
+    });
   }
-  birthEl.addEventListener("input", updateAge);
 
-  // Root para draft
-  const root = document.createElement("div");
-  root.appendChild(card);
-  root.appendChild(card2);
-  state.activeFormRoot = root;
+  const btnNovo = $("#btnNovoAnimal");
+  if (btnNovo && !btnNovo.__bound) {
+    btnNovo.__bound = true;
+    btnNovo.onclick = async () => openAnimalFormForCreate();
+  }
 
-  // Defaults vindos da URL
-  if (!draft.owner && state.ctx.ownerId) draft.owner = state.ctx.ownerId;
+  const selAll = $("#animalSelectAll");
+  if (selAll && !selAll.__bound) {
+    selAll.__bound = true;
+    selAll.addEventListener("change", () => {
+      const checked = !!selAll.checked;
+      tbody.querySelectorAll(".rowChk").forEach(chk => {
+        chk.checked = checked;
+      });
+    });
+  }
 
-  // Aplica draft
-  writeForm(root, draft);
-  setActiveChip(draft.entry_type || "");
-  updateAge();
+  const btnCols = $("#btnConfigCols");
+  if (btnCols && !btnCols.__bound) {
+    btnCols.__bound = true;
+    btnCols.onclick = () => toast("Configurar colunas (placeholder)");
+  }
+}
 
-  // Advanced state
-  state.advanced = (await idbGet("meta", "animal_create_advanced")) === "1";
-  $("#toggleAdvanced").checked = state.advanced;
-  applyAdvanced();
+// ---------------- Animal module: FORM (CREATE / EDIT) ----------------
 
-  // Auto-save draft
-  root.addEventListener("input", async () => {
-    const data = readForm(root);
-    await idbSet("drafts", draftKey, data);
-  });
+function getAnimalFormRoot() {
+  // No HTML novo, os inputs têm ids (animalBrinco, animalSexo etc).
+  // Para reaproveitar seus helpers de data-key, vamos criar um "root virtual"
+  // que aponta pro #modAnimaisForm e usa um mapeamento para ler/gravar.
+  return $("#modAnimaisForm");
+}
 
-  // Save buttons
-  const handler = async () => saveOfflineAnimalCreate(draftKey);
-  $("#btnSave").onclick = handler;
-  card2.querySelector("#btnSaveBottom").onclick = handler;
-  card2.querySelector("#btnSaveBottom2").onclick = handler;
-  card2.querySelector("#btnSaveBottom3").onclick = handler;
+function readAnimalFormByIds() {
+  // coleta valores do HTML novo (ids)
+  const owner = $("#animalOwnerSelect")?.value ?? "";
+  const brinco = $("#animalBrinco")?.value ?? "";
+  const sexo = $("#animalSexo")?.value ?? "";
+  const pesoAtual = $("#animalPesoAtual")?.value ?? "0";
+  const nasc = $("#animalNasc")?.value ?? "";
+  const categoria = $("#animalCategoria")?.value ?? "";
+  const raca = $("#animalRaca")?.value ?? "";
 
-  // Toggle advanced
-  $("#toggleAdvanced").onchange = async (e) => {
-    state.advanced = !!e.target.checked;
-    await idbSet("meta", "animal_create_advanced", state.advanced ? "1" : "0");
-    applyAdvanced();
+  // extras
+  const nome = $("#animalNome")?.value ?? "";
+  const finalidade = $("#animalFinalidade")?.value ?? "";
+  const pesoNasc = $("#animalPesoNasc")?.value ?? "0";
+  const sisbov = $("#animalSisbov")?.value ?? "";
+  const eletronica = $("#animalEletronica")?.value ?? "";
+  const rgd = $("#animalRgd")?.value ?? "";
+  const rgn = $("#animalRgn")?.value ?? "";
+  const lote = $("#animalLote")?.value ?? "";
+  const pasto = $("#animalPasto")?.value ?? "";
+  const etiquetas = $("#animalEtiquetas")?.value ?? "";
+  const obs = $("#animalObs")?.value ?? "";
+
+  // genealogia
+  const maeCad = $("#maeCad")?.checked ? "1" : "0";
+  const paiCad = $("#paiCad")?.checked ? "1" : "0";
+  const mae = $("#animalMae")?.value ?? "";
+  const pai = $("#animalPai")?.value ?? "";
+
+  // aquisição
+  const gta = $("#animalGta")?.value ?? "";
+  const uf = $("#animalUf")?.value ?? "BA";
+
+  // tipo entrada (chip ativo)
+  const entry = document.querySelector("#tipoEntradaChips .chip.active")?.dataset?.value || "Compra";
+
+  return {
+    owner,
+    entry_type: entry,
+    animal_type: $("#animalTipo")?.value ?? "Físico",
+    brinco_padrao: brinco,
+    sexo,
+    peso_atual_kg: toNumberOrZero(pesoAtual),
+    data_nascimento: dateInputToISO(nasc),
+    categoria,
+    raca,
+
+    nome_completo: nome,
+    finalidade,
+    peso_nascimento: toNumberOrZero(pesoNasc),
+    sisbov,
+    identificacao_eletronica: eletronica,
+    rgd,
+    rgn,
+    lote,
+    pasto,
+    etiquetas,
+    observacoes: obs,
+
+    mae_cadastrada: maeCad,
+    pai_cadastrado: paiCad,
+    mae_vinculo: mae,
+    pai_vinculo: pai,
+
+    gta,
+    uf,
   };
 }
 
-// ---------------- Save offline animal_create (com validação de brinco) ----------------
-function normBrinco(v) {
-  return String(v ?? "").trim().toLowerCase();
+function writeAnimalFormByIds(data = {}) {
+  const fazendaNome = $("#fazendaSelecionadaNome");
+  if (fazendaNome) fazendaNome.textContent = ($("#farmCurrent")?.textContent || "—");
+
+  if ($("#animalOwnerSelect")) $("#animalOwnerSelect").value = String(data.owner || "");
+  if ($("#animalTipo")) $("#animalTipo").value = String(data.animal_type || "Físico");
+  if ($("#animalBrinco")) $("#animalBrinco").value = String(data.brinco_padrao || "");
+  if ($("#animalSexo")) $("#animalSexo").value = String(data.sexo || "");
+  if ($("#animalPesoAtual")) $("#animalPesoAtual").value = String(toNumberOrZero(data.peso_atual_kg));
+  if ($("#animalNasc")) $("#animalNasc").value = isoToDateInput(data.data_nascimento || "");
+  if ($("#animalCategoria")) $("#animalCategoria").value = String(data.categoria || "");
+  if ($("#animalRaca")) $("#animalRaca").value = String(data.raca || "");
+
+  if ($("#animalNome")) $("#animalNome").value = String(data.nome_completo || "");
+  if ($("#animalFinalidade")) $("#animalFinalidade").value = String(data.finalidade || "");
+  if ($("#animalPesoNasc")) $("#animalPesoNasc").value = String(toNumberOrZero(data.peso_nascimento));
+  if ($("#animalSisbov")) $("#animalSisbov").value = String(data.sisbov || "");
+  if ($("#animalEletronica")) $("#animalEletronica").value = String(data.identificacao_eletronica || "");
+  if ($("#animalRgd")) $("#animalRgd").value = String(data.rgd || "");
+  if ($("#animalRgn")) $("#animalRgn").value = String(data.rgn || "");
+  if ($("#animalLote")) $("#animalLote").value = String(data.lote || "");
+  if ($("#animalPasto")) $("#animalPasto").value = String(data.pasto || "");
+  if ($("#animalEtiquetas")) $("#animalEtiquetas").value = String(data.etiquetas || "");
+  if ($("#animalObs")) $("#animalObs").value = String(data.observacoes || "");
+
+  if ($("#maeCad")) $("#maeCad").checked = data.mae_cadastrada === "1" || data.mae_cadastrada === true;
+  if ($("#paiCad")) $("#paiCad").checked = data.pai_cadastrado === "1" || data.pai_cadastrada === true;
+  if ($("#animalMae")) $("#animalMae").value = String(data.mae_vinculo || "");
+  if ($("#animalPai")) $("#animalPai").value = String(data.pai_vinculo || "");
+
+  if ($("#animalGta")) $("#animalGta").value = String(data.gta || "");
+  if ($("#animalUf")) $("#animalUf").value = String(data.uf || "BA");
+
+  // chip seleção
+  const val = String(data.entry_type || "Compra");
+  const wrap = $("#tipoEntradaChips");
+  if (wrap) {
+    wrap.querySelectorAll(".chip").forEach((c) => {
+      const active = c.dataset.value === val;
+      c.classList.toggle("active", active);
+      const box = c.querySelector(".box");
+      if (box) box.textContent = active ? "✓" : "";
+    });
+  }
 }
 
-async function saveOfflineAnimalCreate(draftKey) {
-  if (!state.activeFormRoot) return;
+function validateAnimalFormRequired() {
+  // campos obrigatórios (igual seu layout)
+  const owner = $("#animalOwnerSelect")?.value ?? "";
+  const br = $("#animalBrinco")?.value ?? "";
+  const sx = $("#animalSexo")?.value ?? "";
+  const nasc = $("#animalNasc")?.value ?? "";
+  const cat = $("#animalCategoria")?.value ?? "";
+  const raca = $("#animalRaca")?.value ?? "";
 
-  const check = validateForm(state.activeFormRoot);
+  if (!owner.trim()) return { ok: false, key: "owner" };
+  if (!br.trim()) return { ok: false, key: "brinco_padrao" };
+  if (!sx.trim()) return { ok: false, key: "sexo" };
+  if (!nasc.trim()) return { ok: false, key: "data_nascimento" };
+  if (!cat.trim()) return { ok: false, key: "categoria" };
+  if (!raca.trim()) return { ok: false, key: "raca" };
+
+  return { ok: true };
+}
+
+async function fillOwnersAndLotesInForm() {
+  const proprietarios = (await idbGet("fazenda", "list_proprietarios")) || [];
+  const lotes = (await idbGet("lotes", "list")) || [];
+
+  const selOwner = $("#animalOwnerSelect");
+  const selLote = $("#animalLote");
+
+  if (selOwner) {
+    selOwner.innerHTML = [
+      `<option value="">Selecione…</option>`,
+      ...proprietarios.map(p => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`)
+    ].join("");
+  }
+
+  if (selLote) {
+    selLote.innerHTML = [
+      `<option value="">Lote</option>`,
+      ...lotes.map(l => `<option value="${escapeHtml(l._id)}">${escapeHtml(l.nome_lote || "—")}</option>`)
+    ].join("");
+  }
+}
+
+function bindAnimalFormUIOnce() {
+  const secForm = $("#modAnimaisForm");
+  if (!secForm || secForm.__bound) return;
+  secForm.__bound = true;
+
+  // tabs
+  const tabs = secForm.querySelectorAll(".tab");
+  const panels = {
+    dados: $("#tab-dados"),
+    genealogia: $("#tab-genealogia"),
+    aquisicao: $("#tab-aquisicao"),
+  };
+
+  function setTab(key) {
+    tabs.forEach(t => t.classList.toggle("active", t.dataset.tab === key));
+    Object.entries(panels).forEach(([k, el]) => {
+      if (!el) return;
+      el.classList.toggle("active", k === key);
+    });
+  }
+
+  tabs.forEach(t => {
+    t.addEventListener("click", () => setTab(t.dataset.tab));
+  });
+
+  // chips tipo entrada
+  const chipWrap = $("#tipoEntradaChips");
+  if (chipWrap) {
+    chipWrap.querySelectorAll(".chip").forEach(chip => {
+      chip.addEventListener("click", () => {
+        chipWrap.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+        chip.classList.add("active");
+        chipWrap.querySelectorAll(".chip .box").forEach(b => b.textContent = "");
+        chip.querySelector(".box") && (chip.querySelector(".box").textContent = "✓");
+      });
+    });
+  }
+
+  // botões voltar
+  const backIds = ["btnVoltarLista", "btnVoltarLista2", "btnVoltarLista3"];
+  backIds.forEach(id => {
+    const b = $("#" + id);
+    if (b) b.addEventListener("click", async () => {
+      await openAnimalList();
+    });
+  });
+
+  // salvar (top)
+  const btnSave = $("#btnSave");
+  if (btnSave) {
+    btnSave.onclick = async () => {
+      await saveAnimalFromForm();
+    };
+  }
+
+  // toggle avançado
+  const tgl = $("#toggleAdvanced");
+  if (tgl) {
+    tgl.onchange = async (e) => {
+      state.advanced = !!e.target.checked;
+      await idbSet("meta", "animal_create_advanced", state.advanced ? "1" : "0");
+      applyAdvancedVisibility();
+    };
+  }
+}
+
+function applyAdvancedVisibility() {
+  // seus campos avançados no HTML novo não tem classe .adv,
+  // então aqui só deixo o toggle funcionando para você evoluir depois
+  // (se quiser, posso marcar os campos avançados com class="adv" no HTML e ativar aqui).
+}
+
+async function openAnimalList() {
+  state.animalView = "list";
+  state.animalEditingId = null;
+
+  // atualiza “módulo” com layout da lista
+  const m = MODULE_CATALOG["animal_create"];
+  setPageHeadTexts(m.pageTitle, m.pageSub);
+  setPageHeadVisible(false);
+
+  const secList = $("#modAnimaisList");
+  const secForm = $("#modAnimaisForm");
+  if (secList) secList.hidden = false;
+  if (secForm) secForm.hidden = true;
+
+  await renderAnimalList();
+}
+
+async function openAnimalFormForCreate() {
+  state.animalView = "form";
+  state.animalEditingId = null;
+
+  // mostra header do form
+  setPageHeadTexts("Informações do animal", "Cadastre ou atualize aqui");
+  setPageHeadVisible(true);
+
+  const secList = $("#modAnimaisList");
+  const secForm = $("#modAnimaisForm");
+  if (secList) secList.hidden = true;
+  if (secForm) secForm.hidden = false;
+
+  bindAnimalFormUIOnce();
+  await fillOwnersAndLotesInForm();
+
+  // advanced state
+  state.advanced = (await idbGet("meta", "animal_create_advanced")) === "1";
+  const tgl = $("#toggleAdvanced");
+  if (tgl) tgl.checked = state.advanced;
+  applyAdvancedVisibility();
+
+  // default owner da URL se tiver
+  const initData = {
+    owner: state.ctx.ownerId || "",
+    entry_type: "Compra",
+    animal_type: "Físico",
+    brinco_padrao: "",
+    sexo: "",
+    peso_atual_kg: 0,
+    data_nascimento: "",
+    categoria: "",
+    raca: "",
+    nome_completo: "",
+    finalidade: "",
+    peso_nascimento: 0,
+    sisbov: "",
+    identificacao_eletronica: "",
+    rgd: "",
+    rgn: "",
+    lote: "",
+    pasto: "",
+    etiquetas: "",
+    observacoes: "",
+    mae_cadastrada: "0",
+    pai_cadastrado: "0",
+    mae_vinculo: "",
+    pai_vinculo: "",
+    gta: "",
+    uf: "BA",
+  };
+
+  writeAnimalFormByIds(initData);
+
+  // título no header (se você quiser diferenciar)
+  setPageHeadTexts("Informações do animal", "Cadastre ou atualize aqui");
+}
+
+async function openAnimalFormForEdit(animalId) {
+  const all = (await idbGet("animais", "list")) || [];
+  const a = (Array.isArray(all) ? all : []).find(x => String(x?._id) === String(animalId));
+
+  if (!a) {
+    toast("Não foi possível abrir: animal não encontrado no cache.");
+    return;
+  }
+
+  state.animalView = "form";
+  state.animalEditingId = String(animalId);
+
+  setPageHeadVisible(true);
+  setPageHeadTexts("Informações do animal", `Editando: ${animalDisplayName(a)}`);
+
+  const secList = $("#modAnimaisList");
+  const secForm = $("#modAnimaisForm");
+  if (secList) secList.hidden = true;
+  if (secForm) secForm.hidden = false;
+
+  bindAnimalFormUIOnce();
+  await fillOwnersAndLotesInForm();
+
+  // advanced state
+  state.advanced = (await idbGet("meta", "animal_create_advanced")) === "1";
+  const tgl = $("#toggleAdvanced");
+  if (tgl) tgl.checked = state.advanced;
+  applyAdvancedVisibility();
+
+  // mapeia do seu objeto (cache) para campos do form
+  const data = normalizeAnimal(a);
+  const mapped = {
+    owner: data.owner || state.ctx.ownerId || "",
+    entry_type: data.entry_type || "Compra",
+    animal_type: data.animal_type || "Físico",
+    brinco_padrao: data.brinco_padrao || "",
+    sexo: data.sexo || "",
+    peso_atual_kg: toNumberOrZero(data.peso_atual_kg),
+    data_nascimento: data.data_nascimento || "",
+    categoria: data.categoria || "",
+    raca: data.raca || "",
+
+    nome_completo: data.nome_completo || "",
+    finalidade: data.finalidade || "",
+    peso_nascimento: toNumberOrZero(data.peso_nascimento),
+    sisbov: data.sisbov || "",
+    identificacao_eletronica: data.identificacao_eletronica || "",
+    rgd: data.rgd || "",
+    rgn: data.rgn || "",
+    lote: data.lote || "",
+    pasto: data.pasto || "",
+    etiquetas: data.etiquetas || "",
+    observacoes: data.observacoes || data.observacoes || "",
+
+    mae_cadastrada: data.mae_cadastrada || "0",
+    pai_cadastrado: data.pai_cadastrado || "0",
+    mae_vinculo: data.mae_vinculo || "",
+    pai_vinculo: data.pai_vinculo || "",
+
+    gta: data.gta || "",
+    uf: data.uf || "BA",
+  };
+
+  writeAnimalFormByIds(mapped);
+}
+
+// ---------------- Save: CREATE or UPDATE offline (com validação de brinco) ----------------
+
+async function saveAnimalFromForm() {
+  const check = validateAnimalFormRequired();
   if (!check.ok) {
     toast(`Campo obrigatório: ${check.key}`);
     return;
   }
 
-  const data = readForm(state.activeFormRoot);
+  const data = readAnimalFormByIds();
 
-  // valida brinco duplicado no cache de animais
   const list = (await idbGet("animais", "list")) || [];
-  const target = normBrinco(data.brinco_padrao);
+  const arr = Array.isArray(list) ? list.map(normalizeAnimal) : [];
 
-  const exists = list.some(a => normBrinco(a?.brinco_padrao) === target);
+  const target = normBrinco(data.brinco_padrao);
+  const editingId = state.animalEditingId;
+
+  // valida brinco duplicado (permitindo o próprio registro quando editando)
+  const exists = arr.some(a => {
+    const sameBr = normBrinco(a?.brinco_padrao) === target;
+    const sameId = String(a?._id || "") === String(editingId || "");
+    return sameBr && !sameId;
+  });
+
   if (exists) {
-    toast("Já existe um animal com este brinco padrão. Não é possível cadastrar.");
+    toast("Já existe um animal com este brinco padrão. Não é possível salvar.");
     return;
   }
 
-  // cria animal offline (marca como pendente)
-  const record = {
-    _id: `local:${uuid()}`,
-    _local: true,
-    _sync: "pending",
-    fazenda: state.ctx.fazendaId,
-    organizacao: (await idbGet("fazenda", "current"))?.organizacao || "",
-    deleted: false,
-    ativo: true,
-    morto: false,
+  const fazenda = await idbGet("fazenda", "current");
+  const org = fazenda?.organizacao || "";
+
+  if (!editingId) {
+    // CREATE
+    const record = normalizeAnimal({
+      _id: `local:${uuid()}`,
+      _local: true,
+      _sync: "pending",
+      fazenda: state.ctx.fazendaId,
+      organizacao: org,
+      deleted: false,
+      ativo: true,
+      morto: false,
+      ...data,
+    });
+
+    arr.unshift(record);
+    await idbSet("animais", "list", arr);
+
+    // fila
+    const qKey = `queue:${state.ctx.fazendaId}:${state.ctx.ownerId}:animal`;
+    const queue = (await idbGet("records", qKey)) || [];
+    queue.push({ op: "animal_create", at: Date.now(), payload: record });
+    await idbSet("records", qKey, queue);
+
+    toast("Animal salvo offline.");
+    await openAnimalList();
+    return;
+  }
+
+  // UPDATE
+  const idx = arr.findIndex(a => String(a?._id) === String(editingId));
+  if (idx === -1) {
+    toast("Não foi possível salvar: animal não encontrado.");
+    return;
+  }
+
+  const prev = arr[idx];
+  const updated = normalizeAnimal({
+    ...prev,
     ...data,
-  };
-
-  // salva na tabela animais (lista)
-  list.unshift(record);
-  await idbSet("animais", "list", list);
-
-  // (opcional, mas útil pro futuro sync) salva fila de operações
-  const qKey = `queue:${state.ctx.fazendaId}:${state.ctx.ownerId}:animal_create`;
-  const queue = (await idbGet("records", qKey)) || [];
-  queue.push({
-    op: "animal_create",
-    at: Date.now(),
-    payload: record,
+    _local: prev._local || true,
+    _sync: "pending",
   });
+
+  arr[idx] = updated;
+  await idbSet("animais", "list", arr);
+
+  // fila
+  const qKey = `queue:${state.ctx.fazendaId}:${state.ctx.ownerId}:animal`;
+  const queue = (await idbGet("records", qKey)) || [];
+  queue.push({ op: "animal_update", at: Date.now(), payload: updated, targetId: editingId });
   await idbSet("records", qKey, queue);
 
-  // limpa draft e recarrega tela
-  await idbSet("drafts", draftKey, {});
-  toast("Salvo offline.");
-  await renderActiveModule();
+  toast("Alterações salvas offline.");
+  await openAnimalList();
 }
 
 // ---------------- Render módulo ativo ----------------
@@ -744,35 +1083,50 @@ async function renderActiveModule() {
   const m = state.modules.find(x => x.key === state.activeKey) || state.modules[0];
   if (!m) return;
 
-  $("#pageTitle").textContent = m.pageTitle || m.label;
-  $("#pageSub").textContent = m.pageSub || "";
-
   // placeholder BioID
-  $("#btnBioId").onclick = () => toast("BioID (placeholder)");
+  const btnBio = $("#btnBioId");
+  if (btnBio) btnBio.onclick = () => toast("BioID (placeholder)");
 
   if (!state.bootstrapReady) {
-    $("#moduleView").innerHTML = `
-      <div class="card">
-        <b>Modo offline não está pronto</b>
-        <div style="color:#6b7280;margin-top:6px;">
-          Abra uma vez com internet com os parâmetros corretos para sincronizar os dados.
+    const view = $("#moduleView");
+    if (view) {
+      view.innerHTML = `
+        <div class="card">
+          <b>Modo offline não está pronto</b>
+          <div style="color:#6b7280;margin-top:6px;">
+            Abra uma vez com internet com os parâmetros corretos para sincronizar os dados.
+          </div>
         </div>
-      </div>
-    `;
+      `;
+    }
     return;
   }
 
   if (m.key === "animal_create") {
-    await renderAnimalCreate();
+    // garante módulos existentes no HTML novo
+    // e renderiza a view correta (list ou form)
+    if (state.animalView === "form") {
+      if (state.animalEditingId) await openAnimalFormForEdit(state.animalEditingId);
+      else await openAnimalFormForCreate();
+    } else {
+      await openAnimalList();
+    }
     return;
   }
 
-  $("#moduleView").innerHTML = `
-    <div class="card">
-      <b>${escapeHtml(m.label)}</b>
-      <div style="color:#6b7280;margin-top:6px;">Módulo ainda não desenhado no novo layout.</div>
-    </div>
-  `;
+  // default
+  setPageHeadVisible(true);
+  setPageHeadTexts(m.pageTitle || m.label, m.pageSub || "");
+
+  const mount = $("#moduleView");
+  if (mount) {
+    mount.innerHTML = `
+      <div class="card">
+        <b>${escapeHtml(m.label)}</b>
+        <div style="color:#6b7280;margin-top:6px;">Módulo ainda não desenhado no novo layout.</div>
+      </div>
+    `;
+  }
 }
 
 // ---------------- SW ----------------
@@ -792,6 +1146,12 @@ async function init() {
 
   state.modules = buildModules(parsed.modules);
   state.activeKey = state.modules[0]?.key || "animal_create";
+
+  // view inicial do módulo animais = lista
+  if (state.activeKey === "animal_create") {
+    state.animalView = "list";
+    state.animalEditingId = null;
+  }
 
   renderSidebar();
 
