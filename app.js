@@ -12,6 +12,21 @@ const state = {
 };
 
 // ---------------- UI helpers ----------------
+
+function safeJsonify(obj) {
+  // Remove undefined e garante serializável
+  return JSON.parse(JSON.stringify(obj, (k, v) => (v === undefined ? null : v)));
+}
+
+function toCloneable(obj) {
+  // Tenta structuredClone (melhor) e cai pra JSON sanitize
+  try {
+    return structuredClone(obj);
+  } catch {
+    return safeJsonify(obj);
+  }
+}
+
 function toast(msg) {
   const wrap = $("#toast");
   const el = document.createElement("div");
@@ -139,78 +154,115 @@ async function bootstrapData() {
     return;
   }
 
-  // Se já tem cache desse contexto, dá pra abrir offline
   const cachedCtxKey = `ctx:${state.ctx.fazendaId}:${state.ctx.ownerId}`;
   const cachedOk = await idbGet("meta", cachedCtxKey);
 
-  // Online: sempre tenta sincronizar (primeira carga / refresh)
-  if (navigator.onLine) {
-    showBoot("Sincronizando dados…", "Buscando dados do servidor e preparando modo offline.");
+  // OFFLINE: só entra se houver cache
+  if (!navigator.onLine) {
+    if (!cachedOk) {
+      showBoot(
+        "Offline sem cache",
+        "Abra uma vez com internet para baixar os dados e ativar o modo offline."
+      );
+      state.bootstrapReady = false;
+      return;
+    }
+    state.bootstrapReady = true;
+    hideBoot();
+    return;
+  }
 
+  // ONLINE: sincroniza
+  showBoot("Sincronizando dados…", "Buscando dados do Bubble e preparando modo offline.");
+
+  let data;
+  let url;
+
+  try {
+    url = getEndpointUrl(state.ctx);
+
+    const res = await fetch(url, { method: "GET" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    // JSON parse separado pra identificar o erro corretamente
     try {
-      const url = getEndpointUrl(state.ctx);
-      const res = await fetch(url, { method: "GET" });
+      data = await res.json();
+    } catch (e) {
+      throw new Error(`Falha ao ler JSON: ${e?.message || e}`);
+    }
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+    // Normaliza
+    const fazendaRaw = data?.fazenda || null;
+    const ownerRaw = data?.owner || null;
 
-      // Normaliza (defensivo)
-      const fazenda = data?.fazenda || null;
-      const owner = data?.owner || null;
+    const animaisRaw = fazendaRaw?.list_animais || [];
+    const lotesRaw = fazendaRaw?.list_lotes || [];
+    const vacinacaoRaw = fazendaRaw?.list_vacinacao || [];
+    const proprietariosRaw = fazendaRaw?.list_proprietarios || [];
 
-      const animais = fazenda?.list_animais || [];
-      const lotes = fazenda?.list_lotes || [];
-      const vacinacao = fazenda?.list_vacinacao || [];
-      const proprietarios = fazenda?.list_proprietarios || [];
+    // ✅ Sanitiza/clone-safe (evita DataCloneError / undefined etc)
+    const fazenda = toCloneable(fazendaRaw);
+    const owner = toCloneable(ownerRaw);
+    const animais = toCloneable(Array.isArray(animaisRaw) ? animaisRaw : []);
+    const lotes = toCloneable(Array.isArray(lotesRaw) ? lotesRaw : []);
+    const vacinacao = toCloneable(Array.isArray(vacinacaoRaw) ? vacinacaoRaw : []);
+    const proprietarios = toCloneable(Array.isArray(proprietariosRaw) ? proprietariosRaw : []);
 
-      // Salva "tabelas"
+    // ✅ Gravação com debug por etapa (pra não “sumir” o erro)
+    try {
       await idbSet("fazenda", "current", fazenda);
       await idbSet("owner", "current", owner);
-      await idbSet("animais", "list", Array.isArray(animais) ? animais : []);
-      await idbSet("lotes", "list", Array.isArray(lotes) ? lotes : []);
-      await idbSet("vacinacao", "list", Array.isArray(vacinacao) ? vacinacao : []);
-      await idbSet("fazenda", "list_proprietarios", Array.isArray(proprietarios) ? proprietarios : []);
+      await idbSet("animais", "list", animais);
+      await idbSet("lotes", "list", lotes);
+      await idbSet("vacinacao", "list", vacinacao);
+      await idbSet("fazenda", "list_proprietarios", proprietarios);
 
-      // marca contexto como cacheado
       await idbSet("meta", cachedCtxKey, { cachedAt: Date.now() });
       await idbSet("meta", "lastCtx", { ...state.ctx, cachedAt: Date.now() });
+    } catch (e) {
+      // Se falhar o IDB, não trava o app: mostra erro real
+      console.error("[BOOT][IDB] erro ao salvar:", e);
 
-      state.bootstrapReady = true;
-      hideBoot();
-      return;
-
-    } catch (err) {
-      // Se falhou online mas já existe cache, deixa entrar
+      // Se já tinha cache, libera com cache antigo
       if (cachedOk) {
-        toast("Falha ao sincronizar agora. Usando dados offline salvos.");
+        toast("Falha ao salvar atualização. Usando dados offline já existentes.");
         state.bootstrapReady = true;
         hideBoot();
         return;
       }
 
-      // Sem cache: bloqueia
-      showBoot(
-        "Não foi possível sincronizar",
-        "Verifique internet / CORS do endpoint / parâmetros."
-      );
+      // Se não tinha cache, pelo menos não deixa loading eterno:
+      showBoot("Sincronização parcial falhou", `Erro ao salvar no IndexedDB: ${e?.message || e}`);
       state.bootstrapReady = false;
       return;
     }
-  }
 
-  // Offline: só entra se houver cache
-  if (!cachedOk) {
+    // ✅ Sucesso total
+    state.bootstrapReady = true;
+    hideBoot();
+    return;
+
+  } catch (err) {
+    console.error("[BOOT] falhou:", err, { url });
+
+    // Se falhou, mas já tem cache, libera offline com cache
+    if (cachedOk) {
+      toast("Falha ao sincronizar agora. Usando dados offline salvos.");
+      state.bootstrapReady = true;
+      hideBoot();
+      return;
+    }
+
+    // Sem cache: bloqueia
     showBoot(
-      "Offline sem cache",
-      "Abra uma vez com internet para baixar os dados e ativar o modo offline."
+      "Não foi possível sincronizar",
+      `Detalhe: ${err?.message || err}`
     );
     state.bootstrapReady = false;
     return;
   }
-
-  state.bootstrapReady = true;
-  hideBoot();
 }
+
 
 // ---------------- Sidebar ----------------
 function renderSidebar() {
