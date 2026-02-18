@@ -536,15 +536,107 @@
 
         @media (max-width: 980px) {
             .app {
-                grid-template-columns: 1fr;
+                display: block;
+                /* Remove grid columns */
+                padding-bottom: 80px;
+                /* Espaço para a Bottom Nav */
             }
 
+            /* Bottom Nav Transformation */
             .sidebar {
-                position: sticky;
-                top: 0;
-                z-index: 5;
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                width: 100%;
+                height: auto;
+                z-index: 1000;
+                background: #fff;
+                /* Fundo branco para contraste */
+                border-top: 1px solid rgba(0, 0, 0, 0.08);
                 border-right: none;
-                border-bottom: 1px solid rgba(0, 0, 0, .04);
+                padding: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.08);
+                /* Sombra suave para cima */
+            }
+
+            .logoWrap {
+                display: none;
+                /* Logo vai para o topo da página se quiser, ou some */
+            }
+
+            .nav {
+                flex-direction: row;
+                justify-content: space-around;
+                width: 100%;
+                margin: 0;
+                padding: 10px 16px;
+                gap: 0;
+            }
+
+            .navItem {
+                flex-direction: column;
+                justify-content: center;
+                gap: 6px;
+                padding: 8px;
+                border-radius: 12px;
+                font-size: 11px;
+                color: #9ca3af;
+                /* Cinza mais claro inativo */
+                background: transparent !important;
+                /* Remove fundo hover desktop */
+                box-shadow: none !important;
+                outline: none !important;
+            }
+
+            .navItem.active {
+                color: #111827;
+                /* Preto ativo */
+            }
+
+            .navItem.active .navIcon {
+                background: var(--btn);
+                /* Lime Green no ícone */
+                color: #111827;
+                box-shadow: 0 4px 12px rgba(237, 255, 119, 0.4);
+            }
+
+            .navIcon {
+                width: 28px;
+                height: 28px;
+                border-radius: 10px;
+                background: transparent;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 20px;
+                /* Se fosse texto, mas é bg image? Vamos assumir div por enquanto */
+                transition: .2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                margin: 0 auto;
+            }
+
+            /* Topbar fake para Mobile com Logo */
+            .main:before {
+                content: "BOVICHAIN";
+                /* Simplificação, idealmente um img */
+                display: flex;
+                align-items: center;
+                padding: 0 20px;
+                height: 60px;
+                background: var(--bg);
+                font-family: var(--font-main);
+                font-weight: 900;
+                font-size: 20px;
+                letter-spacing: -0.03em;
+                color: #111827;
+            }
+
+            .sidebar:after {
+                content: "";
+                /* Icone SVG do logo poderia entrar aqui */
             }
 
             .topbar {
@@ -552,13 +644,113 @@
             }
 
             .content {
-                padding: 12px;
+                padding: 20px;
+            }
+
+            /* Table to Card Transformation */
+            table,
+            thead,
+            tbody,
+            th,
+            td,
+            tr {
+                display: block;
+            }
+
+            thead tr {
+                position: absolute;
+                top: -9999px;
+                left: -9999px;
+            }
+
+            tr {
+                background: #fff;
+                border: 1px solid rgba(0, 0, 0, 0.04);
+                border-radius: 24px;
+                /* Mais arredondado */
+                margin-bottom: 16px;
+                padding: 20px;
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
+                position: relative;
+            }
+
+            tr:last-child {
+                margin-bottom: 0;
+            }
+
+            td {
+                border: none;
+                position: relative;
+                padding-left: 0;
+                padding: 10px 0;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-bottom: 1px dashed rgba(0, 0, 0, 0.06);
+                text-align: right;
+                font-size: 15px;
+            }
+
+            td:last-child {
+                border-bottom: none;
+                padding-bottom: 0;
+            }
+
+            td:first-child {
+                padding-top: 0;
+                font-weight: 800;
+                font-size: 17px;
+                color: #111827;
+                border-bottom: 2px solid rgba(0, 0, 0, 0.04);
+                margin-bottom: 8px;
+                padding-bottom: 12px;
+                display: block;
+                /* Título do card */
+                text-align: left;
+            }
+
+            td:first-child:before {
+                display: none;
+                /* Sem label no título */
+            }
+
+            td:before {
+                content: attr(data-label);
+                font-size: 13px;
+                font-weight: 600;
+                color: #9ca3af;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                margin-right: 12px;
+            }
+
+            /* Ajustes nos inputs para Mobile */
+            input,
+            select,
+            .chip,
+            .btn {
+                height: 52px;
+                /* Touch friendly */
+                font-size: 16px;
+                /* Evita zoom no iOS */
+            }
+
+            .btn {
+                width: 100%;
+                /* Botões full width */
+                margin-bottom: 12px;
+            }
+
+            .actions .btn {
+                width: auto;
+                /* Exceção para topo */
             }
 
             .togglePills {
                 grid-template-columns: 1fr;
             }
         }
+
 
         /* Boot overlay */
         #bootOverlay {

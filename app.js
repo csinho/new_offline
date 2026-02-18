@@ -530,11 +530,11 @@ async function renderAnimalList() {
 
     // Colunas reduzidas: Brinco, Sexo, Raça, Peso, Status
     tr.innerHTML = `
-      <td>${escapeHtml(a?.brinco_padrao || "—")}</td>
-      <td>${escapeHtml(renderSex(a?.sexo))}</td>
-      <td>${escapeHtml(a?.raca || "—")}</td>
-      <td>${escapeHtml(fmtKg(a?.peso_atual_kg))}</td>
-      <td><span class="${statusClass}">${escapeHtml(statusLabel)}</span></td>
+      <td data-label="Brinco">${escapeHtml(a?.brinco_padrao || "—")}</td>
+      <td data-label="Sexo">${escapeHtml(renderSex(a?.sexo))}</td>
+      <td data-label="Raça">${escapeHtml(a?.raca || "—")}</td>
+      <td data-label="Peso">${escapeHtml(fmtKg(a?.peso_atual_kg))}</td>
+      <td data-label="Status"><span class="${statusClass}">${escapeHtml(statusLabel)}</span></td>
     `;
 
     tr.onclick = async () => {
