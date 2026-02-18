@@ -1107,10 +1107,41 @@ async function init() {
   window.addEventListener("offline", () => setNetBadge());
 
   const parsed = parseFromURL();
-  state.ctx = { fazendaId: parsed.fazendaId, ownerId: parsed.ownerId };
 
-  state.modules = buildModules(parsed.modules);
-  state.activeKey = state.modules[0]?.key || "animal_create";
+  // Lógica de Persistência de Sessão e Limpeza de URL
+  // Se vieram parâmetros na URL, salvamos como a nova sessão e limpamos a URL.
+  if (parsed.fazendaId && parsed.ownerId) {
+    // Salva configuração da sessão
+    await idbSet("meta", "session_config", {
+      modules: parsed.modules,
+      ctx: { fazendaId: parsed.fazendaId, ownerId: parsed.ownerId },
+      updatedAt: Date.now()
+    });
+
+    // Limpa a URL visualmente (mantendo apenas a origem/caminho)
+    const newUrl = window.location.origin + window.location.pathname;
+    window.history.replaceState({}, document.title, newUrl);
+
+    // Usa os dados parsed
+    state.ctx = { fazendaId: parsed.fazendaId, ownerId: parsed.ownerId };
+    state.modules = buildModules(parsed.modules);
+  } else {
+    // Se NÃO vieram parâmetros, tentamos recuperar a última sessão salva
+    const saved = await idbGet("meta", "session_config");
+    if (saved && saved.ctx && saved.modules) {
+      state.ctx = saved.ctx;
+      state.modules = buildModules(saved.modules);
+    } else {
+      // Fallback total se nunca entrou antes
+      state.ctx = { fazendaId: "", ownerId: "" };
+      state.modules = buildModules(["animal_create"]);
+    }
+  }
+
+  // Define módulo ativo (padrão é o primeiro da lista)
+  if (!state.activeKey) {
+    state.activeKey = state.modules[0]?.key || "animal_create";
+  }
 
   // view inicial do módulo animais = lista
   if (state.activeKey === "animal_create") {
@@ -1122,7 +1153,21 @@ async function init() {
 
   await registerSW();
 
-  // bootstrap (sync) antes de liberar
+  // Se não temos contexto (nem da URL nem do storage), avisar user
+  if (!state.ctx.fazendaId || !state.ctx.ownerId) {
+    showBoot(
+      "Bem-vindo ao Bovichain Offline",
+      "Abra o link fornecido pelo sistema principal para configurar este dispositivo."
+    );
+    state.bootstrapReady = false;
+    // Tenta renderizar o que der (vai cair no aviso de offline não pronto)
+    await renderActiveModule();
+    hideBoot(); // esconde o loader de sync pois não vai sincronizar nada
+    return;
+  }
+
+  // bootstrap (sync)
+  // Agora bootstrapData usa state.ctx que já foi preenchido corretamente acima
   await bootstrapData();
 
   // depois renderiza
