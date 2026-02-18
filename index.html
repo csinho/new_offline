@@ -8,6 +8,12 @@
     <meta name="theme-color" content="#edff77" />
     <link rel="manifest" href="./manifest.json" />
 
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Maitree:wght@200;300;400;500;600;700&family=Rethink+Sans:wght@300..800&display=swap"
+        rel="stylesheet">
+
     <style>
         :root {
             --bg: #f8f8f8;
@@ -27,6 +33,9 @@
             --radius: 16px;
             --radius2: 20px;
             --shadow: 0 10px 28px rgba(17, 24, 39, .06);
+
+            --font-main: "Inter", "Rethink Sans", sans-serif;
+            --font-serif: "Maitree", serif;
         }
 
         * {
@@ -35,9 +44,19 @@
 
         body {
             margin: 0;
-            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+            font-family: var(--font-main);
             background: var(--bg);
             color: var(--text);
+            font-weight: 400;
+        }
+
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6 {
+            font-family: var(--font-serif);
         }
 
         /* Layout geral */
