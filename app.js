@@ -145,7 +145,7 @@ async function bootstrapData() {
 
   // Online: sempre tenta sincronizar (primeira carga / refresh)
   if (navigator.onLine) {
-    showBoot("Sincronizando dados…", "Buscando dados do Bubble e preparando modo offline.");
+    showBoot("Sincronizando dados…", "Buscando dados do servidor e preparando modo offline.");
 
     try {
       const url = getEndpointUrl(state.ctx);
