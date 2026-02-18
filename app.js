@@ -327,7 +327,15 @@ async function bootstrapData() {
   try {
     url = getEndpointUrl(state.ctx);
 
-    const res = await fetch(url, { method: "GET" });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+    const res = await fetch(url, {
+      method: "GET",
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     // JSON parse separado pra identificar o erro corretamente
@@ -1427,8 +1435,17 @@ async function checkSyncStatus() {
 
   // Check if there are pending records
   // We scan all keys starting with "queue:" in "records" store
-  const keys = await idbGetAllKeys("records"); // This returns all keys
-  const hasPending = keys.some(k => k.startsWith("queue:"));
+  const keys = await idbGetAllKeys("records");
+  const queueKeys = keys.filter(k => k.startsWith("queue:"));
+
+  let hasPending = false;
+  for (const k of queueKeys) {
+    const q = await idbGet("records", k);
+    if (Array.isArray(q) && q.length > 0) {
+      hasPending = true;
+      break;
+    }
+  }
 
   btn.hidden = !hasPending;
 }
@@ -1473,7 +1490,29 @@ async function processQueue() {
   } finally {
     if (btn) {
       btn.style.animation = "pulse-green 2s infinite";
-      btn.innerHTML = `<div class="fabIcon">🔄</div>`;
+      btn.innerHTML = `<div class="fabIcon"><svg width="30px" height="30px" viewBox="-0.1 -0.1 1.8 1.8" fill="none"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <path width="30" height="30" fill="white" fill-opacity="0.01" d="M0 0H1.8V1.8H0V0z" />
+                        <path
+                            d="M1.65 1.162c0 0.207 -0.168 0.375 -0.375 0.375 -0.067 0 -0.13 -0.018 -0.185 -0.049A0.375 0.375 0 0 1 0.9 1.162c0 -0.096 0.036 -0.184 0.096 -0.251A0.374 0.374 0 0 1 1.275 0.787c0.207 0 0.375 0.168 0.375 0.375"
+                            fill="#2F88FF" stroke="#111827" stroke-width="0.10" stroke-linecap="round"
+                            stroke-linejoin="round" />
+                        <path
+                            d="M1.275 0.45v0.337a0.374 0.374 0 0 0 -0.279 0.124A0.373 0.373 0 0 0 0.9 1.162q0 0.033 0.005 0.064a0.375 0.375 0 0 0 0.185 0.263C0.99 1.519 0.858 1.537 0.713 1.537c-0.311 0 -0.563 -0.084 -0.563 -0.188V0.45"
+                            stroke="#111827" stroke-width="0.10" stroke-linecap="round" stroke-linejoin="round" />
+                        <path
+                            d="M1.275 0.45c0 0.104 -0.252 0.188 -0.563 0.188S0.15 0.554 0.15 0.45s0.252 -0.188 0.563 -0.188 0.563 0.084 0.563 0.188"
+                            fill="#2F88FF" stroke="#111827" stroke-width="0.10" stroke-linecap="round"
+                            stroke-linejoin="round" />
+                        <path d="M0.15 1.05c0 0.104 0.252 0.188 0.563 0.188 0.068 0 0.133 -0.004 0.193 -0.011"
+                            stroke="#111827" stroke-width="0.10" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M0.15 0.75c0 0.104 0.252 0.188 0.563 0.188 0.103 0 0.2 -0.009 0.283 -0.026"
+                            stroke="#111827" stroke-width="0.10" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M1.425 1.162a0.15 0.15 0 0 1 -0.15 0.15" stroke="white" stroke-width="0.10"
+                            stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M1.125 1.162a0.15 0.15 0 0 1 0.15 -0.15" stroke="white" stroke-width="0.10"
+                            stroke-linecap="round" stroke-linejoin="round" />
+                    </svg></div>`;
     }
     checkSyncStatus();
   }
