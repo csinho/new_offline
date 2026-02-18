@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Offline Builder</title>
+    <meta name="theme-color" content="#edff77" />
+    <link rel="manifest" href="./manifest.json" />
+
+    <style>
+        :root {
+            --bg: #f8f8f8;
+            --sidebar: #fbffe3;
+            --card: #ffffff;
+            --text: #111827;
+            --muted: #6b7280;
+            --border: #e5e7eb;
+            --stroke: #cfd7e3;
+
+            --btn: #edff77;
+            --btnText: #121826;
+
+            --green: #16a34a;
+            --danger: #ef4444;
+
+            --radius: 16px;
+            --radius2: 20px;
+            --shadow: 0 10px 28px rgba(17, 24, 39, .06);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        /* Layout geral */
+        .app {
+            min-height: 100vh;
+            display: grid;
+            grid-template-columns: 240px 1fr;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            background: var(--sidebar);
+            padding: 18px 14px;
+            border-right: 1px solid rgba(0, 0, 0, .04);
+        }
+
+        .logoWrap {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            padding: 4px 8px 14px;
+        }
+
+        .logo {
+            width: 180px;
+            height: auto;
+            display: block;
+            object-fit: contain;
+        }
+
+        .nav {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 6px;
+        }
+
+        .navItem {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-radius: 999px;
+            cursor: pointer;
+            user-select: none;
+            color: #111827;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .navItem:hover {
+            background: rgba(0, 0, 0, .03);
+        }
+
+        .navItem.active {
+            background: rgba(237, 255, 119, .65);
+            box-shadow: 0 10px 22px rgba(17, 24, 39, .06);
+            outline: 1px solid rgba(0, 0, 0, .04);
+        }
+
+        .navIcon {
+            width: 18px;
+            height: 18px;
+            border-radius: 6px;
+            background: rgba(17, 24, 39, .08);
+            display: inline-block;
+        }
+
+        /* Main */
+        .main {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .topbar {
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 18px;
+            background: rgba(251, 255, 227, .55);
+            border-bottom: 1px solid rgba(0, 0, 0, .04);
+        }
+
+        .farmPill {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .farmPill b {
+            color: var(--text);
+            font-size: 13px;
+        }
+
+        .content {
+            padding: 18px;
+            max-width: 1220px;
+            width: 100%;
+        }
+
+        .pageHead {
+            background: var(--card);
+            border-radius: var(--radius2);
+            box-shadow: var(--shadow);
+            padding: 16px 18px;
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 14px;
+        }
+
+        .pageTitle {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 800;
+            letter-spacing: .2px;
+        }
+
+        .pageSub {
+            margin: 4px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .actions {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .btn {
+            border: 1px solid rgba(0, 0, 0, .06);
+            background: #fff;
+            color: var(--text);
+            border-radius: 999px;
+            padding: 10px 16px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 10px 20px rgba(17, 24, 39, .05);
+        }
+
+        .btn.primary {
+            background: var(--btn);
+            color: var(--btnText);
+        }
+
+        .toggleRow {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(0, 0, 0, .03);
+            border: 1px solid rgba(0, 0, 0, .04);
+            font-weight: 700;
+            font-size: 13px;
+            color: var(--text);
+        }
+
+        /* Switch */
+        .switch {
+            position: relative;
+            width: 46px;
+            height: 26px;
+            display: inline-block;
+        }
+
+        .switch input {
+            display: none;
+        }
+
+        .slider {
+            position: absolute;
+            inset: 0;
+            background: #e5e7eb;
+            border-radius: 999px;
+            transition: .2s;
+        }
+
+        .slider:before {
+            content: "";
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            left: 3px;
+            top: 3px;
+            border-radius: 999px;
+            background: #fff;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, .18);
+            transition: .2s;
+        }
+
+        .switch input:checked+.slider {
+            background: rgba(22, 163, 74, .35);
+        }
+
+        .switch input:checked+.slider:before {
+            transform: translateX(20px);
+            background: #16a34a;
+        }
+
+        /* Cards do formulário */
+        .card {
+            background: var(--card);
+            border-radius: var(--radius2);
+            box-shadow: var(--shadow);
+            padding: 16px;
+            margin-bottom: 14px;
+        }
+
+        .dashedBox {
+            border: 2px dashed rgba(60, 80, 120, .35);
+            border-radius: var(--radius);
+            padding: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            margin-bottom: 14px;
+        }
+
+        .dashedLeft {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .farmIcon {
+            width: 34px;
+            height: 34px;
+            border-radius: 12px;
+            background: rgba(17, 24, 39, .06);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 900;
+            color: rgba(17, 24, 39, .55);
+            flex: 0 0 auto;
+        }
+
+        .dashedText {
+            min-width: 0;
+        }
+
+        .dashedText .k {
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .dashedText .v {
+            font-size: 14px;
+            color: var(--muted);
+            font-weight: 800;
+            margin-top: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Campos */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 12px;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            min-width: 0;
+        }
+
+        .label {
+            font-size: 12px;
+            color: #1f2937;
+            font-weight: 800;
+        }
+
+        .req {
+            color: #ef4444;
+            margin-left: 4px;
+        }
+
+        input,
+        select,
+        textarea {
+            height: 42px;
+            border-radius: 12px;
+            border: 1px solid var(--stroke);
+            background: #fff;
+            padding: 0 12px;
+            outline: none;
+            font-size: 14px;
+            color: var(--text);
+        }
+
+        textarea {
+            height: auto;
+            min-height: 110px;
+            padding: 10px 12px;
+            resize: vertical;
+        }
+
+        input::placeholder,
+        textarea::placeholder {
+            color: #9ca3af;
+        }
+
+        .disabled {
+            background: #f3f4f6 !important;
+            color: #9ca3af !important;
+        }
+
+        /* Tipo de entrada (chips) */
+        .chips {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 8px 0 6px;
+        }
+
+        .chip {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border-radius: 12px;
+            border: 1px solid var(--stroke);
+            background: #fff;
+            cursor: pointer;
+            user-select: none;
+            font-weight: 700;
+            color: #6b7280;
+            min-width: 140px;
+            justify-content: center;
+        }
+
+        .chip .box {
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
+            border: 1px solid var(--stroke);
+            background: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: #111827;
+        }
+
+        .chip.active {
+            color: #111827;
+            border-color: rgba(0, 0, 0, .10);
+            box-shadow: 0 10px 22px rgba(17, 24, 39, .05);
+        }
+
+        .chip.active .box {
+            background: rgba(17, 24, 39, .65);
+            border-color: rgba(17, 24, 39, .2);
+            color: #fff;
+        }
+
+        /* Tabs internas */
+        .tabs {
+            display: flex;
+            gap: 18px;
+            padding: 2px 4px 0;
+            border-bottom: 1px solid rgba(0, 0, 0, .06);
+            margin-bottom: 14px;
+        }
+
+        .tab {
+            padding: 10px 2px 12px;
+            font-weight: 800;
+            color: #6b7280;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .tab.active {
+            color: #111827;
+        }
+
+        .tab.active:after {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: -1px;
+            height: 3px;
+            border-radius: 999px;
+            background: rgba(120, 150, 0, .6);
+        }
+
+        .tabPanel {
+            display: none;
+        }
+
+        .tabPanel.active {
+            display: block;
+        }
+
+        /* Genealogia toggles */
+        .togglePills {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .pill {
+            border-radius: 14px;
+            border: 1px solid rgba(22, 163, 74, .35);
+            background: rgba(22, 163, 74, .18);
+            padding: 12px 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            font-weight: 900;
+            color: rgba(22, 163, 74, .95);
+        }
+
+        /* Footer salvar */
+        .footerSave {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 14px;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            left: 16px;
+            bottom: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 9999;
+        }
+
+        .toast>div {
+            border-radius: 14px;
+            padding: 10px 12px;
+            background: rgba(17, 24, 39, .9);
+            color: #fff;
+            max-width: 360px;
+            box-shadow: 0 14px 28px rgba(0, 0, 0, .22);
+            font-weight: 700;
+            font-size: 13px;
+        }
+
+        @media (max-width: 980px) {
+            .app {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                position: sticky;
+                top: 0;
+                z-index: 5;
+                border-right: none;
+                border-bottom: 1px solid rgba(0, 0, 0, .04);
+            }
+
+            .topbar {
+                display: none;
+            }
+
+            .content {
+                padding: 12px;
+            }
+
+            .togglePills {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Boot overlay */
+        #bootOverlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(248, 248, 248, .85);
+            backdrop-filter: blur(6px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 99999;
+        }
+
+        .bootCard {
+            width: min(520px, calc(100% - 28px));
+            background: #fff;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(17, 24, 39, .16);
+            border: 1px solid rgba(0, 0, 0, .06);
+            padding: 18px 18px 16px;
+        }
+
+        .bootTitle {
+            font-weight: 900;
+            font-size: 16px;
+            margin-bottom: 6px;
+        }
+
+        .bootSub {
+            color: #6b7280;
+            font-weight: 700;
+            font-size: 13px;
+            margin-bottom: 12px;
+        }
+
+        .bootBar {
+            height: 10px;
+            border-radius: 999px;
+            background: rgba(17, 24, 39, .08);
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .bootBarFill {
+            width: 55%;
+            height: 100%;
+            border-radius: 999px;
+            background: #edff77;
+            animation: bootMove 1.1s ease-in-out infinite alternate;
+        }
+
+        @keyframes bootMove {
+            from {
+                transform: translateX(-20%);
+                width: 45%;
+            }
+
+            to {
+                transform: translateX(20%);
+                width: 70%;
+            }
+        }
+
+        .bootHint {
+            color: #111827;
+            font-weight: 800;
+            font-size: 12px;
+            opacity: .75;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app">
+        <aside class="sidebar">
+            <div class="logoWrap">
+                <img class="logo" src="./BoviChain-Horizontal.png" alt="BoviChain" />
+            </div>
+
+            <nav class="nav" id="moduleNav"></nav>
+        </aside>
+
+        <main class="main">
+            <div class="topbar">
+                <div class="farmPill">
+                    Fazenda atual
+                    <b id="farmCurrent">—</b>
+                </div>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <span style="font-size:12px; color:#6b7280; font-weight:800;" id="netLabel">—</span>
+                    <span id="netDot"
+                        style="width:10px;height:10px;border-radius:999px;background:#ef4444;display:inline-block;"></span>
+                </div>
+            </div>
+
+            <section class="content">
+                <div class="pageHead">
+                    <div>
+                        <h1 class="pageTitle" id="pageTitle">Informações do animal</h1>
+                        <p class="pageSub" id="pageSub">Cadastre ou atualize aqui</p>
+                    </div>
+
+                    <div class="actions">
+                        <button class="btn" id="btnBioId">BioID</button>
+                        <button class="btn primary" id="btnSave">Salvar</button>
+
+                        <div class="toggleRow">
+                            <span>Cadastro avançado</span>
+                            <label class="switch">
+                                <input type="checkbox" id="toggleAdvanced" />
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="moduleView"></div>
+            </section>
+        </main>
+    </div>
+
+    <!-- LOADING OVERLAY -->
+    <div id="bootOverlay" style="display:none;">
+        <div class="bootCard">
+            <div class="bootTitle">Sincronizando dados…</div>
+            <div class="bootSub" id="bootSub">Aguarde, estamos preparando o modo offline.</div>
+            <div class="bootBar">
+                <div class="bootBarFill"></div>
+            </div>
+            <div class="bootHint" id="bootHint"></div>
+        </div>
+    </div>
+
+
+    <div class="toast" id="toast"></div>
+
+    <script type="module" src="./app.js"></script>
+</body>
+
+</html>
