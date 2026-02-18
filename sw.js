@@ -1,4 +1,4 @@
-const CACHE = "bovichain-offline-v2";
+const CACHE = "bovichain-offline-v3";
 const SHELL = [
     "./",
     "./index.html",

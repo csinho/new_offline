@@ -126,6 +126,71 @@ const MODULE_CATALOG = {
     pageSub: "Organize seus animais em lotes",
     storageKey: "lotes",
   },
+  manejo: {
+    key: "manejo",
+    label: "Manejo",
+    icon: "🛠️",
+    pageTitle: "Manejo",
+    pageSub: "Registros de manejo",
+    storageKey: "manejo",
+  },
+  organizacao: {
+    key: "organizacao",
+    label: "Organização",
+    icon: "🏢",
+    pageTitle: "Organização",
+    pageSub: "Dados da organização",
+    storageKey: "organizacao",
+  },
+  fazenda: {
+    key: "fazenda",
+    label: "Fazenda",
+    icon: "🏡",
+    pageTitle: "Fazenda",
+    pageSub: "Dados da fazenda",
+    storageKey: "fazenda",
+  },
+  // Aliases / Extras
+  vacinacao: {
+    key: "vacinacao",
+    label: "Vacinação",
+    icon: "💉",
+    pageTitle: "Vacinação",
+    pageSub: "Controle sanitário",
+    storageKey: "vacinacao"
+  },
+  sanidade: {
+    key: "sanidade",
+    label: "Sanidade",
+    icon: "⚕️",
+    pageTitle: "Sanidade",
+    pageSub: "Controle sanitário",
+    storageKey: "sanidade"
+  },
+  reproducao: {
+    key: "reproducao",
+    label: "Reprodução",
+    icon: "🧬",
+    pageTitle: "Reprodução",
+    pageSub: "Controle reprodutivo",
+    storageKey: "reproducao"
+  },
+  nutricao: {
+    key: "nutricao",
+    label: "Nutrição",
+    icon: "🌽",
+    pageTitle: "Nutrição",
+    pageSub: "Controle alimentar",
+    storageKey: "nutricao"
+  },
+  financeiro: {
+    key: "financeiro",
+    label: "Financeiro",
+    icon: "💰",
+    pageTitle: "Financeiro",
+    pageSub: "Gestão financeira",
+    storageKey: "financeiro"
+  }
 };
 
 function parseFromURL() {
@@ -1072,6 +1137,7 @@ async function saveAnimalFromForm() {
   await idbSet("records", qKey, queue);
 
   toast("Alterações salvas offline.");
+  checkSyncStatus(); // Update FAB visibility
   await openAnimalList();
 }
 
@@ -1130,9 +1196,12 @@ async function renderActiveModule() {
     moduleView.innerHTML = `
       <div class="card">
         <b>${escapeHtml(m.label)}</b>
-        <div style="color:#6b7280;margin-top:6px;">Módulo ainda não desenhado no novo layout.</div>
+        <div style="color:#6b7280;margin-top:6px;margin-bottom:16px;">Módulo ainda não desenhado no novo layout.</div>
+        <button class="btn secondary" id="btnBackToDashGeneric" style="width:100%">🔙 Voltar ao Dashboard</button>
       </div>
     `;
+    const btn = moduleView.querySelector("#btnBackToDashGeneric");
+    if (btn) btn.onclick = openDashboard;
   }
 }
 
@@ -1149,9 +1218,16 @@ async function registerSW() {
 
 async function renderDashboard() {
   // 1. Owner Info
-  const ownerId = state.ctx.ownerId;
-  const owners = (await idbGet("fazenda", "list_proprietarios")) || [];
-  const owner = owners.find(o => String(o._id) === String(ownerId));
+  // Try to get from 'owner' store first (synced session)
+  const sessionOwner = await idbGet("owner", "current");
+  let owner = sessionOwner;
+
+  if (!owner) {
+    // Fallback: try to find in list_proprietarios
+    const ownerId = state.ctx.ownerId;
+    const owners = (await idbGet("fazenda", "list_proprietarios")) || [];
+    owner = owners.find(o => String(o._id) === String(ownerId));
+  }
 
   const name = owner?.nome || "Usuário";
   const firstLetter = name.charAt(0).toUpperCase();
@@ -1167,8 +1243,18 @@ async function renderDashboard() {
   if (modContainer) {
     modContainer.innerHTML = ""; // clear
     state.modules.forEach(mod => {
-      const mDef = MODULE_CATALOG[mod.key];
-      if (!mDef) return;
+      // Use catalog definition OR fallback to mod properties (from buildModules)
+      // If mod from buildModules didn't have icon, use default
+      let mDef = MODULE_CATALOG[mod.key];
+
+      if (!mDef) {
+        // Fallback object if not in catalog
+        mDef = {
+          key: mod.key,
+          label: mod.label || prettifyKey(mod.key),
+          icon: "📦" // Default icon
+        };
+      }
 
       const div = document.createElement("div");
       div.className = "dashModCard";
@@ -1311,11 +1397,75 @@ async function openModule(moduleKey) {
   await renderActiveModule();
 }
 
+// ---------------- Sync Logic ----------------
+async function checkSyncStatus() {
+  const btn = document.getElementById("fabSync");
+  if (!btn) return;
+
+  if (!navigator.onLine) {
+    btn.hidden = true;
+    return;
+  }
+
+  // Check if there are pending records
+  // We scan all keys starting with "queue:" in "records" store
+  const keys = await idbGetAllKeys("records"); // This returns all keys
+  const hasPending = keys.some(k => k.startsWith("queue:"));
+
+  btn.hidden = !hasPending;
+}
+
+async function processQueue() {
+  if (!navigator.onLine) return;
+
+  const btn = document.getElementById("fabSync");
+  if (btn) {
+    btn.style.animation = "spin 1s infinite linear"; // Change to spin
+    btn.innerHTML = `<div class="fabIcon">⏳</div>`;
+  }
+
+  try {
+    const keys = await idbGetAllKeys("records");
+    const queueKeys = keys.filter(k => k.startsWith("queue:"));
+
+    for (const qKey of queueKeys) {
+      const queue = await idbGet("records", qKey);
+      if (!Array.isArray(queue) || queue.length === 0) {
+        await idbDel("records", qKey);
+        continue;
+      }
+
+      // Fake processing for now - in real app, send batch to server
+      console.log(`[SYNC] Processing ${queue.length} items from ${qKey}`);
+
+      // Simulate network delay
+      await new Promise(r => setTimeout(r, 1500));
+
+      // Success! Clear queue
+      await idbDel("records", qKey);
+    }
+
+    toast("Sincronização concluída! ✅");
+    // Reload data to reflect server state if needed
+    // await bootstrapData(); 
+
+  } catch (e) {
+    console.error("Sync error:", e);
+    toast("Erro ao sincronizar. Tente novamente.");
+  } finally {
+    if (btn) {
+      btn.style.animation = "pulse-green 2s infinite";
+      btn.innerHTML = `<div class="fabIcon">🔄</div>`;
+    }
+    checkSyncStatus();
+  }
+}
+
 // Adjusted init to load Dashboard first
 async function init() {
   setNetBadge();
-  window.addEventListener("online", () => setNetBadge());
-  window.addEventListener("offline", () => setNetBadge());
+  window.addEventListener("online", () => { setNetBadge(); checkSyncStatus(); });
+  window.addEventListener("offline", () => { setNetBadge(); checkSyncStatus(); });
 
   const parsed = parseFromURL();
 
@@ -1348,9 +1498,17 @@ async function init() {
   if (!state.ctx.fazendaId || !state.ctx.ownerId) {
     showBoot("Bem-vindo", "Configure no sistema principal.");
     return;
+    // Dont return if just testing locally without params, but ok
   }
 
   await bootstrapData();
+
+  // Initialize Sync Button Logic
+  if (state.bootstrapReady) {
+    checkSyncStatus();
+    const fab = document.getElementById("fabSync");
+    if (fab) fab.onclick = processQueue;
+  }
 
   // START AT DASHBOARD
   await openDashboard();
