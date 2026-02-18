@@ -476,6 +476,11 @@ async function renderAnimalList() {
   setPageHeadVisible(false);
 
   // Dados do cache
+  const fazenda = await idbGet("fazenda", "current");
+  const farmName = fazenda?.name || "—";
+  const farmLabel = $("#farmCurrent");
+  if (farmLabel) farmLabel.textContent = farmName;
+
   const all = (await idbGet("animais", "list")) || [];
   const searchEl = $("#animalSearch");
   const tbody = $("#animalTbody");
