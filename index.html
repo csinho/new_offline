@@ -1483,10 +1483,325 @@
                 </div>
 
                 <!-- Container GENÉRICO para outros módulos -->
-                <div id="moduleView">
+                <div id="moduleView"></div>
+
+                <!-- DASHBOARD (Mobile First View) -->
+                <section class="moduleSection" id="modDashboard">
+                    <!-- Header Personalizado -->
+                    <div class="dashHeader">
+                        <div class="dashProfile">
+                            <div class="dashAvatar" id="dashAvatar">U</div>
+                            <div class="dashWelcome">
+                                <div class="dashSub">Bem-vindo de volta 👋</div>
+                                <div class="dashName" id="dashName">Usuário</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Módulos Carrossel -->
+                    <div class="dashSectionTitle">Módulos</div>
+                    <div class="dashModules" id="dashModules">
+                        <!-- Cards injetados via JS -->
+                        <div class="dashModCard" onclick="openModule('animal_create')">
+                            <div class="dashModIcon">🐮</div>
+                            <div class="dashModTitle">Animais</div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Section -->
+                    <div class="dashSectionTitle">Rebanho Atual</div>
+                    <div class="dashCharts">
+
+                        <!-- Chart Machos -->
+                        <div class="dashChartCard">
+                            <div class="chartTitle">Machos</div>
+                            <div class="chartValue" id="chartCountM">0</div>
+                            <div class="chartVisual">
+                                <svg viewBox="0 0 36 36" class="circular-chart blue">
+                                    <path class="circle-bg"
+                                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                    <path class="circle" id="chartPathM" stroke-dasharray="0, 100"
+                                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                </svg>
+                                <div class="chartIcon">♂</div>
+                            </div>
+                        </div>
+
+                        <!-- Chart Fêmeas -->
+                        <div class="dashChartCard">
+                            <div class="chartTitle">Fêmeas</div>
+                            <div class="chartValue" id="chartCountF">0</div>
+                            <div class="chartVisual">
+                                <svg viewBox="0 0 36 36" class="circular-chart pink">
+                                    <path class="circle-bg"
+                                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                    <path class="circle" id="chartPathF" stroke-dasharray="0, 100"
+                                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                </svg>
+                                <div class="chartIcon">♀</div>
+                            </div>
+                        </div>
+
+                    </div>
+                </section>
+
             </section>
         </main>
     </div>
+
+    <!-- STYLE FOR DASHBOARD -->
+    <style>
+        /* Dashboard Styles */
+        #modDashboard {
+            padding-bottom: 40px;
+        }
+
+        .dashHeader {
+            background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+            /* Purple theme from ref */
+            margin: -20px -20px 24px -20px;
+            padding: 60px 24px 30px;
+            border-bottom-left-radius: 32px;
+            border-bottom-right-radius: 32px;
+            color: #fff;
+            box-shadow: 0 10px 30px rgba(124, 58, 237, 0.2);
+        }
+
+        @media (min-width: 981px) {
+            .dashHeader {
+                margin: -16px -20px 24px;
+                border-radius: 0 0 24px 24px;
+                padding-top: 30px;
+            }
+
+            /* Esconde dashboard em desktop se nao for o foco, mas user pediu mobile first. 
+               Vamos assumir que desktop pode ver também ou manter sidebar. 
+               Por enquanto focado no mobile. */
+        }
+
+        .dashProfile {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .dashAvatar {
+            width: 56px;
+            height: 56px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 800;
+            color: #fff;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            position: relative;
+        }
+
+        .dashAvatar:after {
+            content: "";
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            width: 14px;
+            height: 14px;
+            background: #4ade80;
+            /* Online/Active */
+            border: 2px solid #6d28d9;
+            border-radius: 50%;
+        }
+
+        .dashWelcome {
+            flex: 1;
+        }
+
+        .dashSub {
+            font-size: 13px;
+            opacity: 0.8;
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        .dashName {
+            font-size: 20px;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+        }
+
+        .dashSectionTitle {
+            font-size: 18px;
+            font-weight: 800;
+            color: #111827;
+            margin-bottom: 16px;
+            padding: 0 4px;
+        }
+
+        .dashModules {
+            display: flex;
+            gap: 16px;
+            overflow-x: auto;
+            padding: 4px 4px 24px;
+            /* Padding bottom for shadow */
+            margin: 0 -4px;
+            /* Compensate padding */
+            scroll-behavior: smooth;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .dashModules::-webkit-scrollbar {
+            display: none;
+        }
+
+        .dashModCard {
+            flex: 0 0 110px;
+            height: 110px;
+            background: #fff;
+            border-radius: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.04);
+            border: 1px solid rgba(0, 0, 0, 0.03);
+            transition: .2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            cursor: pointer;
+        }
+
+        .dashModCard:hover,
+        .dashModCard:active {
+            transform: translateY(-4px);
+            box-shadow: 0 14px 30px rgba(0, 0, 0, 0.08);
+            border-color: var(--btn);
+        }
+
+        .dashModIcon {
+            font-size: 32px;
+        }
+
+        .dashModTitle {
+            font-size: 13px;
+            font-weight: 700;
+            color: #374151;
+            text-align: center;
+        }
+
+        /* Charts */
+        .dashCharts {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        .dashChartCard {
+            background: #fff;
+            border-radius: 24px;
+            padding: 20px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.04);
+            border: 1px solid rgba(0, 0, 0, 0.03);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chartTitle {
+            font-size: 13px;
+            font-weight: 700;
+            color: #6b7280;
+            margin-bottom: 6px;
+        }
+
+        .chartValue {
+            font-size: 28px;
+            font-weight: 900;
+            color: #111827;
+            margin-bottom: 12px;
+            z-index: 2;
+        }
+
+        .chartVisual {
+            width: 80px;
+            height: 80px;
+            align-self: flex-end;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .chartIcon {
+            position: absolute;
+            font-size: 20px;
+            color: #9ca3af;
+            font-weight: 900;
+        }
+
+        /* SVG Circular Chart */
+        .circular-chart {
+            display: block;
+            margin: 0 auto;
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        .circle-bg {
+            fill: none;
+            stroke: #f3f4f6;
+            stroke-width: 3.8;
+        }
+
+        .circle {
+            fill: none;
+            stroke-width: 2.8;
+            stroke-linecap: round;
+            animation: progress 1s ease-out forwards;
+        }
+
+        @keyframes progress {
+            0% {
+                stroke-dasharray: 0 100;
+            }
+        }
+
+        .circular-chart.blue .circle {
+            stroke: #3b82f6;
+        }
+
+        .circular-chart.pink .circle {
+            stroke: #ec4899;
+        }
+
+        /* Mobile overrides to hide Sidebar/Nav and Topbar */
+        @media (max-width: 980px) {
+            .app {
+                display: block;
+            }
+
+            .sidebar {
+                display: none;
+                /* User requested: Não teremos mais um menu */
+            }
+
+            .topbar {
+                display: none;
+            }
+
+            .content {
+                padding: 0 20px 20px;
+                /* Remove top padding since Header has negative margin */
+            }
+
+            /* Adjust TopBar fake logic from previous step, or remove it */
+            .main:before {
+                display: none;
+                /* Remove fake Bovichain header, using Dash Header instead */
+            }
+        }
+    </style>
 
     <!-- LOADING OVERLAY -->
     <div id="bootOverlay" style="display:none;">

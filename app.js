@@ -475,6 +475,30 @@ async function renderAnimalList() {
   // Header principal esconde pois a lista já tem seu próprio greeting
   setPageHeadVisible(false);
 
+  // Botão Voltar para Dashboard (Mobile)
+  if (state.view === "module") {
+    const backBtnConfig = {
+      text: "← Voltar",
+      onclick: openDashboard
+    };
+    // Se houver um lugar melhor, podemos injetar. Por enquanto, vou injetar no topo da lista se não existir.
+    let backDiv = document.getElementById("mobileBackDash");
+    if (!backDiv) {
+      backDiv = document.createElement("div");
+      backDiv.id = "mobileBackDash";
+      backDiv.className = "mobileMsg"; // Reuse minimal style or create new
+      backDiv.style.padding = "10px 0";
+      backDiv.style.cursor = "pointer";
+      backDiv.style.fontWeight = "600";
+      backDiv.style.color = "var(--text)";
+      backDiv.innerHTML = `<span style="font-size:18px; vertical-align:middle; margin-right:4px;">Home</span>`;
+      backDiv.onclick = openDashboard;
+
+      const container = $("#animalModuleContainer");
+      if (container) container.insertBefore(backDiv, container.firstChild);
+    }
+  }
+
   // Dados do cache
   const fazenda = await idbGet("fazenda", "current");
   const farmName = fazenda?.name || "—";
@@ -1109,6 +1133,107 @@ async function registerSW() {
 }
 
 // ---------------- init ----------------
+// ========================================================
+// DASHBOARD LOGIC
+// ========================================================
+
+async function renderDashboard() {
+  // 1. Owner Info
+  const ownerId = state.ctx.ownerId;
+  const owners = (await idbGet("fazenda", "list_proprietarios")) || [];
+  const owner = owners.find(o => String(o._id) === String(ownerId));
+
+  const name = owner?.nome || "Usuário";
+  const firstLetter = name.charAt(0).toUpperCase();
+
+  const elName = $("#dashName");
+  const elAvatar = $("#dashAvatar");
+
+  if (elName) elName.textContent = name;
+  if (elAvatar) elAvatar.textContent = firstLetter;
+
+  // 2. Modules Carousel
+  const modContainer = $("#dashModules");
+  if (modContainer) {
+    modContainer.innerHTML = ""; // clear
+    state.modules.forEach(mod => {
+      const mDef = MODULE_CATALOG[mod.key];
+      if (!mDef) return;
+
+      const div = document.createElement("div");
+      div.className = "dashModCard";
+      div.onclick = () => openModule(mod.key);
+
+      div.innerHTML = `
+        <div class="dashModIcon">${mDef.icon}</div>
+        <div class="dashModTitle">${mDef.label}</div>
+      `;
+      modContainer.appendChild(div);
+    });
+  }
+
+  // 3. Charts Stats
+  const animais = (await idbGet("animais", "list")) || [];
+  const total = animais.length;
+  const machos = animais.filter(a => a.sexo === "M").length;
+  const femeas = animais.filter(a => a.sexo === "F").length;
+
+  $("#chartCountM").textContent = machos;
+  $("#chartCountF").textContent = femeas;
+
+  // Visual Circles
+  const pctM = total > 0 ? (machos / total) * 100 : 0;
+  const pctF = total > 0 ? (femeas / total) * 100 : 0;
+
+  const pathM = document.querySelector("#chartPathM");
+  const pathF = document.querySelector("#chartPathF");
+
+  if (pathM) {
+    pathM.style.strokeDasharray = `${pctM}, 100`;
+    pathM.style.animation = 'none';
+    pathM.offsetHeight; /* trigger reflow */
+    pathM.style.animation = 'progress 1s ease-out forwards';
+  }
+  if (pathF) {
+    pathF.style.strokeDasharray = `${pctF}, 100`;
+    pathF.style.animation = 'none';
+    pathF.offsetHeight; /* trigger reflow */
+    pathF.style.animation = 'progress 1s ease-out forwards';
+  }
+}
+
+async function openDashboard() {
+  state.view = "dashboard";
+
+  // Hide all modules
+  document.querySelectorAll(".moduleSection").forEach(el => el.hidden = true);
+
+  // Show Dashboard
+  const dash = $("#modDashboard");
+  if (dash) dash.hidden = false;
+
+  // Render Data
+  await renderDashboard();
+
+  // Reset module nav active state
+  document.querySelectorAll(".navItem").forEach(n => n.classList.remove("active"));
+}
+
+async function openModule(moduleKey) {
+  // Logic from renderActiveModule but simplified for switching
+  state.activeKey = moduleKey;
+  state.view = "module";
+
+  // Hide Dashboard
+  const dash = $("#modDashboard");
+  if (dash) dash.hidden = true;
+
+  // Show generic container logic
+  // Re-run renderActiveModule to handle the specific module's view (list/form etc)
+  await renderActiveModule();
+}
+
+// Adjusted init to load Dashboard first
 async function init() {
   setNetBadge();
   window.addEventListener("online", () => setNetBadge());
@@ -1116,70 +1241,41 @@ async function init() {
 
   const parsed = parseFromURL();
 
-  // Lógica de Persistência de Sessão e Limpeza de URL
-  // Se vieram parâmetros na URL, salvamos como a nova sessão e limpamos a URL.
   if (parsed.fazendaId && parsed.ownerId) {
-    // Salva configuração da sessão
     await idbSet("meta", "session_config", {
       modules: parsed.modules,
       ctx: { fazendaId: parsed.fazendaId, ownerId: parsed.ownerId },
       updatedAt: Date.now()
     });
-
-    // Limpa a URL visualmente (mantendo apenas a origem/caminho)
     const newUrl = window.location.origin + window.location.pathname;
     window.history.replaceState({}, document.title, newUrl);
 
-    // Usa os dados parsed
     state.ctx = { fazendaId: parsed.fazendaId, ownerId: parsed.ownerId };
     state.modules = buildModules(parsed.modules);
   } else {
-    // Se NÃO vieram parâmetros, tentamos recuperar a última sessão salva
     const saved = await idbGet("meta", "session_config");
     if (saved && saved.ctx && saved.modules) {
       state.ctx = saved.ctx;
       state.modules = buildModules(saved.modules);
     } else {
-      // Fallback total se nunca entrou antes
       state.ctx = { fazendaId: "", ownerId: "" };
       state.modules = buildModules(["animal_create"]);
     }
   }
 
-  // Define módulo ativo (padrão é o primeiro da lista)
-  if (!state.activeKey) {
-    state.activeKey = state.modules[0]?.key || "animal_create";
-  }
-
-  // view inicial do módulo animais = lista
-  if (state.activeKey === "animal_create") {
-    state.animalView = "list";
-    state.animalEditingId = null;
-  }
-
+  // Setup Sidebar (still useful for desktop or backup)
   renderSidebar();
-
   await registerSW();
 
-  // Se não temos contexto (nem da URL nem do storage), avisar user
   if (!state.ctx.fazendaId || !state.ctx.ownerId) {
-    showBoot(
-      "Bem-vindo ao Bovichain Offline",
-      "Abra o link fornecido pelo sistema principal para configurar este dispositivo."
-    );
-    state.bootstrapReady = false;
-    // Tenta renderizar o que der (vai cair no aviso de offline não pronto)
-    await renderActiveModule();
-    hideBoot(); // esconde o loader de sync pois não vai sincronizar nada
+    showBoot("Bem-vindo", "Configure no sistema principal.");
     return;
   }
 
-  // bootstrap (sync)
-  // Agora bootstrapData usa state.ctx que já foi preenchido corretamente acima
   await bootstrapData();
 
-  // depois renderiza
-  await renderActiveModule();
+  // START AT DASHBOARD
+  await openDashboard();
 }
 
 init();
