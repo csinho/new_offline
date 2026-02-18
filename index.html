@@ -340,125 +340,170 @@
         }
 
         /* Campos */
+        /* Campos Modernos */
         .grid {
             display: grid;
             grid-template-columns: repeat(12, 1fr);
-            gap: 12px;
+            gap: 16px;
+            /* Mais espaço */
         }
 
         .field {
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 8px;
             min-width: 0;
+            margin-bottom: 4px;
         }
 
         .label {
-            font-size: 12px;
-            color: #1f2937;
+            font-size: 11px;
+            color: #6b7280;
             font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-left: 2px;
         }
 
         .req {
-            color: #ef4444;
-            margin-left: 4px;
+            color: var(--danger);
+            margin-left: 2px;
         }
 
         input,
         select,
         textarea {
-            height: 42px;
-            border-radius: 12px;
+            height: 54px;
+            border-radius: 16px;
             border: 1px solid var(--stroke);
             background: #fff;
-            padding: 0 12px;
+            padding: 0 16px;
             outline: none;
-            font-size: 14px;
+            font-size: 15px;
             color: var(--text);
+            font-family: var(--font-main);
+            transition: border-color .2s, box-shadow .2s;
+            appearance: none;
+            -webkit-appearance: none;
+            /* Remove estilo nativo iOS */
+        }
+
+        select {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+            background-position: right 14px center;
+            background-repeat: no-repeat;
+            background-size: 1.5em 1.5em;
+            padding-right: 40px;
         }
 
         textarea {
             height: auto;
-            min-height: 110px;
-            padding: 10px 12px;
+            min-height: 120px;
+            padding: 16px;
             resize: vertical;
         }
 
         input::placeholder,
         textarea::placeholder {
-            color: #9ca3af;
+            color: #d1d5db;
+        }
+
+        input:focus,
+        select:focus,
+        textarea:focus {
+            border-color: #d4e844;
+            /* Lime darker */
+            box-shadow: 0 0 0 4px rgba(237, 255, 119, 0.25);
         }
 
         .disabled {
-            background: #f3f4f6 !important;
+            background: #f9fafb !important;
             color: #9ca3af !important;
+            border-color: #e5e7eb !important;
         }
 
-        /* Tipo de entrada (chips) */
+        /* Chips Modernos */
         .chips {
             display: flex;
             gap: 10px;
             flex-wrap: wrap;
-            margin: 8px 0 6px;
+            margin: 8px 0 12px;
         }
 
         .chip {
             display: flex;
             align-items: center;
             gap: 10px;
-            padding: 10px 14px;
-            border-radius: 12px;
+            padding: 0 18px;
+            height: 50px;
+            border-radius: 14px;
             border: 1px solid var(--stroke);
             background: #fff;
             cursor: pointer;
             user-select: none;
             font-weight: 700;
             color: #6b7280;
-            min-width: 140px;
+            min-width: 120px;
             justify-content: center;
+            transition: .2s;
+        }
+
+        .chip:hover {
+            border-color: #d1d5db;
         }
 
         .chip .box {
-            width: 18px;
-            height: 18px;
-            border-radius: 4px;
+            width: 20px;
+            height: 20px;
+            border-radius: 6px;
             border: 1px solid var(--stroke);
             background: #fff;
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 12px;
-            color: #111827;
+            color: transparent;
+            /* Check invisivel */
+            transition: .2s;
         }
 
         .chip.active {
             color: #111827;
-            border-color: rgba(0, 0, 0, .10);
-            box-shadow: 0 10px 22px rgba(17, 24, 39, .05);
+            border-color: #d4e844;
+            background: rgba(237, 255, 119, 0.1);
         }
 
         .chip.active .box {
-            background: rgba(17, 24, 39, .65);
-            border-color: rgba(17, 24, 39, .2);
-            color: #fff;
+            background: var(--btn);
+            border-color: var(--btn);
+            color: #111827;
         }
 
-        /* Tabs internas */
+        /* Ícone de check no box */
+        .chip.active .box:after {
+            content: "✔";
+            font-size: 10px;
+        }
+
+        /* Tabs internas e Paineis */
         .tabs {
             display: flex;
-            gap: 18px;
-            padding: 2px 4px 0;
-            border-bottom: 1px solid rgba(0, 0, 0, .06);
-            margin-bottom: 14px;
+            gap: 20px;
+            padding: 0 4px;
+            border-bottom: 2px solid #f3f4f6;
+            margin-bottom: 20px;
+            overflow-x: auto;
         }
 
         .tab {
-            padding: 10px 2px 12px;
+            padding: 12px 0;
             font-weight: 800;
-            color: #6b7280;
+            color: #9ca3af;
             cursor: pointer;
             position: relative;
             user-select: none;
+            font-size: 14px;
+            white-space: nowrap;
         }
 
         .tab.active {
@@ -470,46 +515,85 @@
             position: absolute;
             left: 0;
             right: 0;
-            bottom: -1px;
+            bottom: -2px;
             height: 3px;
             border-radius: 999px;
-            background: rgba(120, 150, 0, .6);
+            background: var(--btn);
         }
 
-        .tabPanel {
-            display: none;
-        }
-
-        .tabPanel.active {
-            display: block;
-        }
-
-        /* Genealogia toggles */
+        /* Genealogia Toggles */
         .togglePills {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            margin-bottom: 12px;
+            gap: 16px;
+            margin-bottom: 20px;
         }
 
         .pill {
-            border-radius: 14px;
-            border: 1px solid rgba(22, 163, 74, .35);
-            background: rgba(22, 163, 74, .18);
-            padding: 12px 14px;
+            border-radius: 16px;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            /* Mais neutro inativo */
+            background: #fff;
+            padding: 14px 18px;
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 10px;
-            font-weight: 900;
-            color: rgba(22, 163, 74, .95);
+            font-weight: 800;
+            color: #374151;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.02);
+            transition: .2s;
         }
+
+        /* Quando ativo (classe dinâmica ou apenas visual do switch) */
+        /* Assumindo que o switch controla o estado visual, não temos classe .active no pill, 
+           mas podemos adicionar se precisar via JS. Pelo HTML atual, só visual. */
 
         /* Footer salvar */
         .footerSave {
             display: flex;
             justify-content: flex-end;
-            margin-top: 14px;
+            margin-top: 24px;
+            padding-top: 10px;
+            border-top: 1px solid transparent;
+        }
+
+        /* Mobile Specific Overrides for Form */
+        @media (max-width: 980px) {
+            .footerSave {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background: #fff;
+                padding: 16px 20px;
+                margin: 0;
+                border-top: 1px solid rgba(0, 0, 0, 0.06);
+                z-index: 900;
+                /* Abaixo do nav (1000) mas acima do resto */
+                box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.05);
+                /* Ajuste de padding-bottom do app para compensar footerSave também */
+            }
+
+            /* Se houver bottom nav, o footerSave deve ficar ACIMA dele ou substituir? 
+               Normalmente forms escondem nav ou ficam acima. Vamos colocar acima (bottom: 0) 
+               e subir o z-index. Mas o nav é 1000. 
+               Se o usuário está editando, melhor ter foco no save. 
+               Vamos deixar o save fixo no bottom e adicionar padding no .app */
+
+            .app {
+                padding-bottom: 160px;
+            }
+
+            /* Nav + Save space */
+
+            .footerSave .btn {
+                width: 100%;
+                margin: 0;
+                height: 56px;
+                font-size: 17px;
+                box-shadow: 0 10px 25px rgba(237, 255, 119, 0.4);
+            }
         }
 
         /* Toast */
@@ -537,12 +621,11 @@
         @media (max-width: 980px) {
             .app {
                 display: block;
-                /* Remove grid columns */
-                padding-bottom: 80px;
-                /* Espaço para a Bottom Nav */
+                padding-bottom: 90px;
+                /* Mais espaço para nao cobrir o ultimo item */
             }
 
-            /* Bottom Nav Transformation */
+            /* Bottom Nav Scrollable */
             .sidebar {
                 position: fixed;
                 bottom: 0;
@@ -552,91 +635,94 @@
                 height: auto;
                 z-index: 1000;
                 background: #fff;
-                /* Fundo branco para contraste */
-                border-top: 1px solid rgba(0, 0, 0, 0.08);
+                border-top: 1px solid rgba(0, 0, 0, 0.06);
                 border-right: none;
-                padding: 0;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.08);
-                /* Sombra suave para cima */
+                padding: 10px 0;
+                /* Scroll horizontal setup */
+                justify-content: flex-start;
+                overflow-x: auto;
+                scroll-behavior: smooth;
+                -webkit-overflow-scrolling: touch;
+                /* Smooth scroll on iOS */
+            }
+
+            /* Esconde scrollbar mas permite scroll */
+            .sidebar::-webkit-scrollbar {
+                display: none;
             }
 
             .logoWrap {
                 display: none;
-                /* Logo vai para o topo da página se quiser, ou some */
             }
 
             .nav {
                 flex-direction: row;
-                justify-content: space-around;
-                width: 100%;
+                width: auto;
+                /* Deixa crescer conforme itens */
                 margin: 0;
-                padding: 10px 16px;
-                gap: 0;
+                padding: 0 20px;
+                gap: 16px;
+                flex-wrap: nowrap;
+                /* Não quebra linha */
             }
 
             .navItem {
+                flex: 0 0 auto;
+                /* Não encolhe nem cresce */
                 flex-direction: column;
                 justify-content: center;
                 gap: 6px;
-                padding: 8px;
-                border-radius: 12px;
+                padding: 8px 12px;
+                border-radius: 16px;
+                /* Mais arredondado */
                 font-size: 11px;
                 color: #9ca3af;
-                /* Cinza mais claro inativo */
                 background: transparent !important;
-                /* Remove fundo hover desktop */
                 box-shadow: none !important;
                 outline: none !important;
+                min-width: 72px;
+                /* Largura mínima confortável */
+                text-align: center;
             }
 
             .navItem.active {
                 color: #111827;
-                /* Preto ativo */
             }
 
             .navItem.active .navIcon {
                 background: var(--btn);
-                /* Lime Green no ícone */
                 color: #111827;
                 box-shadow: 0 4px 12px rgba(237, 255, 119, 0.4);
             }
 
             .navIcon {
-                width: 28px;
-                height: 28px;
-                border-radius: 10px;
-                background: transparent;
+                width: 32px;
+                /* Ícone um pouco maior */
+                height: 32px;
+                border-radius: 12px;
+                background: #f3f4f6;
+                /* Fundo cinza leve se inativo */
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                font-size: 20px;
-                /* Se fosse texto, mas é bg image? Vamos assumir div por enquanto */
-                transition: .2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                font-size: 18px;
                 margin: 0 auto;
+                transition: .2s;
             }
 
-            /* Topbar fake para Mobile com Logo */
+            /* Topbar fake */
             .main:before {
                 content: "BOVICHAIN";
-                /* Simplificação, idealmente um img */
                 display: flex;
                 align-items: center;
                 padding: 0 20px;
-                height: 60px;
+                height: 64px;
                 background: var(--bg);
                 font-family: var(--font-main);
                 font-weight: 900;
-                font-size: 20px;
-                letter-spacing: -0.03em;
+                font-size: 22px;
+                letter-spacing: -0.04em;
                 color: #111827;
-            }
-
-            .sidebar:after {
-                content: "";
-                /* Icone SVG do logo poderia entrar aqui */
             }
 
             .topbar {
@@ -644,10 +730,25 @@
             }
 
             .content {
-                padding: 20px;
+                padding: 16px 20px;
             }
 
-            /* Table to Card Transformation */
+            /* Inputs e Botões maiores */
+            input,
+            select,
+            .chip,
+            .btn {
+                height: 54px;
+                font-size: 16px;
+                border-radius: 16px;
+            }
+
+            textarea {
+                padding: 16px;
+                border-radius: 16px;
+            }
+
+            /* Table as Clean List Cards */
             table,
             thead,
             tbody,
@@ -665,85 +766,94 @@
 
             tr {
                 background: #fff;
-                border: 1px solid rgba(0, 0, 0, 0.04);
-                border-radius: 24px;
-                /* Mais arredondado */
-                margin-bottom: 16px;
-                padding: 20px;
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
+                border: 1px solid rgba(0, 0, 0, 0.03);
+                border-radius: 20px;
+                margin-bottom: 12px;
+                padding: 16px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
                 position: relative;
-            }
-
-            tr:last-child {
-                margin-bottom: 0;
+                display: grid;
+                grid-template-columns: 1fr auto;
+                /* Esquerda (Info principal) | Direita (Status) */
+                gap: 8px;
             }
 
             td {
                 border: none;
-                position: relative;
-                padding-left: 0;
-                padding: 10px 0;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                border-bottom: 1px dashed rgba(0, 0, 0, 0.06);
-                text-align: right;
-                font-size: 15px;
-            }
-
-            td:last-child {
-                border-bottom: none;
-                padding-bottom: 0;
-            }
-
-            td:first-child {
-                padding-top: 0;
-                font-weight: 800;
-                font-size: 17px;
-                color: #111827;
-                border-bottom: 2px solid rgba(0, 0, 0, 0.04);
-                margin-bottom: 8px;
-                padding-bottom: 12px;
-                display: block;
-                /* Título do card */
+                padding: 0;
                 text-align: left;
-            }
-
-            td:first-child:before {
-                display: none;
-                /* Sem label no título */
+                display: block;
             }
 
             td:before {
-                content: attr(data-label);
-                font-size: 13px;
-                font-weight: 600;
-                color: #9ca3af;
+                display: none;
+                /* Remove labels automáticos para visual mais limpo */
+            }
+
+            /* 1ª Coluna: Brinco (Título Principal) */
+            td[data-label="Brinco"] {
+                grid-column: 1 / 2;
+                grid-row: 1;
+                font-weight: 900;
+                font-size: 20px;
+                color: #111827;
+                letter-spacing: -0.02em;
+                margin-bottom: 4px;
+            }
+
+            /* 5ª Coluna: Status (Badge no topo direita) */
+            td[data-label="Status"] {
+                grid-column: 2 / 3;
+                grid-row: 1;
+                text-align: right;
+                display: flex;
+                justify-content: flex-end;
+                align-items: center;
+            }
+
+            td[data-label="Status"] span {
+                padding: 6px 10px;
+                font-size: 10px;
                 text-transform: uppercase;
                 letter-spacing: 0.05em;
-                margin-right: 12px;
             }
 
-            /* Ajustes nos inputs para Mobile */
-            input,
-            select,
-            .chip,
-            .btn {
-                height: 52px;
-                /* Touch friendly */
-                font-size: 16px;
-                /* Evita zoom no iOS */
-            }
-
-            .btn {
-                width: 100%;
-                /* Botões full width */
-                margin-bottom: 12px;
-            }
-
-            .actions .btn {
+            /* Outras colunas: Detalhes em baixo */
+            td[data-label="Sexo"],
+            td[data-label="Raça"],
+            td[data-label="Peso"] {
+                grid-column: 1 / 3;
+                /* Ocupa largura total abaixo */
+                display: inline-block;
+                /* Ficar na mesma linha se der */
                 width: auto;
-                /* Exceção para topo */
+                font-size: 13px;
+                color: #6b7280;
+                font-weight: 600;
+                margin-right: 12px;
+                background: #f9fafb;
+                padding: 4px 8px;
+                border-radius: 6px;
+                margin-top: 6px;
+            }
+
+            /* Adiciona ícones/labels manuais via CSS para sexo/peso se quiser, ou deixa simples */
+            td[data-label="Sexo"]:before {
+                content: "Sexo: ";
+                opacity: 0.6;
+                font-weight: 400;
+            }
+
+            td[data-label="Raça"]:before {
+                content: "Raça: ";
+                opacity: 0.6;
+                font-weight: 400;
+            }
+
+            td[data-label="Peso"]:before {
+                content: "Peso: ";
+                opacity: 0.6;
+                font-weight: 400;
             }
 
             .togglePills {
@@ -975,6 +1085,53 @@
         /* área do form (aba 2) */
         .moduleSection {
             display: block;
+        }
+
+        /* Toggle Switch Custom */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #e5e7eb;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        input:checked+.slider {
+            background-color: var(--btn);
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(20px);
         }
 
         .moduleSection[hidden] {
@@ -1310,7 +1467,17 @@
                             </div>
                             <!-- fim advancedGroup -->
 
+                            <!-- Advanced Group End -->
                         </div>
+
+                        <!-- Mobile Floating Save Button -->
+                        <div class="footerSave">
+                            <button class="btn primary" id="btnSaveBottom"
+                                style="width:100%; height:56px; font-size:18px;">
+                                Salvar Animal
+                            </button>
+                        </div>
+
                     </section>
 
                 </div>

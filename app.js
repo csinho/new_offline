@@ -786,6 +786,14 @@ function bindAnimalFormUIOnce() {
     };
   }
 
+  // salvar (bottom - mobile)
+  const btnSaveBottom = $("#btnSaveBottom");
+  if (btnSaveBottom) {
+    btnSaveBottom.onclick = async () => {
+      await saveAnimalFromForm();
+    };
+  }
+
   // toggle avançado
   const tgl = $("#toggleAdvanced");
   if (tgl) {
