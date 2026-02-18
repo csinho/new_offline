@@ -11,8 +11,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Maitree:wght@200;300;400;500;600;700&family=Rethink+Sans:wght@300..800&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Rethink+Sans:wght@300..800&display=swap"
         rel="stylesheet">
+    <link rel="icon"
+        href="https://e45a1d9b2fd81a177eaa3a70ba83bda4.cdn.bubble.io/f1750077006501x159873402843107020/bovichain-icon.svg" />
 
     <style>
         :root {
@@ -35,7 +37,7 @@
             --shadow: 0 10px 28px rgba(17, 24, 39, .06);
 
             --font-main: "Inter", "Rethink Sans", sans-serif;
-            --font-serif: "Maitree", serif;
+            /* --font-serif removida pois não será mais usada */
         }
 
         * {
@@ -56,7 +58,8 @@
         h4,
         h5,
         h6 {
-            font-family: var(--font-serif);
+            font-family: var(--font-main);
+            letter-spacing: -0.02em;
         }
 
         /* Layout geral */
@@ -1129,6 +1132,10 @@
     <!-- LOADING OVERLAY -->
     <div id="bootOverlay" style="display:none;">
         <div class="bootCard">
+            <div style="text-align: center; margin-bottom: 12px;">
+                <img src="https://e45a1d9b2fd81a177eaa3a70ba83bda4.cdn.bubble.io/f1750077006501x159873402843107020/bovichain-icon.svg"
+                    alt="Icon" style="width: 48px; height: 48px; border-radius: 12px;" />
+            </div>
             <div class="bootTitle">Sincronizando dados…</div>
             <div class="bootSub" id="bootSub">Aguarde, estamos preparando o modo offline.</div>
             <div class="bootBar">
