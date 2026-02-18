@@ -882,7 +882,8 @@
                         <div class="card">
                             <div class="grid" style="align-items:start;">
                                 <!-- Fazenda selecionada -->
-                                <div class="field" style="grid-column: span 7;">
+                                <!-- Fazenda selecionada + Proprietário -->
+                                <div class="field" style="grid-column: span 12;">
                                     <div class="dashedBox" style="margin-bottom:0;">
                                         <div class="dashedLeft">
                                             <div class="farmIcon">🏡</div>
@@ -891,11 +892,12 @@
                                                 <div class="v" id="fazendaSelecionadaNome">—</div>
                                             </div>
                                         </div>
-                                    </div>
-                                    <!-- Proprietário -->
-                                    <div class="field" style="grid-column: span 5;">
-                                        <div class="label">Proprietário <span class="req">*</span></div>
-                                        <select id="animalOwnerSelect"></select>
+
+                                        <!-- Proprietário (agora dentro do box, alinhado à direita pelo justify-content: space-between do box) -->
+                                        <div class="field" style="min-width: 260px;">
+                                            <div class="label">Proprietário <span class="req">*</span></div>
+                                            <select id="animalOwnerSelect"></select>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
