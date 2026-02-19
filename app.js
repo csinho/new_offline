@@ -346,6 +346,9 @@ function normalizeAnimal(a = {}) {
   if (a._local !== undefined) out._local = a._local;
   if (a._sync !== undefined) out._sync = String(a._sync || "");
 
+  // Preserva data_modificacao (vinda do servidor) para uso na sync
+  if (a.data_modificacao !== undefined) out.data_modificacao = a.data_modificacao;
+
   // números
   out.peso_atual_kg = toNumberOrZero(out.peso_atual_kg);
   out.peso_nascimento = toNumberOrZero(out.peso_nascimento);
@@ -365,6 +368,18 @@ function normalizeLote(l = {}) {
 
   out.qtd_animais = toNumberOrZero(out.qtd_animais);
   out.peso_medio = toNumberOrZero(out.peso_medio);
+
+  // Preserva data_modificacao (vinda do servidor) para uso na sync
+  if (l.data_modificacao !== undefined) out.data_modificacao = l.data_modificacao;
+
+  return out;
+}
+
+/** Normaliza item de list_vacinacao preservando data_modificacao do servidor. */
+function normalizeVacinacaoItem(v = {}) {
+  const out = { ...v };
+  out._id = String(out._id || "");
+  if (v.data_modificacao !== undefined) out.data_modificacao = v.data_modificacao;
   return out;
 }
 
@@ -544,7 +559,9 @@ async function bootstrapData() {
     const lotes = toCloneable(
       (Array.isArray(lotesRaw) ? lotesRaw : []).map(normalizeLote)
     );
-    const vacinacao = toCloneable(Array.isArray(vacinacaoRaw) ? vacinacaoRaw : []);
+    const vacinacao = toCloneable(
+      (Array.isArray(vacinacaoRaw) ? vacinacaoRaw : []).map(normalizeVacinacaoItem)
+    );
     const proprietarios = toCloneable(Array.isArray(proprietariosRaw) ? proprietariosRaw : []);
 
     // ✅ Gravação com debug por etapa (pra não “sumir” o erro)
@@ -1606,6 +1623,8 @@ async function saveAnimalFromForm() {
       ...data,
       _local: prev._local || true,
       _sync: "pending",
+      // Preserva data_modificacao do servidor para o backend comparar na sync
+      data_modificacao: prev.data_modificacao,
     });
 
     arr[idx] = updated;
@@ -2359,7 +2378,7 @@ async function processQueue() {
           payload.list_lotes = payload.lote ? [payload.lote] : [];
         }
         
-        // Remove campos de sincronização local do payload antes de enviar
+        // Remove apenas campos de sincronização local; preserva data_modificacao para o servidor comparar
         delete payload._local;
         delete payload._sync;
         
