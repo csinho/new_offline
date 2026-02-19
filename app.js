@@ -1482,7 +1482,7 @@ async function processQueue() {
 
     toast("Sincronização concluída! ✅");
     // Reload data to reflect server state if needed
-    // await bootstrapData(); 
+     await bootstrapData(); 
 
   } catch (e) {
     console.error("Sync error:", e);
