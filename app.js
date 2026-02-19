@@ -1,4 +1,15 @@
 import { idbGet, idbSet, idbClear, idbDel } from "./idb.js";
+import { 
+  API_CONFIG, 
+  UF_MAP, 
+  UF_LIST,
+  RACAS_LIST,
+  FINALIDADE_LIST,
+  CATEGORIA_LIST,
+  SEXO_LIST,
+  TIPO_ANIMAL_LIST,
+  SYNC_CONFIG 
+} from "./config.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -17,6 +28,9 @@ const state = {
   animalView: "list", // "list" | "form"
   animalEditingId: null, // _id do animal em edição (ou null = criando)
 };
+
+/** Timer do polling de status da sincronização (id_response). */
+let syncPollTimerId = null;
 
 // ---------------- Navigation State Persistence ----------------
 
@@ -263,12 +277,7 @@ function buildModules(keys) {
 
 // ---------------- Bootstrap Bubble data ----------------
 function getEndpointUrl({ fazendaId, ownerId }) {
-  // Pode trocar por env/config depois
-  const base = "https://app.bovichain.com/version-0342o/api/1.1/wf/get_dados";
-  const u = new URL(base);
-  u.searchParams.set("fazenda", fazendaId);
-  u.searchParams.set("owner", ownerId);
-  return u.toString();
+  return API_CONFIG.getBootstrapUrl(fazendaId, ownerId);
 }
 
 /**
@@ -295,7 +304,25 @@ function normalizeAnimal(a = {}) {
   out.raca = String(out.raca || "");
   out.sexo = String(out.sexo || "");
   out.categoria = String(out.categoria || "");
-  out.data_nascimento = out.data_nascimento ? String(out.data_nascimento) : "";
+  // Limpa data_nascimento: remove "NaN", valores inválidos, e normaliza
+  const dataNasc = out.data_nascimento;
+  if (!dataNasc || String(dataNasc).toLowerCase() === "nan" || String(dataNasc).trim() === "") {
+    out.data_nascimento = "";
+  } else {
+    const dataStr = String(dataNasc).trim();
+    // Se for ISO string válida ou formato YYYY-MM-DD, mantém
+    if (/^\d{4}-\d{2}-\d{2}/.test(dataStr) || /^\d{4}-\d{2}-\d{2}T/.test(dataStr)) {
+      out.data_nascimento = dataStr;
+    } else {
+      // Tenta validar como data
+      const testDate = new Date(dataStr);
+      if (!Number.isNaN(testDate.getTime()) && testDate.getTime()) {
+        out.data_nascimento = dataStr;
+      } else {
+        out.data_nascimento = "";
+      }
+    }
+  }
 
   // flags
   out.deleted = !!out.deleted;
@@ -647,11 +674,12 @@ function monthDiff(fromDate, toDate) {
 }
 
 function isoToDateInput(iso) {
-  if (!iso) return "";
+  if (!iso || String(iso).toLowerCase() === "nan" || String(iso).trim() === "") return "";
+  const isoStr = String(iso).trim();
   // se já for yyyy-mm-dd, retorna
-  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(isoStr)) return isoStr;
+  const d = new Date(isoStr);
+  if (Number.isNaN(d.getTime()) || !d.getTime()) return "";
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
@@ -659,10 +687,14 @@ function isoToDateInput(iso) {
 }
 
 function dateInputToISO(dateStr) {
-  if (!dateStr) return "";
+  if (!dateStr || dateStr.trim() === "" || dateStr.toLowerCase() === "nan") return "";
+  // Remove espaços e valida formato básico
+  const trimmed = String(dateStr).trim();
+  // Verifica se é formato YYYY-MM-DD válido
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return "";
   // salva como ISO Z meia-noite local
-  const d = new Date(dateStr + "T03:00:00.000Z"); // mantém seu padrão BR (-03)
-  if (Number.isNaN(d.getTime())) return "";
+  const d = new Date(trimmed + "T03:00:00.000Z"); // mantém seu padrão BR (-03)
+  if (Number.isNaN(d.getTime()) || !d.getTime()) return "";
   return d.toISOString();
 }
 
@@ -886,10 +918,18 @@ function readAnimalFormByIds() {
 
   // aquisição
   const gta = $("#animalGta")?.value ?? "";
-  const uf = $("#animalUf")?.value ?? "BA";
+  const uf = $("#animalUf")?.value ?? "";
 
   // tipo entrada (chip ativo)
   const entry = document.querySelector("#tipoEntradaChips .chip.active")?.dataset?.value || "Compra";
+
+  // Valida e limpa data de nascimento
+  const dataNascimentoISO = dateInputToISO(nasc);
+  const dataNascimentoFinal = (dataNascimentoISO && 
+    String(dataNascimentoISO).toLowerCase() !== "nan" && 
+    String(dataNascimentoISO).trim() !== "") 
+    ? dataNascimentoISO 
+    : "";
 
   return {
     owner,
@@ -898,7 +938,7 @@ function readAnimalFormByIds() {
     brinco_padrao: brinco,
     sexo,
     peso_atual_kg: toNumberOrZero(pesoAtual),
-    data_nascimento: dateInputToISO(nasc),
+    data_nascimento: dataNascimentoFinal,
     categoria,
     raca,
 
@@ -953,7 +993,7 @@ function writeAnimalFormByIds(data = {}) {
   if ($("#animalPai")) $("#animalPai").value = String(data.pai_vinculo || "");
 
   if ($("#animalGta")) $("#animalGta").value = String(data.gta || "");
-  if ($("#animalUf")) $("#animalUf").value = String(data.uf || "BA");
+  if ($("#animalUf")) $("#animalUf").value = String(data.uf || "");
 
   // chip seleção
   const val = String(data.entry_type || "Compra");
@@ -1000,6 +1040,64 @@ function updateSaveButtonState() {
     btnSaveBottom.disabled = true;
     btnSaveBottom.style.opacity = "0.5";
     btnSaveBottom.style.cursor = "not-allowed";
+  }
+}
+
+/**
+ * Popula dropdowns fixos com listas do config.js
+ */
+function populateFixedDropdowns() {
+  // UF (Estados)
+  const selUf = $("#animalUf");
+  if (selUf) {
+    selUf.innerHTML = [
+      `<option value="" selected disabled>Selecione o estado</option>`,
+      ...UF_LIST.map(uf => `<option value="${escapeHtml(uf.value)}">${escapeHtml(uf.label)}</option>`)
+    ].join("");
+  }
+
+  // Raça
+  const selRaca = $("#animalRaca");
+  if (selRaca) {
+    selRaca.innerHTML = [
+      `<option value="" selected disabled>Selecione a raça</option>`,
+      ...RACAS_LIST.map(raca => `<option value="${escapeHtml(raca)}">${escapeHtml(raca)}</option>`)
+    ].join("");
+  }
+
+  // Finalidade
+  const selFinalidade = $("#animalFinalidade");
+  if (selFinalidade) {
+    selFinalidade.innerHTML = [
+      `<option value="" selected disabled>Selecione a finalidade</option>`,
+      ...FINALIDADE_LIST.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`)
+    ].join("");
+  }
+
+  // Categoria
+  const selCategoria = $("#animalCategoria");
+  if (selCategoria) {
+    selCategoria.innerHTML = [
+      `<option value="" selected disabled>Categoria</option>`,
+      ...CATEGORIA_LIST.map(cat => `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`)
+    ].join("");
+  }
+
+  // Sexo
+  const selSexo = $("#animalSexo");
+  if (selSexo) {
+    selSexo.innerHTML = [
+      `<option value="" selected disabled>Sexo</option>`,
+      ...SEXO_LIST.map(s => `<option value="${escapeHtml(s.value)}">${escapeHtml(s.label)}</option>`)
+    ].join("");
+  }
+
+  // Tipo de Animal
+  const selTipo = $("#animalTipo");
+  if (selTipo) {
+    selTipo.innerHTML = TIPO_ANIMAL_LIST.map(tipo => 
+      `<option value="${escapeHtml(tipo)}"${tipo === "Físico" ? " selected" : ""}>${escapeHtml(tipo)}</option>`
+    ).join("");
   }
 }
 
@@ -1227,6 +1325,7 @@ async function openAnimalFormForCreate() {
   if (secForm) secForm.hidden = false;
 
   bindAnimalFormUIOnce();
+  populateFixedDropdowns(); // Popula dropdowns fixos (UF, Raça, etc.)
   await fillOwnersAndLotesInForm();
 
   // advanced state - sempre inicia desligado
@@ -1264,7 +1363,7 @@ async function openAnimalFormForCreate() {
     mae_vinculo: "",
     pai_vinculo: "",
     gta: "",
-    uf: "BA",
+    uf: "",
   };
 
   writeAnimalFormByIds(initData);
@@ -1316,6 +1415,7 @@ async function openAnimalFormForEdit(animalId) {
   if (secForm) secForm.hidden = false;
 
   bindAnimalFormUIOnce();
+  populateFixedDropdowns(); // Popula dropdowns fixos (UF, Raça, etc.)
   await fillOwnersAndLotesInForm();
 
   // advanced state - sempre inicia desligado
@@ -1333,7 +1433,9 @@ async function openAnimalFormForEdit(animalId) {
     brinco_padrao: data.brinco_padrao || "",
     sexo: data.sexo || "",
     peso_atual_kg: toNumberOrZero(data.peso_atual_kg),
-    data_nascimento: data.data_nascimento || "",
+    data_nascimento: (data.data_nascimento && String(data.data_nascimento).toLowerCase() !== "nan" && String(data.data_nascimento).trim() !== "") 
+      ? String(data.data_nascimento).trim() 
+      : "",
     categoria: data.categoria || "",
     raca: data.raca || "",
 
@@ -1354,7 +1456,7 @@ async function openAnimalFormForEdit(animalId) {
     pai_vinculo: data.pai_vinculo || "",
 
     gta: data.gta || "",
-    uf: data.uf || "BA",
+    uf: data.uf || "",
   };
 
   writeAnimalFormByIds(mapped);
@@ -1416,6 +1518,12 @@ async function saveAnimalFromForm() {
 
     if (!editingId) {
       // CREATE
+      // Garante que proprietario seja salvo (converte owner para proprietario se necessário)
+      const recordData = { ...data };
+      if (recordData.owner && !recordData.proprietario) {
+        recordData.proprietario = recordData.owner;
+      }
+      
       const record = normalizeAnimal({
         _id: `local:${uuid()}`,
         _local: true,
@@ -1425,7 +1533,7 @@ async function saveAnimalFromForm() {
         deleted: false,
         ativo: true,
         morto: false,
-        ...data,
+        ...recordData,
       });
 
       arr.unshift(record);
@@ -1764,6 +1872,14 @@ async function openDashboard() {
     modView.innerHTML = ""; // Reset content
   }
 
+  // Esconde containers de módulos de animais para garantir que não apareçam junto com o dashboard
+  const animalContainer = $("#animalModuleContainer");
+  if (animalContainer) animalContainer.hidden = true;
+  const secList = $("#modAnimaisList");
+  if (secList) secList.hidden = true;
+  const secForm = $("#modAnimaisForm");
+  if (secForm) secForm.hidden = true;
+
   // Show Dashboard
   const dash = $("#modDashboard");
   if (dash) dash.hidden = false;
@@ -1901,50 +2017,62 @@ async function checkSyncStatus() {
   }
 }
 
-async function processQueue() {
-  if (!navigator.onLine) return;
+// URLs e configurações agora vêm de config.js
 
-  const btn = document.getElementById("fabSync");
-  if (btn) {
-    btn.style.animation = "spin 1s infinite linear"; // Change to spin
-    btn.innerHTML = `<div class="fabIcon">⏳</div>`;
-  }
+function showSyncStatusBanner(text, isError = false) {
+  const el = document.getElementById("syncStatusBanner");
+  const textEl = document.getElementById("syncStatusText");
+  if (!el || !textEl) return;
+  textEl.textContent = text;
+  el.style.background = isError ? "#fef2f2" : "#eff6ff";
+  el.style.borderColor = isError ? "#fecaca" : "#bfdbfe";
+  el.style.display = "block";
+}
 
-  try {
-    // Use inline function to avoid module loading issues
-    const keys = await getAllKeysFromStore("records");
-    const queueKeys = keys.filter(k => k.startsWith("queue:"));
+function hideSyncStatusBanner() {
+  const el = document.getElementById("syncStatusBanner");
+  if (el) el.style.display = "none";
+}
 
-    for (const qKey of queueKeys) {
-      const queue = await idbGet("records", qKey);
-      if (!Array.isArray(queue) || queue.length === 0) {
-        await idbDel("records", qKey);
-        continue;
+/** Aplica resultado da sincronização (resultados) aos animais locais e atualiza UI. */
+async function applySyncResult(result, qKey) {
+  if (!result || !Array.isArray(result.resultados)) return;
+  const animaisList = (await idbGet("animais", "list")) || [];
+  for (const resultado of result.resultados) {
+    if (resultado.op === "animal_create" && resultado.local_id && resultado.server_id) {
+      const animalIndex = animaisList.findIndex(a => String(a?._id) === String(resultado.local_id));
+      if (animalIndex !== -1) {
+        const animal = animaisList[animalIndex];
+        animal._id = resultado.server_id;
+        delete animal._local;
+        delete animal._sync;
+        animaisList[animalIndex] = animal;
+        console.log(`[SYNC] Animal ${resultado.local_id} atualizado para ID do servidor: ${resultado.server_id}`);
       }
-      // Simulate network delay
-      await new Promise(r => setTimeout(r, 1500));
-
-      // Success! Clear queue
-      await idbDel("records", qKey);
+    } else if (resultado.op === "animal_update" && resultado.status === "updated") {
+      const animalIndex = animaisList.findIndex(a => String(a?._id) === String(resultado.targetId));
+      if (animalIndex !== -1) {
+        const animal = animaisList[animalIndex];
+        delete animal._local;
+        delete animal._sync;
+        animaisList[animalIndex] = animal;
+        console.log(`[SYNC] Animal ${resultado.targetId} atualizado no servidor`);
+      }
     }
+  }
+  await idbSet("animais", "list", animaisList);
+  await idbDel("records", qKey);
+  await idbDel("meta", "sync_pending_id");
+  await idbDel("meta", "sync_pending_qKey");
+  // Garante que volta para o dashboard após sincronização
+  await openDashboard();
+}
 
-    toast("Sincronização concluída! ✅");
-    // Reload data to reflect server state if needed
-    // await bootstrapData(); 
-
-  } catch (e) {
-    console.error("Sync error:", e);
-    toast("Erro ao sincronizar. Tente novamente.");
-  } finally {
-    if (btn) {
-      btn.style.animation = "pulse-green 2s infinite";
-      // Atualiza visibilidade após sincronização
-    updateFabSyncVisibility();
-    
-    // Atualiza visibilidade após sincronização
-    updateFabSyncVisibility();
-    
-    btn.innerHTML = `<div class="fabIcon"><svg width="30px" height="30px" viewBox="-0.1 -0.1 1.8 1.8" fill="none"
+function restoreFabSyncIcon() {
+  const btn = document.getElementById("fabSync");
+  if (!btn) return;
+  btn.style.animation = "pulse-green 2s infinite";
+  btn.innerHTML = `<div class="fabIcon"><svg width="30px" height="30px" viewBox="-0.1 -0.1 1.8 1.8" fill="none"
                         xmlns="http://www.w3.org/2000/svg">
                         <path width="30" height="30" fill="white" fill-opacity="0.01" d="M0 0H1.8V1.8H0V0z" />
                         <path
@@ -1967,8 +2095,314 @@ async function processQueue() {
                         <path d="M1.125 1.162a0.15 0.15 0 0 1 0.15 -0.15" stroke="white" stroke-width="0.10"
                             stroke-linecap="round" stroke-linejoin="round" />
                     </svg></div>`;
+  updateFabSyncVisibility();
+}
+
+/** Polling do status da sincronização a cada 20s até receber o status. */
+async function startPollSyncStatus(idResponse, qKey) {
+  if (syncPollTimerId) {
+    clearInterval(syncPollTimerId);
+    syncPollTimerId = null;
+  }
+
+  const check = async () => {
+    try {
+      const url = `${API_CONFIG.getUrl(API_CONFIG.ENDPOINTS.STATUS_OFFLINE)}?id_response=${encodeURIComponent(idResponse)}`;
+      const res = await fetch(url, { method: "GET" });
+      if (!res.ok) {
+        console.warn("[SYNC] Status check HTTP:", res.status);
+        return;
+      }
+      const data = await res.json();
+      console.log("[SYNC] Status da sincronização:", data);
+
+      const status = data.status || data.result?.status;
+      const success = data.success === true || status === "completed" || status === "success" || status === "done";
+
+      if (success && (data.resultados || data.result?.resultados)) {
+        const resultados = data.resultados || data.result?.resultados;
+        const result = { ...data, resultados };
+        if (syncPollTimerId) {
+          clearInterval(syncPollTimerId);
+          syncPollTimerId = null;
+        }
+        await applySyncResult(result, qKey);
+        hideSyncStatusBanner();
+        showSyncStatusBanner("Sincronização concluída com sucesso.", false);
+        toast("Sincronização concluída! ✅");
+        setTimeout(hideSyncStatusBanner, 3000);
+        restoreFabSyncIcon();
+        return;
+      }
+
+      if (data.success === false || status === "failed" || status === "error") {
+        if (syncPollTimerId) {
+          clearInterval(syncPollTimerId);
+          syncPollTimerId = null;
+        }
+        hideSyncStatusBanner();
+        const msg = data.message || data.error || "Sincronização falhou.";
+        showSyncStatusBanner(msg, true);
+        toast("Erro ao sincronizar: " + msg);
+        setTimeout(hideSyncStatusBanner, 5000);
+        await idbDel("meta", "sync_pending_id");
+        await idbDel("meta", "sync_pending_qKey");
+        restoreFabSyncIcon();
+        return;
+      }
+    } catch (e) {
+      console.error("[SYNC] Erro ao consultar status:", e);
     }
-    updateFabSyncVisibility();
+  };
+
+  // Espera 10 segundos antes da primeira verificação
+  await new Promise(resolve => setTimeout(resolve, 10000));
+  await check();
+  syncPollTimerId = setInterval(check, SYNC_CONFIG.POLL_INTERVAL_MS);
+}
+
+async function processQueue() {
+  if (!navigator.onLine) return;
+
+  const btn = document.getElementById("fabSync");
+  if (btn) {
+    btn.style.animation = "spin 1s infinite linear"; // Change to spin
+    btn.innerHTML = `<div class="fabIcon">⏳</div>`;
+  }
+
+  let startedPolling = false;
+
+  try {
+    // Use inline function to avoid module loading issues
+    const keys = await getAllKeysFromStore("records");
+    const queueKeys = keys.filter(k => k.startsWith("queue:"));
+
+    if (queueKeys.length === 0) {
+      toast("Nenhum dado pendente para sincronizar.");
+      return;
+    }
+
+    // Processa cada fila de sincronização
+    for (const qKey of queueKeys) {
+      const queue = await idbGet("records", qKey);
+      if (!Array.isArray(queue) || queue.length === 0) {
+        await idbDel("records", qKey);
+        continue;
+      }
+
+      // Extrai fazenda_id e user_id da chave da fila
+      // Formato: queue:{fazenda_id}:{user_id}:animal
+      const parts = qKey.split(":");
+      const fazendaId = parts[1] || state.ctx.fazendaId;
+      const userId = parts[2] || state.ctx.ownerId;
+
+      // Mapeamento de siglas UF para nomes completos (vem de config.js)
+
+      // Formata os dados conforme o formato esperado pelo Bubble
+      const operacoes = queue.map(op => {
+        // Clona o payload e garante que proprietario está presente
+        const payload = { ...op.payload };
+        
+        // Garante que o campo seja "proprietario" (não "owner")
+        if (payload.owner && !payload.proprietario) {
+          payload.proprietario = payload.owner;
+        }
+        // Remove campo "owner" se existir (já convertido para proprietario)
+        delete payload.owner;
+        
+        // Converte sexo para formato correto (M ou F)
+        if (payload.sexo) {
+          const sexoUpper = String(payload.sexo).toUpperCase();
+          if (sexoUpper === "MACHO" || sexoUpper === "M") {
+            payload.sexo = "M";
+          } else if (sexoUpper === "FEMEA" || sexoUpper === "F" || sexoUpper === "FÊMEA") {
+            payload.sexo = "F";
+          }
+          console.log(payload.sexo);
+        }
+        
+        // Converte UF de sigla para nome completo
+        if (payload.uf) {
+          const ufSigla = String(payload.uf).toUpperCase();
+          if (UF_MAP[ufSigla]) {
+            payload.uf = UF_MAP[ufSigla];
+            console.log(payload.uf);
+          }
+        }
+        
+        // Converte campos de data para timestamp (número)
+        // Função auxiliar para converter string de data ISO para timestamp
+        const dateToTimestamp = (dateValue) => {
+          if (!dateValue || String(dateValue).toLowerCase() === "nan" || String(dateValue).trim() === "") {
+            return null;
+          }
+          const dateStr = String(dateValue).trim();
+          
+          // Se já for número (timestamp), retorna como está
+          if (!isNaN(Number(dateStr)) && dateStr.length > 10 && !dateStr.includes("-")) {
+            const num = Number(dateStr);
+            if (num > 0) return num;
+          }
+          
+          // Se for formato ISO completo (YYYY-MM-DDTHH:mm:ss.sssZ)
+          if (/^\d{4}-\d{2}-\d{2}T/.test(dateStr)) {
+            const date = new Date(dateStr);
+            if (!Number.isNaN(date.getTime()) && date.getTime() > 0) {
+              return date.getTime();
+            }
+          }
+          
+          // Se for formato ISO apenas data (YYYY-MM-DD)
+          if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            const date = new Date(dateStr + "T00:00:00.000Z");
+            if (!Number.isNaN(date.getTime()) && date.getTime() > 0) {
+              return date.getTime();
+            }
+          }
+          
+          // Tenta parsear como Date genérico
+          const parsed = new Date(dateStr);
+          if (!Number.isNaN(parsed.getTime()) && parsed.getTime() > 0) {
+            return parsed.getTime();
+          }
+          
+          return null;
+        };
+        
+        // Converte data_nascimento para timestamp (apenas se válida)
+        if (payload.data_nascimento && String(payload.data_nascimento).toLowerCase() !== "nan") {
+          const timestamp = dateToTimestamp(payload.data_nascimento);
+          if (timestamp !== null && timestamp > 0) {
+            payload.data_nascimento = timestamp;
+          } else {
+            // Se não conseguir converter, remove o campo ou define como null
+            delete payload.data_nascimento;
+          }
+        } else {
+          // Remove se vazio ou "NaN"
+          delete payload.data_nascimento;
+        }
+        
+        // Garante que list_lotes seja um array
+        if (!Array.isArray(payload.list_lotes)) {
+          payload.list_lotes = payload.lote ? [payload.lote] : [];
+        }
+        
+        // Remove campos de sincronização local do payload antes de enviar
+        delete payload._local;
+        delete payload._sync;
+        
+        const operacao = {
+          op: op.op,
+          data_hora: op.at || Date.now(),
+          payload: payload
+        };
+        
+        // Para UPDATE, adiciona targetId
+        if (op.op === "animal_update" && op.targetId) {
+          operacao.targetId = op.targetId;
+        }
+        
+        return operacao;
+      });
+
+      // Prepara o payload para envio
+      const syncPayload = {
+        dados: {
+          fazenda_id: fazendaId,
+          user_id: userId,
+          timestamp: Date.now(),
+          operacoes: operacoes
+        }
+      };
+
+      console.log("[SYNC] Enviando dados para sincronização:", syncPayload);
+
+      // Envia para o endpoint do Bubble
+      const response = await fetch(API_CONFIG.getUrl(API_CONFIG.ENDPOINTS.SYNC_DADOS), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(syncPayload)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log("[SYNC] Resposta do servidor:", result);
+
+      // Resposta assíncrona: servidor devolve id_response para consultar status depois
+      const idResponse = result.id_response || result.response?.id_response;
+      if (idResponse) {
+        await idbSet("meta", "sync_pending_id", idResponse);
+        await idbSet("meta", "sync_pending_qKey", qKey);
+        showSyncStatusBanner("Sincronização em andamento...");
+        startedPolling = true;
+        startPollSyncStatus(idResponse, qKey);
+        return;
+      }
+
+      // Resposta síncrona (legado): processa resultado na hora
+      if (result.success && Array.isArray(result.resultados)) {
+        const animaisList = (await idbGet("animais", "list")) || [];
+        for (const resultado of result.resultados) {
+          if (resultado.op === "animal_create" && resultado.local_id && resultado.server_id) {
+            const animalIndex = animaisList.findIndex(a => String(a?._id) === String(resultado.local_id));
+            if (animalIndex !== -1) {
+              const animal = animaisList[animalIndex];
+              animal._id = resultado.server_id;
+              delete animal._local;
+              delete animal._sync;
+              animaisList[animalIndex] = animal;
+              console.log(`[SYNC] Animal ${resultado.local_id} atualizado para ID do servidor: ${resultado.server_id}`);
+            }
+          } else if (resultado.op === "animal_update" && resultado.status === "updated") {
+            const animalIndex = animaisList.findIndex(a => String(a?._id) === String(resultado.targetId));
+            if (animalIndex !== -1) {
+              const animal = animaisList[animalIndex];
+              delete animal._local;
+              delete animal._sync;
+              animaisList[animalIndex] = animal;
+              console.log(`[SYNC] Animal ${resultado.targetId} atualizado no servidor`);
+            }
+          }
+        }
+        await idbSet("animais", "list", animaisList);
+        // Garante que volta para o dashboard após sincronização
+        await openDashboard();
+      }
+
+      if (result.erros && Array.isArray(result.erros) && result.erros.length > 0) {
+        console.warn("[SYNC] Algumas operações falharam:", result.erros);
+        for (const erro of result.erros) {
+          toast(`Erro ao sincronizar ${erro.local_id}: ${erro.erro || erro.message}`);
+        }
+      }
+
+      if (result.success) {
+        await idbDel("records", qKey);
+        console.log(`[SYNC] Fila ${qKey} processada e removida`);
+      } else {
+        throw new Error(result.message || "Erro ao processar sincronização");
+      }
+    }
+
+    if (startedPolling) return;
+    toast("Sincronização concluída! ✅");
+    // Reload data to reflect server state if needed
+    // await bootstrapData(); 
+
+  } catch (e) {
+    console.error("Sync error:", e);
+    toast("Erro ao sincronizar. Tente novamente.");
+  } finally {
+    if (btn && !startedPolling) {
+      restoreFabSyncIcon();
+    }
   }
 }
 
@@ -2056,6 +2490,14 @@ async function init() {
   } else {
     // START AT DASHBOARD (primeira vez ou sem estado salvo)
     await openDashboard();
+  }
+
+  // Retomar polling de sincronização pendente (ex.: após refresh)
+  const pendingId = await idbGet("meta", "sync_pending_id");
+  const pendingQKey = await idbGet("meta", "sync_pending_qKey");
+  if (pendingId && pendingQKey) {
+    showSyncStatusBanner("Sincronização em andamento...");
+    startPollSyncStatus(pendingId, pendingQKey);
   }
 }
 
