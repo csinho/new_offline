@@ -104,6 +104,16 @@ function setNetBadge() {
   const lbl = $("#netLabel");
   if (dot) dot.style.background = online ? "#22c55e" : "#ef4444";
   if (lbl) lbl.textContent = online ? "online" : "offline";
+  
+  // Atualiza a bolinha do avatar no dashboard
+  const avatar = $("#dashAvatar");
+  if (avatar) {
+    if (online) {
+      avatar.classList.remove("offline");
+    } else {
+      avatar.classList.add("offline");
+    }
+  }
 }
 
 function showBoot(msg, hint = "") {
@@ -158,7 +168,8 @@ function setPageHeadTexts(title, sub) {
   if (s) s.textContent = sub || "";
 }
 
-// ---------------- URL / modules ----------------
+// ---------------- URL / modules ------------
+
 const MODULE_CATALOG = {
   animal_create: {
     key: "animal_create",
@@ -1726,7 +1737,16 @@ async function renderDashboard() {
   if (elName) {
     elName.innerHTML = escapeHtml(name) + (hasPending ? " <span style='font-size:14px; vertical-align:middle' title='Dados pendentes'>☁️</span>" : "");
   }
-  if (elAvatar) elAvatar.textContent = firstLetter;
+  if (elAvatar) {
+    elAvatar.textContent = firstLetter;
+    // Atualiza status da bolinha baseado no status online/offline
+    const online = navigator.onLine;
+    if (online) {
+      elAvatar.classList.remove("offline");
+    } else {
+      elAvatar.classList.add("offline");
+    }
+  }
 
   // 2. Modules Carousel
   const modContainer = $("#dashModules");

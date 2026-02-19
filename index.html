@@ -537,7 +537,7 @@
         }
 
         /* Esconde tabs antigas quando usar accordion */
-        .accordionTabs ~ .tabs,
+        .accordionTabs~.tabs,
         .accordionTabs .tabs {
             display: none;
         }
@@ -1215,10 +1215,17 @@
             width: 12px;
             height: 12px;
             background: #10b981;
-            /* Green Status */
+            /* Green Status - padrão online */
             border: 2px solid #edff77;
             /* Match Header BG */
             border-radius: 50%;
+            transition: background-color 0.3s ease;
+        }
+
+        /* Classe para quando estiver offline */
+        .dashAvatar.offline:after {
+            background: #ef4444;
+            /* Red Status - offline */
         }
 
         .dashWelcome {
@@ -1436,7 +1443,7 @@
         /* ==========================================================
            NOVO LAYOUT MOBILE - LISTAGEM DE ANIMAIS
         ========================================================== */
-        
+
         /* Header Amarelo Mobile */
         .animalListHeader {
             background: var(--sidebar);
@@ -1598,11 +1605,13 @@
         }
 
         .animalCard.male::after {
-            background: #3b82f6; /* Azul para macho */
+            background: #3b82f6;
+            /* Azul para macho */
         }
 
         .animalCard.female::after {
-            background: #ec4899; /* Rosa para fêmea */
+            background: #ec4899;
+            /* Rosa para fêmea */
         }
 
         /* Ícone do Animal */
@@ -1692,7 +1701,7 @@
         /* ==========================================================
            ACCORDION TABS (Cadastro Avançado)
         ========================================================== */
-        
+
         .accordionTabs {
             display: flex;
             flex-direction: column;
@@ -1767,7 +1776,7 @@
             #modAnimaisList {
                 height: 100vh;
             }
-            
+
             /* Esconde botão Home no mobile */
             #mobileBackDash {
                 display: none !important;
@@ -1776,7 +1785,7 @@
             /* ==========================================================
                FORMULÁRIO MOBILE - ADAPTAÇÕES
             ========================================================== */
-            
+
             /* Header do Form */
             .pageHead {
                 flex-direction: column;
@@ -2084,7 +2093,8 @@
                                     <div class="chip active" data-value="Compra"><span class="box"></span>Compra</div>
                                     <div class="chip" data-value="Doação"><span class="box"></span>Doação</div>
                                     <div class="chip" data-value="Empréstimo"><span class="box"></span>Empréstimo</div>
-                                    <div class="chip" data-value="Ajuste inventário"><span class="box"></span>Ajuste inventário</div>
+                                    <div class="chip" data-value="Ajuste inventário"><span class="box"></span>Ajuste
+                                        inventário</div>
                                 </div>
                             </div>
 
@@ -2145,58 +2155,60 @@
                                             <span class="accordionIcon">▼</span>
                                         </div>
                                         <div class="accordionPanel" id="tab-dados">
-                                    <div class="grid">
-                                        <div class="field" style="grid-column: span 4;">
-                                            <div class="label">Nome completo</div>
-                                            <input id="animalNome" placeholder="Brinco de manejo" />
-                                        </div>
-                                        <div class="field" style="grid-column: span 4;">
-                                            <div class="label">Finalidade</div>
-                                            <select id="animalFinalidade">
-                                                <!-- Populado dinamicamente via config.js -->
-                                            </select>
-                                        </div>
-                                        <div class="field" style="grid-column: span 4;">
-                                            <div class="label">Peso no nascimento em kg</div>
-                                            <input id="animalPesoNasc" type="number" min="0" step="0.1" value="0" />
-                                        </div>
+                                            <div class="grid">
+                                                <div class="field" style="grid-column: span 4;">
+                                                    <div class="label">Nome completo</div>
+                                                    <input id="animalNome" placeholder="Brinco de manejo" />
+                                                </div>
+                                                <div class="field" style="grid-column: span 4;">
+                                                    <div class="label">Finalidade</div>
+                                                    <select id="animalFinalidade">
+                                                        <!-- Populado dinamicamente via config.js -->
+                                                    </select>
+                                                </div>
+                                                <div class="field" style="grid-column: span 4;">
+                                                    <div class="label">Peso no nascimento em kg</div>
+                                                    <input id="animalPesoNasc" type="number" min="0" step="0.1"
+                                                        value="0" />
+                                                </div>
 
-                                        <div class="field" style="grid-column: span 4;">
-                                            <div class="label">SISBOV</div>
-                                            <input id="animalSisbov" placeholder="SISBOV" />
-                                        </div>
-                                        <div class="field" style="grid-column: span 4;">
-                                            <div class="label">Identificação eletrônica</div>
-                                            <input id="animalEletronica" placeholder="Identificação eletrônica" />
-                                        </div>
-                                        <div class="field" style="grid-column: span 4;">
-                                            <div class="label">RGD</div>
-                                            <input id="animalRgd" placeholder="RGD" />
-                                        </div>
+                                                <div class="field" style="grid-column: span 4;">
+                                                    <div class="label">SISBOV</div>
+                                                    <input id="animalSisbov" placeholder="SISBOV" />
+                                                </div>
+                                                <div class="field" style="grid-column: span 4;">
+                                                    <div class="label">Identificação eletrônica</div>
+                                                    <input id="animalEletronica"
+                                                        placeholder="Identificação eletrônica" />
+                                                </div>
+                                                <div class="field" style="grid-column: span 4;">
+                                                    <div class="label">RGD</div>
+                                                    <input id="animalRgd" placeholder="RGD" />
+                                                </div>
 
-                                        <div class="field" style="grid-column: span 4;">
-                                            <div class="label">RGN</div>
-                                            <input id="animalRgn" placeholder="RGN" />
-                                        </div>
-                                        <div class="field" style="grid-column: span 4;">
-                                            <div class="label">Lote</div>
-                                            <select id="animalLote">
-                                                <option value="">Lote</option>
-                                            </select>
-                                        </div>
-                                        <div class="field" style="grid-column: span 4;">
-                                            <div class="label">Pasto</div>
-                                            <select id="animalPasto">
-                                                <option value="">Pasto</option>
-                                            </select>
-                                        </div>
+                                                <div class="field" style="grid-column: span 4;">
+                                                    <div class="label">RGN</div>
+                                                    <input id="animalRgn" placeholder="RGN" />
+                                                </div>
+                                                <div class="field" style="grid-column: span 4;">
+                                                    <div class="label">Lote</div>
+                                                    <select id="animalLote">
+                                                        <option value="">Lote</option>
+                                                    </select>
+                                                </div>
+                                                <div class="field" style="grid-column: span 4;">
+                                                    <div class="label">Pasto</div>
+                                                    <select id="animalPasto">
+                                                        <option value="">Pasto</option>
+                                                    </select>
+                                                </div>
 
-                                        <div class="field" style="grid-column: span 12;">
-                                            <div class="label">Observações</div>
-                                            <textarea id="animalObs"
-                                                placeholder="Digite aqui suas observações sobre o animal..."></textarea>
-                                        </div>
-                                    </div>
+                                                <div class="field" style="grid-column: span 12;">
+                                                    <div class="label">Observações</div>
+                                                    <textarea id="animalObs"
+                                                        placeholder="Digite aqui suas observações sobre o animal..."></textarea>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -2207,34 +2219,34 @@
                                             <span class="accordionIcon">▼</span>
                                         </div>
                                         <div class="accordionPanel" id="tab-genealogia">
-                                    <div class="togglePills">
-                                        <div class="pill">
-                                            <span>Mãe Cadastrada</span>
-                                            <label class="switch">
-                                                <input type="checkbox" id="maeCad" />
-                                                <span class="slider"></span>
-                                            </label>
-                                        </div>
+                                            <div class="togglePills">
+                                                <div class="pill">
+                                                    <span>Mãe Cadastrada</span>
+                                                    <label class="switch">
+                                                        <input type="checkbox" id="maeCad" />
+                                                        <span class="slider"></span>
+                                                    </label>
+                                                </div>
 
-                                        <div class="pill">
-                                            <span>Pai Cadastrado</span>
-                                            <label class="switch">
-                                                <input type="checkbox" id="paiCad" />
-                                                <span class="slider"></span>
-                                            </label>
-                                        </div>
-                                    </div>
+                                                <div class="pill">
+                                                    <span>Pai Cadastrado</span>
+                                                    <label class="switch">
+                                                        <input type="checkbox" id="paiCad" />
+                                                        <span class="slider"></span>
+                                                    </label>
+                                                </div>
+                                            </div>
 
-                                    <div class="grid">
-                                        <div class="field" style="grid-column: span 6;">
-                                            <div class="label">Mãe (vinculado)</div>
-                                            <input id="animalMae" placeholder="Digite o nome para pesquisar" />
-                                        </div>
-                                        <div class="field" style="grid-column: span 6;">
-                                            <div class="label">Pai (vinculado)</div>
-                                            <input id="animalPai" placeholder="Digite o nome para pesquisar" />
-                                        </div>
-                                    </div>
+                                            <div class="grid">
+                                                <div class="field" style="grid-column: span 6;">
+                                                    <div class="label">Mãe (vinculado)</div>
+                                                    <input id="animalMae" placeholder="Digite o nome para pesquisar" />
+                                                </div>
+                                                <div class="field" style="grid-column: span 6;">
+                                                    <div class="label">Pai (vinculado)</div>
+                                                    <input id="animalPai" placeholder="Digite o nome para pesquisar" />
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -2245,18 +2257,18 @@
                                             <span class="accordionIcon">▼</span>
                                         </div>
                                         <div class="accordionPanel" id="tab-aquisicao">
-                                    <div class="grid">
-                                        <div class="field" style="grid-column: span 6;">
-                                            <div class="label">Nº GTA</div>
-                                            <input id="animalGta" placeholder="12345" />
-                                        </div>
-                                        <div class="field" style="grid-column: span 6;">
-                                            <div class="label">Estado (UF)</div>
-                                            <select id="animalUf">
-                                                <!-- Populado dinamicamente via config.js -->
-                                            </select>
-                                        </div>
-                                    </div>
+                                            <div class="grid">
+                                                <div class="field" style="grid-column: span 6;">
+                                                    <div class="label">Nº GTA</div>
+                                                    <input id="animalGta" placeholder="12345" />
+                                                </div>
+                                                <div class="field" style="grid-column: span 6;">
+                                                    <div class="label">Estado (UF)</div>
+                                                    <select id="animalUf">
+                                                        <!-- Populado dinamicamente via config.js -->
+                                                    </select>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -2300,7 +2312,8 @@
                     </div>
 
                     <!-- Banner de status da sincronização (acima de Módulos) -->
-                    <div id="syncStatusBanner" class="syncStatusBanner" style="display:none; text-align:center; padding:12px 16px; margin:0 0 16px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">
+                    <div id="syncStatusBanner" class="syncStatusBanner"
+                        style="display:none; text-align:center; padding:12px 16px; margin:0 0 16px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">
                         <span id="syncStatusText">Sincronização em andamento...</span>
                     </div>
 
