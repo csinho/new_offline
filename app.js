@@ -54,14 +54,13 @@ function showBoot(msg, hint = "") {
   o.style.display = "flex";
   const sub = $("#bootSub");
   const h = $("#bootHint");
-  alert("show, abriu");
   if (sub) sub.textContent = msg || "Sincronizando dados…";
   if (h) h.textContent = hint || "";
 }
 
 function hideBoot() {
+  alert("passei aqui");
   const o = $("#bootOverlay");
-  alert("show, fechou");
   if (!o) return;
   o.style.display = "none";
 }
