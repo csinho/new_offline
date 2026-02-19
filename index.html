@@ -164,11 +164,6 @@
             width: 100%;
         }
 
-        /* Quando está na listagem de animais, ajusta layout */
-        #modAnimaisList {
-            margin: -18px;
-            width: calc(100% + 36px);
-        }
 
         .pageHead {
             background: var(--card);
@@ -1101,9 +1096,25 @@
         #modAnimaisList {
             display: flex;
             flex-direction: column;
-            height: 100vh;
+            height: calc(100vh - 64px);
+            max-height: calc(100vh - 64px);
             overflow: hidden;
             position: relative;
+            /* Compensa o padding do .content (18px) para que o header possa ocupar toda largura */
+            margin: -18px -18px 0 -18px;
+            padding: 0;
+        }
+
+        /* Container scrollável para a lista */
+        #modAnimaisList .animalListContainer {
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        /* Container fixo para header e botão */
+        #modAnimaisList>.animalListHeader,
+        #modAnimaisList>.animalCreateButtonWrap {
+            flex-shrink: 0;
         }
 
         /* Toggle Switch Custom */
@@ -1444,17 +1455,17 @@
            NOVO LAYOUT MOBILE - LISTAGEM DE ANIMAIS
         ========================================================== */
 
-        /* Header Amarelo Mobile */
+        /* Header Amarelo Mobile - colado nas bordas como o dashboard; padding só no conteúdo interno */
         .animalListHeader {
             background: var(--sidebar);
-            padding: 24px 20px 28px;
-            margin: -16px -20px 0 -20px;
             border-bottom-left-radius: 24px;
             border-bottom-right-radius: 24px;
-            position: sticky;
-            top: 0;
-            z-index: 100;
+            box-shadow: 0 4px 20px rgba(17, 24, 39, 0.1);
             flex-shrink: 0;
+            /* Ocupa toda largura do #modAnimaisList (que já compensa o padding do .content) */
+            margin: 0;
+            /* Padding interno para o conteúdo não ficar colado */
+            padding: 24px 20px 28px;
         }
 
         .animalBackBtn {
@@ -1526,12 +1537,7 @@
             margin-top: 20px;
             padding: 0 20px 16px;
             flex-shrink: 0;
-            position: sticky;
-            top: 0;
-            z-index: 99;
             background: var(--bg);
-            padding-top: 20px;
-            padding-bottom: 16px;
         }
 
         .animalCreateBtn {
@@ -1566,6 +1572,8 @@
             overflow-x: hidden;
             -webkit-overflow-scrolling: touch;
             min-height: 0;
+            scroll-behavior: smooth;
+            /* Garante que o scroll funcione corretamente */
         }
 
         .animalCardsList {
@@ -1768,13 +1776,22 @@
 
         /* Ajustes Mobile específicos */
         @media (max-width: 980px) {
-            .animalListHeader {
+            /* Compensa o padding do .content no mobile (16px top, 20px horizontal) */
+            #modAnimaisList {
                 margin: -16px -20px 0 -20px;
+            }
+
+            .animalListHeader {
+                /* Ocupa toda largura do #modAnimaisList (que já compensa o padding do .content) */
+                margin: 0;
+                /* Padding interno para o conteúdo não ficar colado */
+                padding: 24px 20px 28px;
             }
 
             /* Ajusta altura da seção de listagem no mobile */
             #modAnimaisList {
                 height: 100vh;
+                max-height: 100vh;
             }
 
             /* Esconde botão Home no mobile */
@@ -2006,6 +2023,7 @@
                      Fica fora do #moduleView para não perder estado/eventos
                 =========================================================== -->
                 <div id="animalModuleContainer" hidden>
+
 
                     <!-- LISTA -->
                     <section class="moduleSection" id="modAnimaisList">
