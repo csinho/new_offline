@@ -1,4 +1,4 @@
-import { idbGet, idbSet, idbClear } from "./idb.js";
+import { idbGetAllKeys, idbDel, idbGet, idbSet, idbClear } from "./idb.js";
 
 const $ = (sel) => document.querySelector(sel);
 
