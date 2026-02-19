@@ -31,6 +31,8 @@ const state = {
 
 /** Timer do polling de status da sincronização (id_response). */
 let syncPollTimerId = null;
+/** True quando esta sessão de polling já finalizou (sucesso ou falha); evita novas buscas. */
+let syncPollDone = false;
 
 // ---------------- Navigation State Persistence ----------------
 
@@ -2067,16 +2069,20 @@ async function applySyncResult(result, qKey) {
         delete animal._local;
         delete animal._sync;
         animaisList[animalIndex] = animal;
-        console.log(`[SYNC] Animal ${resultado.local_id} atualizado para ID do servidor: ${resultado.server_id}`);
       }
     } else if (resultado.op === "animal_update" && resultado.status === "updated") {
-      const animalIndex = animaisList.findIndex(a => String(a?._id) === String(resultado.targetId));
+      let animalIndex = animaisList.findIndex(a => String(a?._id) === String(resultado.targetId));
+      if (animalIndex === -1 && resultado.id_local) {
+        animalIndex = animaisList.findIndex(a => String(a?._id) === String(resultado.id_local));
+      }
       if (animalIndex !== -1) {
         const animal = animaisList[animalIndex];
+        if (resultado.targetId && String(animal._id) !== String(resultado.targetId)) {
+          animal._id = resultado.targetId;
+        }
         delete animal._local;
         delete animal._sync;
         animaisList[animalIndex] = animal;
-        console.log(`[SYNC] Animal ${resultado.targetId} atualizado no servidor`);
       }
     }
   }
@@ -2124,8 +2130,10 @@ async function startPollSyncStatus(idResponse, qKey) {
     clearInterval(syncPollTimerId);
     syncPollTimerId = null;
   }
+  syncPollDone = false;
 
   const check = async () => {
+    if (syncPollDone) return;
     try {
       const url = `${API_CONFIG.getUrl(API_CONFIG.ENDPOINTS.STATUS_OFFLINE)}?id_response=${encodeURIComponent(idResponse)}`;
       const res = await fetch(url, { method: "GET" });
@@ -2134,18 +2142,59 @@ async function startPollSyncStatus(idResponse, qKey) {
         return;
       }
       const data = await res.json();
-      console.log("[SYNC] Status da sincronização:", data);
 
-      const status = data.status || data.result?.status;
-      const success = data.success === true || status === "completed" || status === "success" || status === "done";
+      // Novo formato: { dados: [...], qtd: "1" } — finalizado quando dados.length === qtd
+      const dados = Array.isArray(data.dados) ? data.dados : [];
+      const qtd = parseInt(data.qtd, 10) || 0;
+      const finalizado = qtd > 0 && dados.length === qtd;
 
-      if (success && (data.resultados || data.result?.resultados)) {
-        const resultados = data.resultados || data.result?.resultados;
-        const result = { ...data, resultados };
+      if (finalizado && dados.length > 0) {
+        if (syncPollDone) return;
+        syncPollDone = true;
         if (syncPollTimerId) {
           clearInterval(syncPollTimerId);
           syncPollTimerId = null;
         }
+        // Converte "dados" para o formato esperado por applySyncResult (resultados)
+        const resultados = dados.map(item => {
+          if (item.op === "animal_create") {
+            return {
+              op: "animal_create",
+              local_id: item.id_local || item.local_id,
+              server_id: item.targetId
+            };
+          }
+          if (item.op === "animal_update") {
+            return {
+              op: "animal_update",
+              targetId: item.targetId,
+              id_local: item.id_local || undefined,
+              status: (item.status_sync === "completed") ? "updated" : item.status_sync
+            };
+          }
+          return item;
+        });
+        await applySyncResult({ resultados }, qKey);
+        hideSyncStatusBanner();
+        showSyncStatusBanner("Sincronização concluída com sucesso.", false);
+        toast("Sincronização concluída! ✅");
+        setTimeout(hideSyncStatusBanner, 3000);
+        restoreFabSyncIcon();
+        return;
+      }
+
+      // Formato legado: success + resultados
+      const status = data.status || data.result?.status;
+      const success = data.success === true || status === "completed" || status === "success" || status === "done";
+      if (success && (data.resultados || data.result?.resultados)) {
+        if (syncPollDone) return;
+        syncPollDone = true;
+        if (syncPollTimerId) {
+          clearInterval(syncPollTimerId);
+          syncPollTimerId = null;
+        }
+        const resultados = data.resultados || data.result?.resultados;
+        const result = { ...data, resultados };
         await applySyncResult(result, qKey);
         hideSyncStatusBanner();
         showSyncStatusBanner("Sincronização concluída com sucesso.", false);
@@ -2155,7 +2204,9 @@ async function startPollSyncStatus(idResponse, qKey) {
         return;
       }
 
-      if (data.success === false || status === "failed" || status === "error") {
+      if (data.success === false || data.status === "failed" || data.status === "error") {
+        if (syncPollDone) return;
+        syncPollDone = true;
         if (syncPollTimerId) {
           clearInterval(syncPollTimerId);
           syncPollTimerId = null;
@@ -2178,7 +2229,9 @@ async function startPollSyncStatus(idResponse, qKey) {
   // Espera 10 segundos antes da primeira verificação
   await new Promise(resolve => setTimeout(resolve, 10000));
   await check();
-  syncPollTimerId = setInterval(check, SYNC_CONFIG.POLL_INTERVAL_MS);
+  if (!syncPollDone) {
+    syncPollTimerId = setInterval(check, SYNC_CONFIG.POLL_INTERVAL_MS);
+  }
 }
 
 async function processQueue() {
@@ -2238,7 +2291,6 @@ async function processQueue() {
           } else if (sexoUpper === "FEMEA" || sexoUpper === "F" || sexoUpper === "FÊMEA") {
             payload.sexo = "F";
           }
-          console.log(payload.sexo);
         }
         
         // Converte UF de sigla para nome completo
@@ -2246,7 +2298,6 @@ async function processQueue() {
           const ufSigla = String(payload.uf).toUpperCase();
           if (UF_MAP[ufSigla]) {
             payload.uf = UF_MAP[ufSigla];
-            console.log(payload.uf);
           }
         }
         
@@ -2336,8 +2387,6 @@ async function processQueue() {
         }
       };
 
-      console.log("[SYNC] Enviando dados para sincronização:", syncPayload);
-
       // Envia para o endpoint do Bubble
       const response = await fetch(API_CONFIG.getUrl(API_CONFIG.ENDPOINTS.SYNC_DADOS), {
         method: "POST",
@@ -2353,7 +2402,6 @@ async function processQueue() {
       }
 
       const result = await response.json();
-      console.log("[SYNC] Resposta do servidor:", result);
 
       // Resposta assíncrona: servidor devolve id_response para consultar status depois
       const idResponse = result.id_response || result.response?.id_response;
@@ -2378,7 +2426,6 @@ async function processQueue() {
               delete animal._local;
               delete animal._sync;
               animaisList[animalIndex] = animal;
-              console.log(`[SYNC] Animal ${resultado.local_id} atualizado para ID do servidor: ${resultado.server_id}`);
             }
           } else if (resultado.op === "animal_update" && resultado.status === "updated") {
             const animalIndex = animaisList.findIndex(a => String(a?._id) === String(resultado.targetId));
@@ -2387,7 +2434,6 @@ async function processQueue() {
               delete animal._local;
               delete animal._sync;
               animaisList[animalIndex] = animal;
-              console.log(`[SYNC] Animal ${resultado.targetId} atualizado no servidor`);
             }
           }
         }
@@ -2405,7 +2451,6 @@ async function processQueue() {
 
       if (result.success) {
         await idbDel("records", qKey);
-        console.log(`[SYNC] Fila ${qKey} processada e removida`);
       } else {
         throw new Error(result.message || "Erro ao processar sincronização");
       }
