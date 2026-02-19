@@ -59,7 +59,6 @@ function showBoot(msg, hint = "") {
 }
 
 function hideBoot() {
-  alert("passei aqui");
   const o = $("#bootOverlay");
   if (!o) return;
   o.style.display = "none";
