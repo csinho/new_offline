@@ -414,32 +414,7 @@ async function bootstrapData() {
     // Preserva animais locais que ainda não foram sincronizados
     // IMPORTANTE: Não normaliza aqui, pois pode perder propriedades _local e _sync
     const animaisLocaisExistentesRaw = (await idbGet("animais", "list")) || [];
-    console.log("[BOOT] Animais locais existentes antes da mesclagem:", animaisLocaisExistentesRaw.length);
     
-    // DEBUG CRÍTICO: Verifica o conteúdo completo da store animais
-    if (Array.isArray(animaisLocaisExistentesRaw)) {
-      console.log("[BOOT] DEBUG CRÍTICO - Conteúdo completo da store 'animais':", {
-        total: animaisLocaisExistentesRaw.length,
-        animais: animaisLocaisExistentesRaw.map(a => ({
-          _id: a?._id,
-          brinco: a?.brinco_padrao,
-          _local: a?._local,
-          _sync: a?._sync,
-          todas_chaves: Object.keys(a || {})
-        }))
-      });
-    }
-    
-    // DEBUG: Mostra todos os animais e suas propriedades ANTES de qualquer processamento
-    if (Array.isArray(animaisLocaisExistentesRaw) && animaisLocaisExistentesRaw.length > 0) {
-      console.log("[BOOT] DEBUG - Todos os animais locais existentes (RAW):", animaisLocaisExistentesRaw.map(a => ({
-        _id: a?._id,
-        _local: a?._local,
-        _sync: a?._sync,
-        brinco: a?.brinco_padrao,
-        todas_propriedades: Object.keys(a || {})
-      })));
-    }
     
     // Filtra animais locais pendentes ANTES de normalizar
     // Um animal é considerado local/pendente se:
@@ -458,39 +433,9 @@ async function bootstrapData() {
           const isPending = syncPending;
           const resultado = isLocal && isPending;
           
-          // DEBUG: Mostra por que cada animal foi ou não incluído
-          if (idLocal || localFlag) {
-            console.log("[BOOT] DEBUG - Animal com ID local ou flag local:", {
-              id,
-              _id_original: a._id,
-              _local: a._local,
-              tipo_local: typeof a._local,
-              _sync: a._sync,
-              tipo_sync: typeof a._sync,
-              idLocal,
-              localFlag,
-              syncPending,
-              isLocal,
-              isPending,
-              resultado,
-              todas_propriedades: Object.keys(a)
-            });
-          }
-          
-          if (resultado) {
-            console.log("[BOOT] Animal local pendente encontrado:", { 
-              id, 
-              _id_original: a._id,
-              _local: a._local, 
-              _sync: a._sync 
-            });
-          }
           return resultado;
         })
       : [];
-    
-    console.log("[BOOT] Animais locais pendentes encontrados:", animaisLocaisPendentes.length);
-    console.log("[BOOT] Animais do servidor:", animaisServidor.length);
     
     // Mescla: animais do servidor + animais locais pendentes
     // Remove duplicatas baseado no _id (prioriza servidor se houver conflito)
@@ -528,8 +473,6 @@ async function bootstrapData() {
     
     if (!todosPreservados) {
       console.warn("[BOOT] Alguns animais locais pendentes não foram preservados!");
-      console.log("[BOOT] IDs locais pendentes:", Array.from(idsLocaisPendentes));
-      console.log("[BOOT] IDs finais:", Array.from(idsFinais));
     }
     
     // IMPORTANTE: Normaliza os animais locais pendentes ANTES de aplicar toCloneable
@@ -557,15 +500,7 @@ async function bootstrapData() {
       const id = String(a?._id || "").toLowerCase();
       return (a?._local === true || id.startsWith("local:")) && String(a?._sync || "").toLowerCase() === "pending";
     });
-    console.log("[BOOT] Animais locais pendentes após toCloneable:", animaisLocaisAposClone.length);
-    if (animaisLocaisAposClone.length > 0) {
-      console.log("[BOOT] DEBUG - Primeiro animal local após toCloneable:", {
-        _id: animaisLocaisAposClone[0]?._id,
-        _local: animaisLocaisAposClone[0]?._local,
-        _sync: animaisLocaisAposClone[0]?._sync,
-        todas_propriedades: Object.keys(animaisLocaisAposClone[0] || {})
-      });
-    }
+    
     const lotes = toCloneable(
       (Array.isArray(lotesRaw) ? lotesRaw : []).map(normalizeLote)
     );
@@ -580,15 +515,6 @@ async function bootstrapData() {
       
       // Verifica se foi salvo corretamente
       const verificaSalvamento = await idbGet("animais", "list");
-      console.log("[BOOT] DEBUG - Verificação após salvar:", {
-        total_animais: Array.isArray(verificaSalvamento) ? verificaSalvamento.length : 0,
-        primeiro_animal: verificaSalvamento?.[0] ? {
-          _id: verificaSalvamento[0]._id,
-          _local: verificaSalvamento[0]._local,
-          _sync: verificaSalvamento[0]._sync,
-          todas_propriedades: Object.keys(verificaSalvamento[0] || {})
-        } : null
-      });
       
       const animaisLocaisSalvos = Array.isArray(verificaSalvamento) 
         ? verificaSalvamento.filter(a => {
@@ -598,7 +524,6 @@ async function bootstrapData() {
             return isLocal && isPending;
           })
         : [];
-      console.log("[BOOT] Animais locais pendentes após salvar no IndexedDB:", animaisLocaisSalvos.length);
       
       await idbSet("lotes", "list", lotes);
       await idbSet("vacinacao", "list", vacinacao);
@@ -951,7 +876,6 @@ function readAnimalFormByIds() {
   const rgn = $("#animalRgn")?.value ?? "";
   const lote = $("#animalLote")?.value ?? "";
   const pasto = $("#animalPasto")?.value ?? "";
-  const etiquetas = $("#animalEtiquetas")?.value ?? "";
   const obs = $("#animalObs")?.value ?? "";
 
   // genealogia
@@ -987,7 +911,6 @@ function readAnimalFormByIds() {
     rgn,
     lote,
     pasto,
-    etiquetas,
     observacoes: obs,
 
     mae_cadastrada: maeCad,
@@ -1022,7 +945,6 @@ function writeAnimalFormByIds(data = {}) {
   if ($("#animalRgn")) $("#animalRgn").value = String(data.rgn || "");
   if ($("#animalLote")) $("#animalLote").value = String(data.lote || "");
   if ($("#animalPasto")) $("#animalPasto").value = String(data.pasto || "");
-  if ($("#animalEtiquetas")) $("#animalEtiquetas").value = String(data.etiquetas || "");
   if ($("#animalObs")) $("#animalObs").value = String(data.observacoes || "");
 
   if ($("#maeCad")) $("#maeCad").checked = data.mae_cadastrada === "1" || data.mae_cadastrada === true;
@@ -1336,7 +1258,6 @@ async function openAnimalFormForCreate() {
     rgn: "",
     lote: "",
     pasto: "",
-    etiquetas: "",
     observacoes: "",
     mae_cadastrada: "0",
     pai_cadastrado: "0",
@@ -1425,7 +1346,6 @@ async function openAnimalFormForEdit(animalId) {
     rgn: data.rgn || "",
     lote: data.lote || "",
     pasto: data.pasto || "",
-    etiquetas: data.etiquetas || "",
     observacoes: data.observacoes || data.observacoes || "",
 
     mae_cadastrada: data.mae_cadastrada || "0",
@@ -1509,15 +1429,7 @@ async function saveAnimalFromForm() {
       });
 
       arr.unshift(record);
-      
-      // Garante que o registro foi criado corretamente
-      console.log("[SAVE] Animal criado:", {
-        _id: record._id,
-        _local: record._local,
-        _sync: record._sync,
-        brinco: record.brinco_padrao
-      });
-      
+            
       // IMPORTANTE: Usa toCloneable para garantir que os dados sejam serializáveis
       const arrToSave = toCloneable(arr);
       await idbSet("animais", "list", arrToSave);
@@ -1525,21 +1437,12 @@ async function saveAnimalFromForm() {
       // Verifica se foi salvo corretamente
       const verifica = await idbGet("animais", "list");
       const totalAnimais = Array.isArray(verifica) ? verifica.length : 0;
-      console.log("[SAVE] Total de animais na store após salvar:", totalAnimais);
       
       const encontrado = Array.isArray(verifica) ? verifica.find(a => String(a?._id) === String(record._id)) : null;
       if (!encontrado) {
         console.error("[SAVE] ERRO: Animal não foi salvo corretamente no IndexedDB!");
         console.error("[SAVE] DEBUG - Lista completa:", verifica);
       } else {
-        console.log("[SAVE] Animal salvo e verificado no IndexedDB:", encontrado._id);
-        console.log("[SAVE] DEBUG - Propriedades do animal salvo:", {
-          _id: encontrado._id,
-          _local: encontrado._local,
-          _sync: encontrado._sync,
-          tipo_local: typeof encontrado._local,
-          tipo_sync: typeof encontrado._sync
-        });
         
         // Verifica quantos animais locais pendentes existem agora
         const animaisLocaisPendentes = Array.isArray(verifica) 
@@ -1548,7 +1451,6 @@ async function saveAnimalFromForm() {
               return (a?._local === true || id.startsWith("local:")) && String(a?._sync || "").toLowerCase() === "pending";
             })
           : [];
-        console.log("[SAVE] Total de animais locais pendentes na store:", animaisLocaisPendentes.length);
       }
 
       // fila
@@ -2019,10 +1921,6 @@ async function processQueue() {
         await idbDel("records", qKey);
         continue;
       }
-
-      // Fake processing for now - in real app, send batch to server
-      console.log(`[SYNC] Processing ${queue.length} items from ${qKey}`);
-
       // Simulate network delay
       await new Promise(r => setTimeout(r, 1500));
 

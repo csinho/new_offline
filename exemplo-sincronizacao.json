@@ -1,19 +1,18 @@
 {
   "descricao": "Exemplo de JSON que será enviado para sincronização dos dados com o servidor Bubble",
-  "endpoint": "https://app.bovichain.com/version-0342o/api/1.1/wf/sync_dados",
+  "endpoint": "https://bovichain-g3.bubbleapps.io/version-0342o/api/1.1/wf/sync_dados",
   "metodo": "POST",
   "headers": {
-    "Content-Type": "application/json",
-    "Authorization": "Bearer {token_se_necessario}"
+    "Content-Type": "application/json"
   },
-  "exemplo_request": {
+  "dados": {
     "fazenda_id": "1778833844472x419477654361438700",
-    "owner_id": "1778833659131x474365249714733700",
+    "user_id": "1778833659131x474365249714733700",
     "timestamp": 1771513538032,
     "operacoes": [
       {
         "op": "animal_create",
-        "at": 1771513538032,
+        "data_hora": 1771513538032,
         "payload": {
           "_id": "local:0c3cb953-98f7-4f8a-b2e7-03045f16c433",
           "_local": true,
@@ -48,13 +47,13 @@
           "pai_vinculo": "",
           "gta": "",
           "uf": "BA",
-          "owner": "1778833659131x474365249714733700",
-          "list_lotes": []
+          "proprietario": "1778833659131x474365249714733700",
+          "list_lotes": ["1778833659131x474365249714733700", "1778833659131x474365249714733701"]
         }
       },
       {
         "op": "animal_create",
-        "at": 1771514763151,
+        "data_hora": 1771514763151,
         "payload": {
           "_id": "local:1f22cb51-6260-4851-8501-ada09f24d9ca",
           "_local": true,
@@ -89,13 +88,13 @@
           "pai_vinculo": "animal_id_pai",
           "gta": "",
           "uf": "BA",
-          "owner": "1778833659131x474365249714733700",
-          "list_lotes": []
+          "proprietario": "1778833659131x474365249714733700",
+          "list_lotes": ["1778833659131x474365249714733700", "1778833659131x474365249714733701"]
         }
       },
       {
         "op": "animal_update",
-        "at": 1771514943115,
+        "data_hora": 1771514943115,
         "targetId": "1778833844472x123456789012345678",
         "payload": {
           "_id": "1778833844472x123456789012345678",
@@ -131,8 +130,8 @@
           "pai_vinculo": "",
           "gta": "",
           "uf": "BA",
-          "owner": "1778833659131x474365249714733700",
-          "list_lotes": []
+          "proprietario": "1778833659131x474365249714733700",
+          "list_lotes": ["1778833659131x474365249714733700", "1778833659131x474365249714733701"]
         }
       }
     ]
@@ -192,29 +191,36 @@
     "2": "Após sincronização bem-sucedida, o servidor deve retornar o ID real do servidor",
     "3": "O cliente deve atualizar o '_id' local com o ID do servidor após sincronização",
     "4": "O campo '_local' e '_sync' devem ser removidos após sincronização bem-sucedida",
-    "5": "Operações são processadas em ordem cronológica (campo 'at')",
+    "5": "Operações são processadas em ordem cronológica (campo 'data_hora')",
     "6": "Para operações UPDATE, o campo 'targetId' contém o ID do servidor do animal a ser atualizado",
     "7": "O campo 'payload' contém todos os dados do animal, incluindo campos opcionais vazios",
     "8": "Campos numéricos devem ser enviados como números, não strings",
     "9": "Campos de data devem ser enviados no formato ISO 8601 (YYYY-MM-DD)",
-    "10": "O endpoint pode processar múltiplas operações em um único request (batch)"
+    "10": "O endpoint pode processar múltiplas operações em um único request (batch)",
+    "11": "A estrutura principal deve estar dentro de 'dados' conforme exemplo",
+    "12": "Use 'user_id' ao invés de 'owner_id'",
+    "13": "Use 'data_hora' ao invés de 'at' para o timestamp da operação",
+    "14": "Use 'proprietario' ao invés de 'owner' no payload",
+    "15": "O campo 'list_lotes' deve ser um array de IDs de lotes, não array vazio"
   },
   "estrutura_fila_indexeddb": {
     "store": "records",
-    "chave": "queue:{fazenda_id}:{owner_id}:animal",
+    "chave": "queue:{fazenda_id}:{user_id}:animal",
     "valor": [
       {
         "op": "animal_create",
         "at": 1771513538032,
-        "payload": { /* objeto animal completo */ }
+        "payload": {}
       },
       {
         "op": "animal_update",
         "at": 1771514943115,
         "targetId": "id_do_servidor",
-        "payload": { /* objeto animal completo atualizado */ }
+        "payload": {}
       }
-    ]
+    ],
+    "nota_payload": "Os objetos payload acima são placeholders. Na prática, contêm todos os campos do animal conforme exemplos acima.",
+    "nota_conversao": "Na fila do IndexedDB ainda usa 'at' e 'owner_id' na chave, mas ao enviar para o servidor converte para 'data_hora' e 'user_id'"
   },
   "fluxo_sincronizacao": {
     "1": "Usuário cria/atualiza animal offline → salvo em 'animais' store com _local=true e _sync='pending'",

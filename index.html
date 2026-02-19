@@ -620,7 +620,7 @@
         .toast {
             position: fixed;
             left: 16px;
-            bottom: 16px;
+            top: 16px;
             display: flex;
             flex-direction: column;
             gap: 10px;
@@ -2101,7 +2101,75 @@
 
                                 <div class="field" style="grid-column: span 12;">
                                     <div class="label">Raça <span class="req">*</span></div>
-                                    <input id="animalRaca" placeholder="Raça" />
+                                    <select id="animalRaca">
+                                        <option value="" selected disabled>Selecione a raça</option>
+                                        <option value="Aberdeen Angus">Aberdeen Angus</option>
+                                        <option value="Africander">Africander</option>
+                                        <option value="Anatolian">Anatolian</option>
+                                        <option value="Assam">Assam</option>
+                                        <option value="Azeri">Azeri</option>
+                                        <option value="Badhawari">Badhawari</option>
+                                        <option value="Bangladesh">Bangladesh</option>
+                                        <option value="Banni">Banni</option>
+                                        <option value="Barzona">Barzona</option>
+                                        <option value="Beefalo">Beefalo</option>
+                                        <option value="Beefmaster">Beefmaster</option>
+                                        <option value="Belgian Blue">Belgian Blue</option>
+                                        <option value="Bonsmara">Bonsmara</option>
+                                        <option value="Braford">Braford</option>
+                                        <option value="Brahman">Brahman</option>
+                                        <option value="Brangus">Brangus</option>
+                                        <option value="Campino Red Pied">Campino Red Pied</option>
+                                        <option value="Canchim">Canchim</option>
+                                        <option value="Cangaian">Cangaian</option>
+                                        <option value="Carabao">Carabao</option>
+                                        <option value="Charolês">Charolês</option>
+                                        <option value="Chianina">Chianina</option>
+                                        <option value="Chilika">Chilika</option>
+                                        <option value="Devon">Devon</option>
+                                        <option value="Egyptian">Egyptian</option>
+                                        <option value="Gir">Gir</option>
+                                        <option value="Gir Leiteiro">Gir Leiteiro</option>
+                                        <option value="Girolando">Girolando</option>
+                                        <option value="Grauvieh">Grauvieh</option>
+                                        <option value="Groninger">Groninger</option>
+                                        <option value="Guzerá">Guzerá</option>
+                                        <option value="Hereford">Hereford</option>
+                                        <option value="Híbrido">Híbrido</option>
+                                        <option value="Holandesa">Holandesa</option>
+                                        <option value="Jafarabadi">Jafarabadi</option>
+                                        <option value="Jersey">Jersey</option>
+                                        <option value="Limousin">Limousin</option>
+                                        <option value="Kobe (Wagyu)">Kobe (Wagyu)</option>
+                                        <option value="Kundi">Kundi</option>
+                                        <option value="Manda">Manda</option>
+                                        <option value="Marchigiana">Marchigiana</option>
+                                        <option value="Mediterrâneo">Mediterrâneo</option>
+                                        <option value="Meshana">Meshana</option>
+                                        <option value="Murrah">Murrah</option>
+                                        <option value="Murray Gray">Murray Gray</option>
+                                        <option value="Nagpuri">Nagpuri</option>
+                                        <option value="Nelore">Nelore</option>
+                                        <option value="Nelore Mocho">Nelore Mocho</option>
+                                        <option value="Nili-Ravi">Nili-Ravi</option>
+                                        <option value="Norwegian Red">Norwegian Red</option>
+                                        <option value="Pandharpuri">Pandharpuri</option>
+                                        <option value="Pardo Suiço">Pardo Suiço</option>
+                                        <option value="Ranger">Ranger</option>
+                                        <option value="Red Angus">Red Angus</option>
+                                        <option value="Red Brangus">Red Brangus</option>
+                                        <option value="Red Poll">Red Poll</option>
+                                        <option value="Romagnola">Romagnola</option>
+                                        <option value="Senepol">Senepol</option>
+                                        <option value="Simental">Simental</option>
+                                        <option value="Sindi">Sindi</option>
+                                        <option value="South Kanara">South Kanara</option>
+                                        <option value="Surti">Surti</option>
+                                        <option value="Tabapuã">Tabapuã</option>
+                                        <option value="Toda">Toda</option>
+                                        <option value="Tucura">Tucura</option>
+                                        <option value="Wagyu">Wagyu</option>
+                                    </select>
                                 </div>
                             </div>
 
@@ -2124,10 +2192,10 @@
                                         <div class="field" style="grid-column: span 4;">
                                             <div class="label">Finalidade</div>
                                             <select id="animalFinalidade">
-                                                <option value="" selected>Finalidade</option>
-                                                <option value="Corte">Corte</option>
-                                                <option value="Leite">Leite</option>
-                                                <option value="Reprodução">Reprodução</option>
+                                                <option value="" selected disabled>Selecione a finalidade</option>
+                                                <option value="Cria">Cria</option>
+                                                <option value="Recria">Recria</option>
+                                                <option value="Engorda">Engorda</option>
                                             </select>
                                         </div>
                                         <div class="field" style="grid-column: span 4;">
@@ -2163,11 +2231,6 @@
                                             <select id="animalPasto">
                                                 <option value="">Pasto</option>
                                             </select>
-                                        </div>
-
-                                        <div class="field" style="grid-column: span 12;">
-                                            <div class="label">Etiquetas</div>
-                                            <input id="animalEtiquetas" placeholder="Etiqueta" />
                                         </div>
 
                                         <div class="field" style="grid-column: span 12;">
@@ -2232,12 +2295,34 @@
                                         <div class="field" style="grid-column: span 6;">
                                             <div class="label">Estado (UF)</div>
                                             <select id="animalUf">
-                                                <option value="BA">BA</option>
-                                                <option value="SP">SP</option>
-                                                <option value="MG">MG</option>
-                                                <option value="GO">GO</option>
-                                                <option value="MT">MT</option>
-                                                <option value="MS">MS</option>
+                                                <option value="" selected disabled>Selecione o estado</option>
+                                                <option value="AC">Acre</option>
+                                                <option value="AL">Alagoas</option>
+                                                <option value="AP">Amapá</option>
+                                                <option value="AM">Amazonas</option>
+                                                <option value="BA">Bahia</option>
+                                                <option value="CE">Ceará</option>
+                                                <option value="DF">Distrito Federal</option>
+                                                <option value="ES">Espírito Santo</option>
+                                                <option value="GO">Goiás</option>
+                                                <option value="MA">Maranhão</option>
+                                                <option value="MT">Mato Grosso</option>
+                                                <option value="MS">Mato Grosso do Sul</option>
+                                                <option value="MG">Minas Gerais</option>
+                                                <option value="PA">Pará</option>
+                                                <option value="PB">Paraíba</option>
+                                                <option value="PR">Paraná</option>
+                                                <option value="PE">Pernambuco</option>
+                                                <option value="PI">Piauí</option>
+                                                <option value="RJ">Rio de Janeiro</option>
+                                                <option value="RN">Rio Grande do Norte</option>
+                                                <option value="RS">Rio Grande do Sul</option>
+                                                <option value="RO">Rondônia</option>
+                                                <option value="RR">Roraima</option>
+                                                <option value="SC">Santa Catarina</option>
+                                                <option value="SP">São Paulo</option>
+                                                <option value="SE">Sergipe</option>
+                                                <option value="TO">Tocantins</option>
                                             </select>
                                         </div>
                                     </div>
