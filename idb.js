@@ -74,3 +74,14 @@ export async function idbClear(store) {
         req.onerror = () => reject(req.error);
     });
 }
+
+export async function idbGetAllKeys(store) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(store, "readonly");
+        const st = tx.objectStore(store);
+        const req = st.getAllKeys();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}

@@ -298,6 +298,7 @@
             justify-content: space-between;
             gap: 14px;
             margin-bottom: 14px;
+            background: #f9fafb;
         }
 
         .dashedLeft {
@@ -458,13 +459,12 @@
             border-radius: 6px;
             border: 1px solid var(--stroke);
             background: #fff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 12px;
-            color: transparent;
-            /* Check invisivel */
+            display: block;
+            position: relative;
             transition: .2s;
+            font-size: 0;
+            line-height: 0;
+            overflow: hidden;
         }
 
         .chip.active {
@@ -476,16 +476,25 @@
         .chip.active .box {
             background: var(--btn);
             border-color: var(--btn);
-            color: #111827;
         }
 
-        /* Ícone de check no box */
+        /* Ícone de check no box - apenas um checkmark via :after */
         .chip.active .box:after {
             content: "✔";
-            font-size: 10px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            color: #111827;
+            line-height: 1;
         }
 
-        /* Tabs internas e Paineis */
+        /* Tabs internas e Paineis (Desktop) */
         .tabs {
             display: flex;
             gap: 20px;
@@ -519,6 +528,12 @@
             height: 3px;
             border-radius: 999px;
             background: var(--btn);
+        }
+
+        /* Esconde tabs antigas quando usar accordion */
+        .accordionTabs ~ .tabs,
+        .accordionTabs .tabs {
+            display: none;
         }
 
         /* Genealogia Toggles */
@@ -586,6 +601,11 @@
             }
 
             /* Nav + Save space */
+
+            .footerSave .btn:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
 
             .footerSave .btn {
                 width: 100%;
@@ -1398,6 +1418,472 @@
             color: #9ca3af;
         }
 
+        /* ==========================================================
+           NOVO LAYOUT MOBILE - LISTAGEM DE ANIMAIS
+        ========================================================== */
+        
+        /* Header Amarelo Mobile */
+        .animalListHeader {
+            background: var(--sidebar);
+            padding: 24px 20px 28px;
+            margin: -16px -20px 0 -20px;
+            border-bottom-left-radius: 24px;
+            border-bottom-right-radius: 24px;
+            position: relative;
+        }
+
+        .animalBackBtn {
+            background: transparent;
+            border: 1px solid var(--text);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            padding: 8px 12px;
+            margin-bottom: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: opacity 0.2s, background 0.2s;
+        }
+
+        .animalBackBtn:active {
+            opacity: 0.6;
+            background: rgba(0, 0, 0, 0.05);
+        }
+
+        .animalListTitle {
+            margin: 0 0 20px 0;
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--text);
+            text-align: center;
+        }
+
+        .animalSearchWrap {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #fff;
+            border-radius: 999px;
+            padding: 12px 16px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        }
+
+        .animalSearchWrap input {
+            flex: 1;
+            border: none !important;
+            outline: none !important;
+            height: 40px;
+            padding: 0;
+            font-size: 15px;
+            background: transparent;
+            box-shadow: none !important;
+        }
+
+        .animalSearchBtn {
+            background: rgba(237, 255, 119, 0.3);
+            border: none;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 18px;
+            padding: 0;
+        }
+
+        /* Botão Criar Novo Animal */
+        .animalCreateButtonWrap {
+            margin-top: 20px;
+            padding: 0 20px;
+        }
+
+        .animalCreateBtn {
+            width: 100%;
+            height: 56px;
+            font-size: 18px;
+            font-weight: 700;
+            border-radius: 16px;
+            background: var(--btn);
+            color: var(--text);
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            box-shadow: 0 4px 12px rgba(237, 255, 119, 0.3);
+        }
+
+        .animalCreateBtn:active {
+            opacity: 0.8;
+            transform: scale(0.98);
+        }
+
+        /* Container da Lista */
+        .animalListContainer {
+            margin-top: 16px;
+        }
+
+        .animalCardsList {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        /* Card de Animal */
+        .animalCard {
+            background: #fff;
+            border-radius: 20px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .animalCard:active {
+            transform: scale(0.98);
+        }
+
+        /* Borda lateral colorida */
+        .animalCard::after {
+            content: "";
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            border-radius: 0 20px 20px 0;
+        }
+
+        .animalCard.male::after {
+            background: #3b82f6; /* Azul para macho */
+        }
+
+        .animalCard.female::after {
+            background: #ec4899; /* Rosa para fêmea */
+        }
+
+        /* Ícone do Animal */
+        .animalCardIcon {
+            width: 60px;
+            height: 60px;
+            border-radius: 16px;
+            background: rgba(237, 255, 119, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            flex-shrink: 0;
+        }
+
+        /* Conteúdo do Card */
+        .animalCardContent {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .animalCardBrinco {
+            font-size: 18px;
+            font-weight: 800;
+            color: var(--text);
+            margin: 0 0 6px 0;
+            letter-spacing: -0.02em;
+        }
+
+        .animalCardDetails {
+            font-size: 14px;
+            color: var(--muted);
+            font-weight: 500;
+            line-height: 1.4;
+        }
+
+        /* Botões do Header do Formulário */
+        .formHeaderActions {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            width: 100%;
+        }
+
+        .animalFormBackBtn {
+            background: transparent;
+            border: 1px solid var(--text);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            padding: 8px 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: opacity 0.2s, background 0.2s;
+        }
+
+        .animalFormBackBtn:active {
+            opacity: 0.7;
+            background: rgba(0, 0, 0, 0.05);
+        }
+
+        /* Botão BioID com cor específica */
+        #btnBioId {
+            background: #edff77;
+            border: 1px solid var(--text);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            padding: 8px 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: opacity 0.2s, background 0.2s;
+        }
+
+        #btnBioId:active {
+            opacity: 0.7;
+            background: rgba(237, 255, 119, 0.8);
+        }
+
+        /* ==========================================================
+           ACCORDION TABS (Cadastro Avançado)
+        ========================================================== */
+        
+        .accordionTabs {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .accordionItem {
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 16px;
+            background: #fff;
+            overflow: hidden;
+            transition: box-shadow 0.2s;
+        }
+
+        .accordionItem:active {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        }
+
+        .accordionHeader {
+            padding: 16px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            user-select: none;
+            font-weight: 700;
+            font-size: 15px;
+            color: var(--text);
+            background: #f9fafb;
+            transition: background 0.2s;
+        }
+
+        .accordionHeader:hover {
+            background: #f3f4f6;
+        }
+
+        .accordionHeader.active {
+            background: rgba(237, 255, 119, 0.2);
+            color: var(--text);
+        }
+
+        .accordionIcon {
+            font-size: 12px;
+            transition: transform 0.3s;
+            color: var(--muted);
+        }
+
+        .accordionHeader.active .accordionIcon {
+            transform: rotate(180deg);
+            color: var(--text);
+        }
+
+        .accordionPanel {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out, padding 0.3s ease-out;
+            padding: 0 18px;
+        }
+
+        .accordionPanel.active {
+            max-height: 5000px;
+            padding: 18px;
+        }
+
+        /* Ajustes Mobile específicos */
+        @media (max-width: 980px) {
+            .animalListHeader {
+                margin: -16px -20px 0 -20px;
+            }
+            
+            /* Esconde botão Home no mobile */
+            #mobileBackDash {
+                display: none !important;
+            }
+
+            /* ==========================================================
+               FORMULÁRIO MOBILE - ADAPTAÇÕES
+            ========================================================== */
+            
+            /* Header do Form */
+            .pageHead {
+                flex-direction: column;
+                gap: 16px;
+                padding: 16px;
+            }
+
+            .pageTitle {
+                font-size: 20px;
+            }
+
+            .pageSub {
+                font-size: 12px;
+            }
+
+            .actions {
+                width: 100%;
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            .actions .btn {
+                width: 100%;
+                height: 48px;
+                font-size: 16px;
+                font-weight: 700;
+            }
+
+            .toggleRow {
+                width: 100%;
+                justify-content: space-between;
+                padding: 12px 16px;
+                font-size: 14px;
+            }
+
+            /* Campos do Formulário */
+            .field {
+                margin-bottom: 16px;
+            }
+
+            .label {
+                font-size: 12px;
+                margin-bottom: 8px;
+            }
+
+            input,
+            select,
+            textarea {
+                height: 50px;
+                font-size: 16px;
+                padding: 0 16px;
+                border-radius: 12px;
+            }
+
+            textarea {
+                min-height: 120px;
+                padding: 16px;
+            }
+
+            /* Grid Mobile - uma coluna */
+            .grid {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+
+            .field[style*="grid-column: span"] {
+                grid-column: span 1 !important;
+            }
+
+            /* Chips Tipo Entrada */
+            .chips {
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            .chip {
+                width: 100%;
+                height: 50px;
+                justify-content: flex-start;
+                padding: 0 18px;
+                font-size: 15px;
+            }
+
+            /* Dashed Box */
+            .dashedBox {
+                flex-direction: column;
+                gap: 16px;
+                padding: 16px;
+            }
+
+            .dashedLeft {
+                width: 100%;
+            }
+
+            .dashedBox .field {
+                width: 100%;
+                min-width: 100%;
+            }
+
+            /* Toggle Pills */
+            .togglePills {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+
+            .pill {
+                padding: 16px;
+                font-size: 15px;
+            }
+
+            /* Accordion Mobile */
+            .accordionHeader {
+                padding: 18px;
+                font-size: 16px;
+            }
+
+            .accordionPanel.active {
+                padding: 18px;
+            }
+
+            /* Botão Voltar Form Mobile - mantém mesmo tamanho da listagem */
+            .animalFormBackBtn {
+                padding: 8px 12px;
+                font-size: 16px;
+            }
+
+            /* Page Head Mobile */
+            .pageHead {
+                border-radius: 16px;
+            }
+
+            /* Card Mobile */
+            .card {
+                border-radius: 16px;
+                padding: 20px;
+            }
+
+            /* Dashed Box Mobile */
+            .dashedBox {
+                border-radius: 12px;
+            }
+        }
+
         /* FAB Sync */
         .fabSync {
             position: fixed;
@@ -1478,47 +1964,28 @@
 
                     <!-- LISTA -->
                     <section class="moduleSection" id="modAnimaisList">
-                        <div class="listHeader">
-                            <div class="listHeaderLeft">
-                                <h2>Animais</h2>
-                                <p>Gerencie todos os seus animais com facilidade</p>
-                            </div>
-
-                            <div class="listHeaderRight">
-                                <div class="searchWrap">
-                                    <span>🔍</span>
-                                    <input id="animalSearch" type="text" placeholder="Buscar por brinco ou nome..."
-                                        autocomplete="off" />
-                                </div>
-
-                                <button class="btn primary" id="btnNovoAnimal">
-                                    🐮 Novo Animal
-                                </button>
+                        <!-- Header Amarelo Mobile -->
+                        <div class="animalListHeader">
+                            <button class="animalBackBtn" id="animalBackBtn">← Voltar</button>
+                            <h1 class="animalListTitle">Módulo Animais</h1>
+                            <div class="animalSearchWrap">
+                                <input id="animalSearch" type="text" placeholder="Buscar por brinco ou nome..."
+                                    autocomplete="off" />
+                                <button class="animalSearchBtn">🔍</button>
                             </div>
                         </div>
 
-                        <div class="card">
-                            <div class="listTools">
-                                <div class="countPill" id="animalCountPill">0 Animais</div>
-                                <!-- Filtros removidos conforme solicitado -->
-                            </div>
+                        <!-- Botão Criar Novo Animal -->
+                        <div class="animalCreateButtonWrap">
+                            <button class="btn primary animalCreateBtn" id="btnCreateAnimal">
+                                ➕ Criar Novo Animal
+                            </button>
+                        </div>
 
-                            <div class="tableWrap">
-                                <table id="animalTable">
-                                    <thead>
-                                        <tr>
-                                            <th>Brinco</th>
-                                            <th>Sexo</th>
-                                            <th>Raça</th>
-                                            <th>Peso</th>
-                                            <!-- Coluna Etiquetas removida -->
-                                            <th style="width:130px;">Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="animalTbody">
-                                        <!-- linhas via JS -->
-                                    </tbody>
-                                </table>
+                        <!-- Lista de Cards Brancos -->
+                        <div class="animalListContainer">
+                            <div id="animalCardsList" class="animalCardsList">
+                                <!-- Cards serão inseridos via JS -->
                             </div>
                         </div>
                     </section>
@@ -1526,31 +1993,27 @@
                     <!-- FORMULÁRIO -->
                     <section class="moduleSection" id="modAnimaisForm" hidden>
 
-                        <!-- Header específico do form com botão Voltar no topo -->
-                        <div style="margin-bottom: 14px;">
-                            <button class="btn" id="btnVoltarTopo"
-                                style="margin-bottom:10px; padding: 6px 12px; font-size:13px;">
-                                ← Voltar
-                            </button>
+                        <!-- Header específico do form -->
+                        <div class="pageHead">
+                            <!-- Botões Voltar e BioID acima do título -->
+                            <div class="formHeaderActions">
+                                <button class="animalFormBackBtn" id="btnVoltarTopo">← Voltar</button>
+                                <button class="animalFormBackBtn" id="btnBioId">BioID</button>
+                            </div>
 
-                            <div class="pageHead">
-                                <div>
-                                    <h1 class="pageTitle" id="formTitle">Informações do animal</h1>
-                                    <p class="pageSub" id="formSub">Cadastre ou atualize aqui</p>
-                                </div>
+                            <!-- Título -->
+                            <div style="margin-top: 16px;">
+                                <h1 class="pageTitle" id="formTitle">Informações do animal</h1>
+                                <p class="pageSub" id="formSub">Cadastre ou atualize aqui</p>
+                            </div>
 
-                                <div class="actions">
-                                    <button class="btn" id="btnBioId">BioID</button>
-                                    <button class="btn primary" id="btnSave">Salvar</button>
-
-                                    <div class="toggleRow">
-                                        <span>Cadastro avançado</span>
-                                        <label class="switch">
-                                            <input type="checkbox" id="toggleAdvanced" />
-                                            <span class="slider"></span>
-                                        </label>
-                                    </div>
-                                </div>
+                            <!-- Toggle Cadastro Avançado -->
+                            <div class="toggleRow" style="margin-top: 16px;">
+                                <span>Cadastro avançado</span>
+                                <label class="switch">
+                                    <input type="checkbox" id="toggleAdvanced" />
+                                    <span class="slider"></span>
+                                </label>
                             </div>
                         </div>
 
@@ -1581,12 +2044,11 @@
                             <div class="field" style="margin-top:14px;">
                                 <div class="label">Selecione o tipo de entrada <span class="req">*</span></div>
                                 <div class="chips" id="tipoEntradaChips">
-                                    <div class="chip" data-value="Nascimento"><span class="box">✓</span>Nascimento</div>
-                                    <div class="chip active" data-value="Compra"><span class="box">✓</span>Compra</div>
-                                    <div class="chip" data-value="Doação"><span class="box">✓</span>Doação</div>
-                                    <div class="chip" data-value="Empréstimo"><span class="box">✓</span>Empréstimo</div>
-                                    <div class="chip" data-value="Ajuste inventário"><span class="box">✓</span>Ajuste
-                                        inventário</div>
+                                    <div class="chip" data-value="Nascimento"><span class="box"></span>Nascimento</div>
+                                    <div class="chip active" data-value="Compra"><span class="box"></span>Compra</div>
+                                    <div class="chip" data-value="Doação"><span class="box"></span>Doação</div>
+                                    <div class="chip" data-value="Empréstimo"><span class="box"></span>Empréstimo</div>
+                                    <div class="chip" data-value="Ajuste inventário"><span class="box"></span>Ajuste inventário</div>
                                 </div>
                             </div>
 
@@ -1645,15 +2107,15 @@
 
                             <!-- GRUPO AVANÇADO (escondido por padrão) -->
                             <div id="advancedGroup" style="display:none;">
-                                <!-- Tabs -->
-                                <div class="tabs" style="margin-top:14px;">
-                                    <div class="tab active" data-tab="dados">Dados adicionais</div>
-                                    <div class="tab" data-tab="genealogia">Genealogia</div>
-                                    <div class="tab" data-tab="aquisicao">Aquisição</div>
-                                </div>
-
-                                <!-- Painel: Dados adicionais -->
-                                <div class="tabPanel active" id="tab-dados">
+                                <!-- Accordion Tabs Mobile -->
+                                <div class="accordionTabs" style="margin-top:14px;">
+                                    <!-- Accordion Item: Dados adicionais -->
+                                    <div class="accordionItem">
+                                        <div class="accordionHeader" data-accordion="dados">
+                                            <span>Dados adicionais</span>
+                                            <span class="accordionIcon">▼</span>
+                                        </div>
+                                        <div class="accordionPanel" id="tab-dados">
                                     <div class="grid">
                                         <div class="field" style="grid-column: span 4;">
                                             <div class="label">Nome completo</div>
@@ -1714,10 +2176,16 @@
                                                 placeholder="Digite aqui suas observações sobre o animal..."></textarea>
                                         </div>
                                     </div>
-                                </div>
+                                        </div>
+                                    </div>
 
-                                <!-- Painel: Genealogia -->
-                                <div class="tabPanel" id="tab-genealogia">
+                                    <!-- Accordion Item: Genealogia -->
+                                    <div class="accordionItem">
+                                        <div class="accordionHeader" data-accordion="genealogia">
+                                            <span>Genealogia</span>
+                                            <span class="accordionIcon">▼</span>
+                                        </div>
+                                        <div class="accordionPanel" id="tab-genealogia">
                                     <div class="togglePills">
                                         <div class="pill">
                                             <span>Mãe Cadastrada</span>
@@ -1746,10 +2214,16 @@
                                             <input id="animalPai" placeholder="Digite o nome para pesquisar" />
                                         </div>
                                     </div>
-                                </div>
+                                        </div>
+                                    </div>
 
-                                <!-- Painel: Aquisição -->
-                                <div class="tabPanel" id="tab-aquisicao">
+                                    <!-- Accordion Item: Aquisição -->
+                                    <div class="accordionItem">
+                                        <div class="accordionHeader" data-accordion="aquisicao">
+                                            <span>Aquisição</span>
+                                            <span class="accordionIcon">▼</span>
+                                        </div>
+                                        <div class="accordionPanel" id="tab-aquisicao">
                                     <div class="grid">
                                         <div class="field" style="grid-column: span 6;">
                                             <div class="label">Nº GTA</div>
@@ -1767,7 +2241,10 @@
                                             </select>
                                         </div>
                                     </div>
+                                        </div>
+                                    </div>
                                 </div>
+                                <!-- fim accordionTabs -->
                             </div>
                             <!-- fim advancedGroup -->
 
@@ -1777,7 +2254,7 @@
                         <!-- Mobile Floating Save Button -->
                         <div class="footerSave">
                             <button class="btn primary" id="btnSaveBottom"
-                                style="width:100%; height:56px; font-size:18px;">
+                                style="width:100%; height:56px; font-size:18px;" disabled>
                                 Salvar Animal
                             </button>
                         </div>

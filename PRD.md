@@ -11,10 +11,11 @@ O **Bovichain Offline** é uma aplicação PWA focada em gestão de fazendas de 
 
 ### Principais Funcionalidades
 - **Plataforma Modular Offline**: O sistema é uma base para diversos módulos (Animais, Vacina, Lote, Fazenda, etc.), permitindo criar e editar registros offline.
-- **Módulo de Animais** (Implementado): Cadastro e edição completa de animais.
+- **Módulo de Animais** (Implementado): Cadastro e edição completa de animais com layout mobile otimizado.
 - **Dashboard Gerencial** com gráficos (Categorias, Peso por Lote, Sexo).
 - **Sincronização Bidirecional**: Baixa dados ao iniciar (bootstrap) e envia alterações via fila de sincronização.
 - **Feedback Visual**: Indicadores de "pendente" (🕒, ☁️) e botão de sincronização ativo.
+- **Persistência de Navegação**: Sistema salva e restaura automaticamente a última página visitada ao recarregar.
 
 ---
 
@@ -49,6 +50,8 @@ O **Bovichain Offline** é uma aplicação PWA focada em gestão de fazendas de 
     - Sidebar oculta em mobile (`< 980px`).
     - Navegação via **Módulos no Dashboard**.
     - Botão de Sync Flutuante (FAB) no canto inferior direito.
+    - Layout de listagem otimizado para mobile com cards e header amarelo.
+    - Botões de navegação com bordas visíveis para melhor UX.
 
 ---
 
@@ -96,6 +99,7 @@ SVG "Dashed Document" usado no botão flutuante:
 | `lotes` | `list` | Array de objetos `Lote`. Usado p/ lookup de nomes e peso médio. |
 | `records` | `queue:...` | **Fila de Sincronização**. Armazena operações pendentes (`create`, `update`). |
 | `meta` | `session_config` | Configuração da sessão (IDs, módulos ativos). |
+| `meta` | `navigationState` | **Estado de Navegação**. Salva última página visitada (`view`, `activeKey`, `animalView`, `animalEditingId`). |
 
 ### Modelo de Dados: Animal
 Exemplo de objeto salvo em `animais.list`:
@@ -154,14 +158,52 @@ Lógica `checkSyncStatus()` e `processQueue()`:
     - **Peso por Lote (Barras)**: Agrupado por `id_lote`, exibe `nome_lote`.
 
 ### Listas (Ex: Animais)
-- **Header**: Busca, Botão "Novo".
-- **Tabela**: Colunas (Brinco, Sexo, Raça, Peso, Status).
-- **Cards (Mobile)**: (Planejado/Opcional, atualmente usa tabela scrollável).
+- **Layout Mobile**:
+  - **Header Amarelo**: Título "Módulo Animais", campo de busca integrado, botão de voltar com borda.
+  - **Cards Brancos**: Lista de animais em formato de cards com:
+    - Ícone de animal (🐮) à esquerda
+    - Número do brinco em negrito
+    - Raça e peso abaixo (texto secundário)
+    - Borda lateral colorida: Azul para machos (M), Rosa para fêmeas (F)
+    - Cards clicáveis para edição
+- **Busca**: Filtro em tempo real por brinco ou nome.
+- **Desktop**: Mantém tabela tradicional (planejado para futuro).
 
 ### Forms
 - **Edição/Criação**: Inputs padronizados, validação básica.
 - **Botão Voltar**: Retorna para a lista ou Dashboard.
+- **Persistência**: Estado do formulário é salvo automaticamente na navegação.
+
+### Sistema de Navegação Persistente
+- **Salvamento Automático**: Estado de navegação é salvo no IndexedDB sempre que o usuário navega entre páginas.
+- **Restauração**: Ao recarregar a página, o sistema restaura automaticamente a última página visitada.
+- **Estados Salvos**:
+  - View atual (dashboard/module)
+  - Módulo ativo
+  - Sub-view do módulo (lista/form)
+  - ID do item em edição (se aplicável)
+- **Validação**: Estado expira após 24 horas para evitar navegação desatualizada.
 
 ---
 
-> **Desenvolvedor:** Documentação gerada por Antigravity.
+## 7. Melhorias Recentes (Atualização)
+
+### Navegação e UX
+- ✅ **Sistema de Persistência de Navegação**: Implementado salvamento automático do estado de navegação.
+- ✅ **Layout Mobile Otimizado**: Nova interface de listagem com header amarelo e cards brancos.
+- ✅ **Botão de Voltar**: Adicionado no header da listagem de animais com borda visível.
+- ✅ **Input de Busca Melhorado**: Altura aumentada e borda removida para melhor usabilidade.
+
+### Correções Técnicas
+- ✅ **Função `idbGetAllKeys`**: Implementada para suporte completo à fila de sincronização.
+- ✅ **Renderização Automática**: Listagem de animais aparece automaticamente sem necessidade de refresh manual.
+- ✅ **Gerenciamento de Estado**: Melhor controle de visibilidade de containers e módulos.
+
+### Performance
+- ✅ **Otimização de Renderização**: Uso de `requestAnimationFrame` para garantir DOM pronto antes de renderizar.
+- ✅ **Fallback de Funções**: Implementação inline de funções críticas para evitar erros de carregamento de módulos.
+
+---
+
+> **Desenvolvedor:** Documentação gerada por Antigravity.  
+> **Última Atualização:** Sistema de persistência de navegação e layout mobile otimizado implementados.

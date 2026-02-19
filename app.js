@@ -1,6 +1,8 @@
-import { idbGet, idbSet, idbClear } from "./idb.js";
+import { idbGet, idbSet, idbClear, idbDel } from "./idb.js";
 
 const $ = (sel) => document.querySelector(sel);
+
+// teste
 
 const state = {
   modules: [],
@@ -9,11 +11,53 @@ const state = {
   advanced: false,
   ctx: { fazendaId: "", ownerId: "" },
   bootstrapReady: false,
+  view: null, // "dashboard" | "module"
 
   // NOVO: controle de view do módulo animais
   animalView: "list", // "list" | "form"
   animalEditingId: null, // _id do animal em edição (ou null = criando)
 };
+
+// ---------------- Navigation State Persistence ----------------
+
+async function saveNavigationState() {
+  try {
+    const navState = {
+      view: state.view || "dashboard",
+      activeKey: state.activeKey || null,
+      animalView: state.animalView || "list",
+      animalEditingId: state.animalEditingId || null,
+      timestamp: Date.now()
+    };
+    await idbSet("meta", "navigationState", navState);
+  } catch (e) {
+    console.error("[saveNavigationState] Erro ao salvar:", e);
+  }
+}
+
+async function restoreNavigationState() {
+  try {
+    const saved = await idbGet("meta", "navigationState");
+    if (!saved) return false;
+
+    // Restaura apenas se o estado foi salvo recentemente (últimas 24h)
+    const maxAge = 24 * 60 * 60 * 1000; // 24 horas
+    if (Date.now() - saved.timestamp > maxAge) {
+      return false;
+    }
+
+    // Restaura o estado
+    if (saved.view) state.view = saved.view;
+    if (saved.activeKey) state.activeKey = saved.activeKey;
+    if (saved.animalView) state.animalView = saved.animalView;
+    if (saved.animalEditingId) state.animalEditingId = saved.animalEditingId;
+
+    return true;
+  } catch (e) {
+    console.error("[restoreNavigationState] Erro ao restaurar:", e);
+    return false;
+  }
+}
 
 // ---------------- UI helpers ----------------
 
@@ -258,6 +302,10 @@ function normalizeAnimal(a = {}) {
   out.ativo = out.ativo !== false;
   out.morto = !!out.morto;
 
+  // Preserva flags de sincronização local
+  if (a._local !== undefined) out._local = a._local;
+  if (a._sync !== undefined) out._sync = String(a._sync || "");
+
   // números
   out.peso_atual_kg = toNumberOrZero(out.peso_atual_kg);
   out.peso_nascimento = toNumberOrZero(out.peso_nascimento);
@@ -319,7 +367,7 @@ async function bootstrapData() {
   }
 
   // ONLINE: sincroniza
-  showBoot("Sincronizando dados…", "Buscando dados do Bubble e preparando modo offline.");
+  showBoot("Sincronizando dados…", "Buscando dados do servidor e preparando modo offline.");
 
   let data;
   let url;
@@ -359,9 +407,165 @@ async function bootstrapData() {
     const owner = toCloneable(ownerRaw);
 
     // normaliza listas
-    const animais = toCloneable(
+    const animaisServidor = toCloneable(
       (Array.isArray(animaisRaw) ? animaisRaw : []).map(normalizeAnimal)
     );
+    
+    // Preserva animais locais que ainda não foram sincronizados
+    // IMPORTANTE: Não normaliza aqui, pois pode perder propriedades _local e _sync
+    const animaisLocaisExistentesRaw = (await idbGet("animais", "list")) || [];
+    console.log("[BOOT] Animais locais existentes antes da mesclagem:", animaisLocaisExistentesRaw.length);
+    
+    // DEBUG CRÍTICO: Verifica o conteúdo completo da store animais
+    if (Array.isArray(animaisLocaisExistentesRaw)) {
+      console.log("[BOOT] DEBUG CRÍTICO - Conteúdo completo da store 'animais':", {
+        total: animaisLocaisExistentesRaw.length,
+        animais: animaisLocaisExistentesRaw.map(a => ({
+          _id: a?._id,
+          brinco: a?.brinco_padrao,
+          _local: a?._local,
+          _sync: a?._sync,
+          todas_chaves: Object.keys(a || {})
+        }))
+      });
+    }
+    
+    // DEBUG: Mostra todos os animais e suas propriedades ANTES de qualquer processamento
+    if (Array.isArray(animaisLocaisExistentesRaw) && animaisLocaisExistentesRaw.length > 0) {
+      console.log("[BOOT] DEBUG - Todos os animais locais existentes (RAW):", animaisLocaisExistentesRaw.map(a => ({
+        _id: a?._id,
+        _local: a?._local,
+        _sync: a?._sync,
+        brinco: a?.brinco_padrao,
+        todas_propriedades: Object.keys(a || {})
+      })));
+    }
+    
+    // Filtra animais locais pendentes ANTES de normalizar
+    // Um animal é considerado local/pendente se:
+    // 1. Tem _local === true OU _id começa com "local:" (case insensitive)
+    // 2. Tem _sync === "pending"
+    const animaisLocaisPendentes = Array.isArray(animaisLocaisExistentesRaw) 
+      ? animaisLocaisExistentesRaw.filter(a => {
+          if (!a || typeof a !== 'object') return false;
+          
+          const id = String(a._id || "").toLowerCase();
+          const idLocal = id.startsWith("local:");
+          const localFlag = a._local === true;
+          const syncPending = String(a._sync || "").toLowerCase() === "pending";
+          
+          const isLocal = localFlag || idLocal;
+          const isPending = syncPending;
+          const resultado = isLocal && isPending;
+          
+          // DEBUG: Mostra por que cada animal foi ou não incluído
+          if (idLocal || localFlag) {
+            console.log("[BOOT] DEBUG - Animal com ID local ou flag local:", {
+              id,
+              _id_original: a._id,
+              _local: a._local,
+              tipo_local: typeof a._local,
+              _sync: a._sync,
+              tipo_sync: typeof a._sync,
+              idLocal,
+              localFlag,
+              syncPending,
+              isLocal,
+              isPending,
+              resultado,
+              todas_propriedades: Object.keys(a)
+            });
+          }
+          
+          if (resultado) {
+            console.log("[BOOT] Animal local pendente encontrado:", { 
+              id, 
+              _id_original: a._id,
+              _local: a._local, 
+              _sync: a._sync 
+            });
+          }
+          return resultado;
+        })
+      : [];
+    
+    console.log("[BOOT] Animais locais pendentes encontrados:", animaisLocaisPendentes.length);
+    console.log("[BOOT] Animais do servidor:", animaisServidor.length);
+    
+    // Mescla: animais do servidor + animais locais pendentes
+    // Remove duplicatas baseado no _id (prioriza servidor se houver conflito)
+    const animaisMap = new Map();
+    
+    // Primeiro adiciona animais do servidor (exceto os que têm IDs locais)
+    animaisServidor.forEach(a => {
+      if (a?._id) {
+        const id = String(a._id);
+        // Só adiciona animais do servidor que não são locais
+        if (!id.startsWith("local:")) {
+          animaisMap.set(id, a);
+        }
+      }
+    });
+    
+    // Depois adiciona TODOS os animais locais pendentes (sempre preserva)
+    // Isso garante que animais criados localmente nunca sejam perdidos
+    animaisLocaisPendentes.forEach(a => {
+      const id = String(a?._id || "");
+      if (id) {
+        // Animais locais sempre são adicionados, mesmo que já exista no servidor
+        // porque são versões locais pendentes de sincronização
+        animaisMap.set(id, a);
+      }
+    });
+    
+    // Garante que animais locais pendentes sejam preservados
+    const animaisFinal = Array.from(animaisMap.values());
+    
+    // Verifica se todos os animais locais pendentes foram preservados
+    const idsLocaisPendentes = new Set(animaisLocaisPendentes.map(a => String(a?._id || "")));
+    const idsFinais = new Set(animaisFinal.map(a => String(a?._id || "")));
+    const todosPreservados = Array.from(idsLocaisPendentes).every(id => idsFinais.has(id));
+    
+    if (!todosPreservados) {
+      console.warn("[BOOT] Alguns animais locais pendentes não foram preservados!");
+      console.log("[BOOT] IDs locais pendentes:", Array.from(idsLocaisPendentes));
+      console.log("[BOOT] IDs finais:", Array.from(idsFinais));
+    }
+    
+    // IMPORTANTE: Normaliza os animais locais pendentes ANTES de aplicar toCloneable
+    // Isso garante que _local e _sync sejam preservados
+    const animaisFinalNormalizados = animaisFinal.map(a => {
+      // Se é um animal local pendente, preserva as propriedades explicitamente
+      const id = String(a?._id || "").toLowerCase();
+      const isLocalPending = (a?._local === true || id.startsWith("local:")) && String(a?._sync || "").toLowerCase() === "pending";
+      
+      if (isLocalPending) {
+        // Garante que _local e _sync sejam preservados mesmo após toCloneable
+        return normalizeAnimal({
+          ...a,
+          _local: true,
+          _sync: "pending"
+        });
+      }
+      return normalizeAnimal(a);
+    });
+    
+    const animais = toCloneable(animaisFinalNormalizados);
+    
+    // DEBUG: Verifica se os animais locais pendentes ainda têm as propriedades após toCloneable
+    const animaisLocaisAposClone = animais.filter(a => {
+      const id = String(a?._id || "").toLowerCase();
+      return (a?._local === true || id.startsWith("local:")) && String(a?._sync || "").toLowerCase() === "pending";
+    });
+    console.log("[BOOT] Animais locais pendentes após toCloneable:", animaisLocaisAposClone.length);
+    if (animaisLocaisAposClone.length > 0) {
+      console.log("[BOOT] DEBUG - Primeiro animal local após toCloneable:", {
+        _id: animaisLocaisAposClone[0]?._id,
+        _local: animaisLocaisAposClone[0]?._local,
+        _sync: animaisLocaisAposClone[0]?._sync,
+        todas_propriedades: Object.keys(animaisLocaisAposClone[0] || {})
+      });
+    }
     const lotes = toCloneable(
       (Array.isArray(lotesRaw) ? lotesRaw : []).map(normalizeLote)
     );
@@ -373,6 +577,29 @@ async function bootstrapData() {
       await idbSet("fazenda", "current", fazenda);
       await idbSet("owner", "current", owner);
       await idbSet("animais", "list", animais);
+      
+      // Verifica se foi salvo corretamente
+      const verificaSalvamento = await idbGet("animais", "list");
+      console.log("[BOOT] DEBUG - Verificação após salvar:", {
+        total_animais: Array.isArray(verificaSalvamento) ? verificaSalvamento.length : 0,
+        primeiro_animal: verificaSalvamento?.[0] ? {
+          _id: verificaSalvamento[0]._id,
+          _local: verificaSalvamento[0]._local,
+          _sync: verificaSalvamento[0]._sync,
+          todas_propriedades: Object.keys(verificaSalvamento[0] || {})
+        } : null
+      });
+      
+      const animaisLocaisSalvos = Array.isArray(verificaSalvamento) 
+        ? verificaSalvamento.filter(a => {
+            const id = String(a?._id || "").toLowerCase();
+            const isLocal = a?._local === true || id.startsWith("local:");
+            const isPending = String(a?._sync || "").toLowerCase() === "pending";
+            return isLocal && isPending;
+          })
+        : [];
+      console.log("[BOOT] Animais locais pendentes após salvar no IndexedDB:", animaisLocaisSalvos.length);
+      
       await idbSet("lotes", "list", lotes);
       await idbSet("vacinacao", "list", vacinacao);
       await idbSet("fazenda", "list_proprietarios", proprietarios);
@@ -550,7 +777,11 @@ function animalDisplayName(a) {
 async function renderAnimalList() {
   const secList = $("#modAnimaisList");
   const secForm = $("#modAnimaisForm");
+  const animalContainer = $("#animalModuleContainer");
 
+  // Garante que o container está visível
+  if (animalContainer) animalContainer.hidden = false;
+  
   // Garante visibilidade interna
   if (secList) secList.hidden = false;
   if (secForm) secForm.hidden = true;
@@ -558,29 +789,14 @@ async function renderAnimalList() {
   // Header principal esconde pois a lista já tem seu próprio greeting
   setPageHeadVisible(false);
 
-  // Botão Voltar para Dashboard (Mobile)
-  if (state.view === "module") {
-    const backBtnConfig = {
-      text: "← Voltar",
-      onclick: openDashboard
-    };
-    // Se houver um lugar melhor, podemos injetar. Por enquanto, vou injetar no topo da lista se não existir.
-    let backDiv = document.getElementById("mobileBackDash");
-    if (!backDiv) {
-      backDiv = document.createElement("div");
-      backDiv.id = "mobileBackDash";
-      backDiv.className = "mobileMsg"; // Reuse minimal style or create new
-      backDiv.style.padding = "10px 0";
-      backDiv.style.cursor = "pointer";
-      backDiv.style.fontWeight = "600";
-      backDiv.style.color = "var(--text)";
-      backDiv.innerHTML = `<span style="font-size:18px; vertical-align:middle; margin-right:4px;">Home</span>`;
-      backDiv.onclick = openDashboard;
-
-      const container = $("#animalModuleContainer");
-      if (container) container.insertBefore(backDiv, container.firstChild);
-    }
+  // Remove o botão "Home" se existir (não deve aparecer no mobile)
+  const backDiv = document.getElementById("mobileBackDash");
+  if (backDiv) {
+    backDiv.remove();
   }
+
+  // Aguarda um frame para garantir que o DOM está pronto
+  await new Promise(resolve => requestAnimationFrame(resolve));
 
   // Dados do cache
   const fazenda = await idbGet("fazenda", "current");
@@ -590,10 +806,18 @@ async function renderAnimalList() {
 
   const all = (await idbGet("animais", "list")) || [];
   const searchEl = $("#animalSearch");
-  const tbody = $("#animalTbody");
-  const countPill = $("#animalCountPill");
+  const cardsList = $("#animalCardsList");
 
-  if (!tbody) return;
+  if (!cardsList) {
+    // Tenta novamente após um pequeno delay se não encontrou
+    setTimeout(async () => {
+      const retryCardsList = $("#animalCardsList");
+      if (retryCardsList) {
+        await renderAnimalList();
+      }
+    }, 100);
+    return;
+  }
 
   const q = normText(searchEl ? searchEl.value : "");
 
@@ -620,40 +844,46 @@ async function renderAnimalList() {
     return String(a?.brinco_padrao || "").localeCompare(String(b?.brinco_padrao || ""));
   });
 
-  if (countPill) {
-    const n = list.length;
-    countPill.textContent = `${n} ${n === 1 ? "Animal" : "Animais"}`;
-  }
+  // Renderiza Cards Mobile
+  if (cardsList) {
+    cardsList.innerHTML = "";
+    
+    if (list.length === 0) {
+      cardsList.innerHTML = `
+        <div style="text-align: center; padding: 40px 20px; color: var(--muted);">
+          <p style="font-size: 16px; font-weight: 600;">Nenhum animal encontrado</p>
+          <p style="font-size: 14px; margin-top: 8px;">Tente ajustar sua busca</p>
+        </div>
+      `;
+    } else {
+      for (const a of list) {
+        const card = document.createElement("div");
+        card.className = `animalCard ${a.sexo === "M" ? "male" : "female"}`;
+        card.dataset.id = a._id || "";
 
-  // Renderiza Tabela
-  tbody.innerHTML = "";
-  for (const a of list) {
-    const tr = document.createElement("tr");
-    tr.dataset.id = a._id || "";
+        // Determina texto de detalhes (raça e peso)
+        const raca = escapeHtml(a?.raca || "—");
+        const peso = fmtKg(a?.peso_atual_kg);
+        const details = `${raca} • ${peso}`;
 
-    const statusOn = (a.ativo && !a.morto && !a.deleted);
-    let statusLabel = statusOn ? "Ativo" : (a.morto ? "Morto" : "Inativo");
-    const statusClass = statusOn ? "statusBadge" : "statusBadge off";
+        // Flag de sincronização
+        const syncFlag = a._sync === "pending" ? '<span style="font-size: 10px; color: #f59e0b; margin-left: 4px;">⏳</span>' : '';
+        
+        card.innerHTML = `
+          <div class="animalCardIcon">🐮</div>
+          <div class="animalCardContent">
+            <div class="animalCardBrinco">${escapeHtml(a?.brinco_padrao || "—")}${syncFlag}</div>
+            <div class="animalCardDetails">${details}</div>
+          </div>
+        `;
 
-    // Sync pending indicator
-    if (a._sync === "pending") {
-      statusLabel += " 🕒"; // Clock icon for pending
+        card.onclick = async () => {
+          await openAnimalFormForEdit(a._id);
+        };
+
+        cardsList.appendChild(card);
+      }
     }
-
-    // Colunas reduzidas: Brinco, Sexo, Raça, Peso, Status
-    tr.innerHTML = `
-      <td data-label="Brinco">${escapeHtml(a?.brinco_padrao || "—")}</td>
-      <td data-label="Sexo">${escapeHtml(renderSex(a?.sexo))}</td>
-      <td data-label="Raça">${escapeHtml(a?.raca || "—")}</td>
-      <td data-label="Peso">${escapeHtml(fmtKg(a?.peso_atual_kg))}</td>
-      <td data-label="Status"><span class="${statusClass}">${escapeHtml(statusLabel)}</span></td>
-    `;
-
-    tr.onclick = async () => {
-      await openAnimalFormForEdit(a._id);
-    };
-
-    tbody.appendChild(tr);
   }
 
   // Bind Search
@@ -664,11 +894,31 @@ async function renderAnimalList() {
     });
   }
 
-  // Bind Novo Animal
-  const btnNovo = $("#btnNovoAnimal");
-  if (btnNovo && !btnNovo.__bound) {
-    btnNovo.__bound = true;
-    btnNovo.onclick = async () => openAnimalFormForCreate();
+  // Bind Search Button
+  const searchBtn = document.querySelector(".animalSearchBtn");
+  if (searchBtn && !searchBtn.__bound) {
+    searchBtn.__bound = true;
+    searchBtn.onclick = async () => {
+      await renderAnimalList();
+    };
+  }
+
+  // Bind Create Animal Button
+  const btnCreateAnimal = $("#btnCreateAnimal");
+  if (btnCreateAnimal && !btnCreateAnimal.__bound) {
+    btnCreateAnimal.__bound = true;
+    btnCreateAnimal.addEventListener("click", async () => {
+      await openAnimalFormForCreate();
+    });
+  }
+
+  // Bind Back Button
+  const backBtn = $("#animalBackBtn");
+  if (backBtn && !backBtn.__bound) {
+    backBtn.__bound = true;
+    backBtn.onclick = async () => {
+      await openDashboard();
+    };
   }
 }
 
@@ -815,6 +1065,22 @@ function validateAnimalFormRequired() {
   return { ok: true };
 }
 
+function updateSaveButtonState() {
+  const btnSaveBottom = $("#btnSaveBottom");
+  if (!btnSaveBottom) return;
+  
+  const check = validateAnimalFormRequired();
+  if (check.ok) {
+    btnSaveBottom.disabled = false;
+    btnSaveBottom.style.opacity = "1";
+    btnSaveBottom.style.cursor = "pointer";
+  } else {
+    btnSaveBottom.disabled = true;
+    btnSaveBottom.style.opacity = "0.5";
+    btnSaveBottom.style.cursor = "not-allowed";
+  }
+}
+
 async function fillOwnersAndLotesInForm() {
   const proprietarios = (await idbGet("fazenda", "list_proprietarios")) || [];
   const lotes = (await idbGet("lotes", "list")) || [];
@@ -828,9 +1094,11 @@ async function fillOwnersAndLotesInForm() {
       ...proprietarios.map(p => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`)
     ].join("");
 
-    // Seleciona o primeiro proprietário se houver (index 1 pois 0 é placeholder)
+    // Seleciona o primeiro proprietário por padrão (index 1 pois 0 é placeholder)
     if (proprietarios.length > 0) {
       selOwner.selectedIndex = 1;
+      // Dispara evento para atualizar validação do botão salvar
+      selOwner.dispatchEvent(new Event('change', { bubbles: true }));
     }
   }
 
@@ -847,24 +1115,31 @@ function bindAnimalFormUIOnce() {
   if (!secForm || secForm.__bound) return;
   secForm.__bound = true;
 
-  // tabs
-  const tabs = secForm.querySelectorAll(".tab");
-  const panels = {
-    dados: $("#tab-dados"),
-    genealogia: $("#tab-genealogia"),
-    aquisicao: $("#tab-aquisicao"),
-  };
+  // Accordion Tabs (Mobile)
+  const accordionHeaders = secForm.querySelectorAll(".accordionHeader");
+  accordionHeaders.forEach(header => {
+    header.addEventListener("click", () => {
+      const accordionId = header.dataset.accordion;
+      const panel = header.nextElementSibling;
+      const isActive = header.classList.contains("active");
 
-  function setTab(key) {
-    tabs.forEach(t => t.classList.toggle("active", t.dataset.tab === key));
-    Object.entries(panels).forEach(([k, el]) => {
-      if (!el) return;
-      el.classList.toggle("active", k === key);
+      // Fecha todos os outros accordions
+      accordionHeaders.forEach(h => {
+        if (h !== header) {
+          h.classList.remove("active");
+          h.nextElementSibling.classList.remove("active");
+        }
+      });
+
+      // Toggle do accordion clicado
+      if (isActive) {
+        header.classList.remove("active");
+        panel.classList.remove("active");
+      } else {
+        header.classList.add("active");
+        panel.classList.add("active");
+      }
     });
-  }
-
-  tabs.forEach(t => {
-    t.addEventListener("click", () => setTab(t.dataset.tab));
   });
 
   // chips tipo entrada
@@ -874,20 +1149,75 @@ function bindAnimalFormUIOnce() {
       chip.addEventListener("click", () => {
         chipWrap.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
         chip.classList.add("active");
-        chipWrap.querySelectorAll(".chip .box").forEach(b => b.textContent = "");
-        chip.querySelector(".box") && (chip.querySelector(".box").textContent = "✓");
+        // Checkmark é adicionado via CSS :after, não precisa manipular texto
+        updateSaveButtonState();
       });
     });
   }
+
+  // Botão salvar fixo - validação e estado
+  const btnSaveBottom = $("#btnSaveBottom");
+  if (btnSaveBottom && !btnSaveBottom.__bound) {
+    btnSaveBottom.__bound = true;
+    btnSaveBottom.addEventListener("click", async () => {
+      const check = validateAnimalFormRequired();
+      if (!check.ok) {
+        toast(`Campo obrigatório: ${check.key}`);
+        return;
+      }
+      
+      // Mostra loading
+      const btn = $("#btnSaveBottom");
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Salvando...";
+      }
+      
+      try {
+        await saveAnimalFromForm();
+      } finally {
+        const btnFinal = $("#btnSaveBottom");
+        if (btnFinal) {
+          btnFinal.disabled = false;
+          btnFinal.textContent = "Salvar Animal";
+        }
+      }
+    });
+  }
+
+  // Validação em tempo real dos campos obrigatórios
+  const requiredFields = [
+    "#animalOwnerSelect",
+    "#animalBrinco",
+    "#animalSexo",
+    "#animalNasc",
+    "#animalCategoria",
+    "#animalRaca"
+  ];
+  
+  requiredFields.forEach(selector => {
+    const field = $(selector);
+    if (field && !field.__validationBound) {
+      field.__validationBound = true;
+      field.addEventListener("input", updateSaveButtonState);
+      field.addEventListener("change", updateSaveButtonState);
+    }
+  });
+
+  // Atualiza estado inicial do botão
+  updateSaveButtonState();
 
   // botões voltar
   const backIds = ["btnVoltarLista", "btnVoltarLista2", "btnVoltarLista3", "btnVoltarTopo"];
   backIds.forEach(id => {
     const b = $("#" + id);
-    if (b) b.addEventListener("click", async (e) => {
-      e.preventDefault(); // prevenir behavior indesejado
-      await openAnimalList();
-    });
+    if (b && !b.__bound) {
+      b.__bound = true;
+      b.addEventListener("click", async (e) => {
+        e.preventDefault(); // prevenir behavior indesejado
+        await openAnimalList();
+      });
+    }
   });
 
   // salvar (top)
@@ -899,12 +1229,7 @@ function bindAnimalFormUIOnce() {
   }
 
   // salvar (bottom - mobile)
-  const btnSaveBottom = $("#btnSaveBottom");
-  if (btnSaveBottom) {
-    btnSaveBottom.onclick = async () => {
-      await saveAnimalFromForm();
-    };
-  }
+  // Botão salvar já está configurado em bindAnimalFormUIOnce
 
   // toggle avançado
   const tgl = $("#toggleAdvanced");
@@ -938,12 +1263,37 @@ async function openAnimalList() {
   if (secList) secList.hidden = false;
   if (secForm) secForm.hidden = true;
 
+  // Aguarda um frame para garantir que o DOM está atualizado
+  await new Promise(resolve => requestAnimationFrame(resolve));
+  
   await renderAnimalList();
+
+  // Esconde FAB Sync no módulo animal_create
+  const fabSync = document.getElementById("fabSync");
+  if (fabSync) {
+    fabSync.hidden = true;
+    fabSync.style.display = "none";
+    fabSync.style.visibility = "hidden";
+    fabSync.style.opacity = "0";
+    fabSync.style.pointerEvents = "none";
+  }
+
+  // Salva estado de navegação
+  await saveNavigationState();
 }
 
 async function openAnimalFormForCreate() {
+  state.view = "module";
+  state.activeKey = "animal_create";
   state.animalView = "form";
   state.animalEditingId = null;
+
+  // Esconde FAB Sync imediatamente ao abrir o form
+  const fabSync = document.getElementById("fabSync");
+  if (fabSync) {
+    fabSync.hidden = true;
+    fabSync.style.display = "none"; // Força esconder também via CSS
+  }
 
   // mostra header do form
   setPageHeadTexts("Informações do animal", "Cadastre ou atualize aqui");
@@ -957,15 +1307,18 @@ async function openAnimalFormForCreate() {
   bindAnimalFormUIOnce();
   await fillOwnersAndLotesInForm();
 
-  // advanced state
-  state.advanced = (await idbGet("meta", "animal_create_advanced")) === "1";
+  // advanced state - sempre inicia desligado
+  state.advanced = false;
   const tgl = $("#toggleAdvanced");
-  if (tgl) tgl.checked = state.advanced;
+  if (tgl) tgl.checked = false;
   applyAdvancedVisibility();
 
-  // default owner da URL se tiver
+  // default owner - primeiro da lista (já selecionado em fillOwnersAndLotesInForm)
+  const proprietarios = (await idbGet("fazenda", "list_proprietarios")) || [];
+  const defaultOwner = proprietarios.length > 0 ? proprietarios[0]._id : (state.ctx.ownerId || "");
+  
   const initData = {
-    owner: state.ctx.ownerId || "",
+    owner: defaultOwner,
     entry_type: "Compra",
     animal_type: "Físico",
     brinco_padrao: "",
@@ -997,6 +1350,19 @@ async function openAnimalFormForCreate() {
 
   // título no header (se você quiser diferenciar)
   setPageHeadTexts("Informações do animal", "Cadastre ou atualize aqui");
+
+  // Garante que FAB Sync está escondido no form
+  const fabSync2 = document.getElementById("fabSync");
+  if (fabSync2) {
+    fabSync2.hidden = true;
+    fabSync2.style.display = "none";
+    fabSync2.style.visibility = "hidden";
+    fabSync2.style.opacity = "0";
+    fabSync2.style.pointerEvents = "none";
+  }
+
+  // Salva estado de navegação
+  await saveNavigationState();
 }
 
 async function openAnimalFormForEdit(animalId) {
@@ -1008,8 +1374,17 @@ async function openAnimalFormForEdit(animalId) {
     return;
   }
 
+  state.view = "module";
+  state.activeKey = "animal_create";
   state.animalView = "form";
   state.animalEditingId = String(animalId);
+
+  // Esconde FAB Sync imediatamente ao abrir o form
+  const fabSync = document.getElementById("fabSync");
+  if (fabSync) {
+    fabSync.hidden = true;
+    fabSync.style.display = "none"; // Força esconder também via CSS
+  }
 
   setPageHeadVisible(true);
   setPageHeadTexts("Informações do animal", `Editando: ${animalDisplayName(a)}`);
@@ -1022,10 +1397,10 @@ async function openAnimalFormForEdit(animalId) {
   bindAnimalFormUIOnce();
   await fillOwnersAndLotesInForm();
 
-  // advanced state
-  state.advanced = (await idbGet("meta", "animal_create_advanced")) === "1";
+  // advanced state - sempre inicia desligado
+  state.advanced = false;
   const tgl = $("#toggleAdvanced");
-  if (tgl) tgl.checked = state.advanced;
+  if (tgl) tgl.checked = false;
   applyAdvancedVisibility();
 
   // mapeia do seu objeto (cache) para campos do form
@@ -1063,6 +1438,19 @@ async function openAnimalFormForEdit(animalId) {
   };
 
   writeAnimalFormByIds(mapped);
+
+  // Garante que FAB Sync está escondido no form
+  const fabSync3 = document.getElementById("fabSync");
+  if (fabSync3) {
+    fabSync3.hidden = true;
+    fabSync3.style.display = "none";
+    fabSync3.style.visibility = "hidden";
+    fabSync3.style.opacity = "0";
+    fabSync3.style.pointerEvents = "none";
+  }
+
+  // Salva estado de navegação
+  await saveNavigationState();
 }
 
 // ---------------- Save: CREATE or UPDATE offline (com validação de brinco) ----------------
@@ -1074,84 +1462,154 @@ async function saveAnimalFromForm() {
     return;
   }
 
-  const data = readAnimalFormByIds();
-
-  const list = (await idbGet("animais", "list")) || [];
-  const arr = Array.isArray(list) ? list.map(normalizeAnimal) : [];
-
-  const target = normBrinco(data.brinco_padrao);
-  const editingId = state.animalEditingId;
-
-  // valida brinco duplicado (permitindo o próprio registro quando editando)
-  const exists = arr.some(a => {
-    const sameBr = normBrinco(a?.brinco_padrao) === target;
-    const sameId = String(a?._id || "") === String(editingId || "");
-    return sameBr && !sameId;
-  });
-
-  if (exists) {
-    toast("Já existe um animal com este brinco padrão. Não é possível salvar.");
-    return;
+  // Mostra loading
+  const bootOverlay = $("#bootOverlay");
+  const bootSub = $("#bootSub");
+  if (bootOverlay) {
+    bootOverlay.style.display = "flex";
+    if (bootSub) bootSub.textContent = "Salvando animal...";
   }
 
-  const fazenda = await idbGet("fazenda", "current");
-  const org = fazenda?.organizacao || "";
+  try {
+    const data = readAnimalFormByIds();
 
-  if (!editingId) {
-    // CREATE
-    const record = normalizeAnimal({
-      _id: `local:${uuid()}`,
-      _local: true,
-      _sync: "pending",
-      fazenda: state.ctx.fazendaId,
-      organizacao: org,
-      deleted: false,
-      ativo: true,
-      morto: false,
-      ...data,
+    const list = (await idbGet("animais", "list")) || [];
+    const arr = Array.isArray(list) ? list.map(normalizeAnimal) : [];
+
+    const target = normBrinco(data.brinco_padrao);
+    const editingId = state.animalEditingId;
+
+    // valida brinco duplicado (permitindo o próprio registro quando editando)
+    const exists = arr.some(a => {
+      const sameBr = normBrinco(a?.brinco_padrao) === target;
+      const sameId = String(a?._id || "") === String(editingId || "");
+      return sameBr && !sameId;
     });
 
-    arr.unshift(record);
+    if (exists) {
+      toast("Já existe um animal com este brinco padrão. Não é possível salvar.");
+      return;
+    }
+
+    const fazenda = await idbGet("fazenda", "current");
+    const org = fazenda?.organizacao || "";
+
+    if (!editingId) {
+      // CREATE
+      const record = normalizeAnimal({
+        _id: `local:${uuid()}`,
+        _local: true,
+        _sync: "pending",
+        fazenda: state.ctx.fazendaId,
+        organizacao: org,
+        deleted: false,
+        ativo: true,
+        morto: false,
+        ...data,
+      });
+
+      arr.unshift(record);
+      
+      // Garante que o registro foi criado corretamente
+      console.log("[SAVE] Animal criado:", {
+        _id: record._id,
+        _local: record._local,
+        _sync: record._sync,
+        brinco: record.brinco_padrao
+      });
+      
+      // IMPORTANTE: Usa toCloneable para garantir que os dados sejam serializáveis
+      const arrToSave = toCloneable(arr);
+      await idbSet("animais", "list", arrToSave);
+      
+      // Verifica se foi salvo corretamente
+      const verifica = await idbGet("animais", "list");
+      const totalAnimais = Array.isArray(verifica) ? verifica.length : 0;
+      console.log("[SAVE] Total de animais na store após salvar:", totalAnimais);
+      
+      const encontrado = Array.isArray(verifica) ? verifica.find(a => String(a?._id) === String(record._id)) : null;
+      if (!encontrado) {
+        console.error("[SAVE] ERRO: Animal não foi salvo corretamente no IndexedDB!");
+        console.error("[SAVE] DEBUG - Lista completa:", verifica);
+      } else {
+        console.log("[SAVE] Animal salvo e verificado no IndexedDB:", encontrado._id);
+        console.log("[SAVE] DEBUG - Propriedades do animal salvo:", {
+          _id: encontrado._id,
+          _local: encontrado._local,
+          _sync: encontrado._sync,
+          tipo_local: typeof encontrado._local,
+          tipo_sync: typeof encontrado._sync
+        });
+        
+        // Verifica quantos animais locais pendentes existem agora
+        const animaisLocaisPendentes = Array.isArray(verifica) 
+          ? verifica.filter(a => {
+              const id = String(a?._id || "").toLowerCase();
+              return (a?._local === true || id.startsWith("local:")) && String(a?._sync || "").toLowerCase() === "pending";
+            })
+          : [];
+        console.log("[SAVE] Total de animais locais pendentes na store:", animaisLocaisPendentes.length);
+      }
+
+      // fila
+      const qKey = `queue:${state.ctx.fazendaId}:${state.ctx.ownerId}:animal`;
+      const queue = (await idbGet("records", qKey)) || [];
+      queue.push({ op: "animal_create", at: Date.now(), payload: record });
+      await idbSet("records", qKey, queue);
+
+      // Atualiza dashboard e listagem
+      await renderDashboard();
+      await renderAnimalList();
+      
+      toast("Animal salvo offline.");
+      
+      // Aguarda um pouco para mostrar o loading
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      await openAnimalList();
+      return;
+    }
+
+    // UPDATE
+    const idx = arr.findIndex(a => String(a?._id) === String(editingId));
+    if (idx === -1) {
+      toast("Não foi possível salvar: animal não encontrado.");
+      return;
+    }
+
+    const prev = arr[idx];
+    const updated = normalizeAnimal({
+      ...prev,
+      ...data,
+      _local: prev._local || true,
+      _sync: "pending",
+    });
+
+    arr[idx] = updated;
     await idbSet("animais", "list", arr);
 
     // fila
     const qKey = `queue:${state.ctx.fazendaId}:${state.ctx.ownerId}:animal`;
     const queue = (await idbGet("records", qKey)) || [];
-    queue.push({ op: "animal_create", at: Date.now(), payload: record });
+    queue.push({ op: "animal_update", at: Date.now(), payload: updated, targetId: editingId });
     await idbSet("records", qKey, queue);
 
-    toast("Animal salvo offline.");
+    // Atualiza dashboard e listagem
+    await renderDashboard();
+    await renderAnimalList();
+
+    toast("Animal atualizado offline.");
+    
+    // Aguarda um pouco para mostrar o loading
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
     await openAnimalList();
-    return;
+  } finally {
+    // Esconde loading
+    if (bootOverlay) {
+      bootOverlay.style.display = "none";
+    }
   }
-
-  // UPDATE
-  const idx = arr.findIndex(a => String(a?._id) === String(editingId));
-  if (idx === -1) {
-    toast("Não foi possível salvar: animal não encontrado.");
-    return;
-  }
-
-  const prev = arr[idx];
-  const updated = normalizeAnimal({
-    ...prev,
-    ...data,
-    _local: prev._local || true,
-    _sync: "pending",
-  });
-
-  arr[idx] = updated;
-  await idbSet("animais", "list", arr);
-
-  // fila
-  const qKey = `queue:${state.ctx.fazendaId}:${state.ctx.ownerId}:animal`;
-  const queue = (await idbGet("records", qKey)) || [];
-  queue.push({ op: "animal_update", at: Date.now(), payload: updated, targetId: editingId });
-  await idbSet("records", qKey, queue);
-
-  toast("Alterações salvas offline.");
-  checkSyncStatus(); // Update FAB visibility
-  await openAnimalList();
 }
 
 // ---------------- Render módulo ativo ----------------
@@ -1194,6 +1652,9 @@ async function renderActiveModule() {
     } else {
       await openAnimalList();
     }
+    
+    // Atualiza visibilidade do FAB Sync
+    updateFabSyncVisibility();
     return;
   }
 
@@ -1387,6 +1848,9 @@ async function renderDashboard() {
 
 async function openDashboard() {
   state.view = "dashboard";
+  state.activeKey = null;
+  state.animalView = "list";
+  state.animalEditingId = null;
 
   // Hide all sections
   document.querySelectorAll(".moduleSection").forEach(el => el.hidden = true);
@@ -1407,12 +1871,21 @@ async function openDashboard() {
 
   // Reset module nav active state
   document.querySelectorAll(".navItem").forEach(n => n.classList.remove("active"));
+
+  // Atualiza visibilidade do FAB Sync
+  updateFabSyncVisibility();
+
+  // Salva estado de navegação
+  await saveNavigationState();
 }
 
 async function openModule(moduleKey) {
   // Logic from renderActiveModule but simplified for switching
   state.activeKey = moduleKey;
   state.view = "module";
+  
+  // Atualiza visibilidade do FAB Sync
+  updateFabSyncVisibility();
 
   // Hide Dashboard
   const dash = $("#modDashboard");
@@ -1421,33 +1894,109 @@ async function openModule(moduleKey) {
   // Show generic container logic
   // Re-run renderActiveModule to handle the specific module's view (list/form etc)
   await renderActiveModule();
+
+  // Salva estado de navegação
+  await saveNavigationState();
 }
 
 // ---------------- Sync Logic ----------------
+// Helper function to get all keys from a store (inline implementation)
+async function getAllKeysFromStore(store) {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open("offline_builder_db", 2);
+    req.onsuccess = () => {
+      const db = req.result;
+      const tx = db.transaction(store, "readonly");
+      const st = tx.objectStore(store);
+      const keysReq = st.getAllKeys();
+      keysReq.onsuccess = () => resolve(keysReq.result);
+      keysReq.onerror = () => reject(keysReq.error);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// Controla visibilidade do FAB Sync baseado na página atual
+function updateFabSyncVisibility() {
+  const btn = document.getElementById("fabSync");
+  if (!btn) return;
+
+  // Só mostra o FAB Sync no dashboard
+  // NÃO mostra no módulo animal_create (nem na listagem, nem nos formulários)
+  const isDashboard = state.view === "dashboard";
+  const isAnimalModule = state.activeKey === "animal_create" || (state.view === "module" && state.activeKey === "animal_create");
+  
+  // Se não estiver no dashboard OU estiver no módulo animal_create, esconde
+  if (!isDashboard || isAnimalModule) {
+    btn.hidden = true;
+    btn.style.display = "none"; // Força esconder também via CSS
+    btn.style.visibility = "hidden"; // Força esconder também via visibility
+    return;
+  }
+
+  // Se estiver no dashboard, chama checkSyncStatus para verificar pendências
+  // checkSyncStatus vai verificar se está online e se há registros pendentes
+  checkSyncStatus();
+}
+
 async function checkSyncStatus() {
   const btn = document.getElementById("fabSync");
   if (!btn) return;
 
+  // Só mostra no dashboard - esconde em qualquer outro lugar (incluindo módulo animal_create)
+  const isDashboard = state.view === "dashboard";
+  const isAnimalModule = state.activeKey === "animal_create" || (state.view === "module" && state.activeKey === "animal_create");
+  
+  if (!isDashboard || isAnimalModule) {
+    btn.hidden = true;
+    btn.style.display = "none";
+    btn.style.visibility = "hidden";
+    btn.style.opacity = "0";
+    btn.style.pointerEvents = "none";
+    return;
+  }
+
   if (!navigator.onLine) {
     btn.hidden = true;
+    btn.style.display = "none";
     return;
   }
 
   // Check if there are pending records
   // We scan all keys starting with "queue:" in "records" store
-  const keys = await idbGetAllKeys("records");
-  const queueKeys = keys.filter(k => k.startsWith("queue:"));
+  try {
+    // Use inline function to avoid module loading issues
+    const keys = await getAllKeysFromStore("records");
+    const queueKeys = keys.filter(k => k.startsWith("queue:"));
 
-  let hasPending = false;
-  for (const k of queueKeys) {
-    const q = await idbGet("records", k);
-    if (Array.isArray(q) && q.length > 0) {
-      hasPending = true;
-      break;
+    let hasPending = false;
+    for (const k of queueKeys) {
+      const q = await idbGet("records", k);
+      if (Array.isArray(q) && q.length > 0) {
+        hasPending = true;
+        break;
+      }
     }
-  }
 
-  btn.hidden = !hasPending;
+    // Só mostra se estiver no dashboard E tiver pendências
+    if (hasPending) {
+      btn.hidden = false;
+      btn.style.display = "flex";
+      btn.style.visibility = "visible";
+      btn.style.opacity = "1";
+      btn.style.pointerEvents = "auto";
+    } else {
+      btn.hidden = true;
+      btn.style.display = "none";
+      btn.style.visibility = "hidden";
+      btn.style.opacity = "0";
+      btn.style.pointerEvents = "none";
+    }
+  } catch (e) {
+    console.error("[checkSyncStatus] Error:", e);
+    btn.hidden = true;
+    btn.style.display = "none";
+  }
 }
 
 async function processQueue() {
@@ -1460,7 +2009,8 @@ async function processQueue() {
   }
 
   try {
-    const keys = await idbGetAllKeys("records");
+    // Use inline function to avoid module loading issues
+    const keys = await getAllKeysFromStore("records");
     const queueKeys = keys.filter(k => k.startsWith("queue:"));
 
     for (const qKey of queueKeys) {
@@ -1490,7 +2040,13 @@ async function processQueue() {
   } finally {
     if (btn) {
       btn.style.animation = "pulse-green 2s infinite";
-      btn.innerHTML = `<div class="fabIcon"><svg width="30px" height="30px" viewBox="-0.1 -0.1 1.8 1.8" fill="none"
+      // Atualiza visibilidade após sincronização
+    updateFabSyncVisibility();
+    
+    // Atualiza visibilidade após sincronização
+    updateFabSyncVisibility();
+    
+    btn.innerHTML = `<div class="fabIcon"><svg width="30px" height="30px" viewBox="-0.1 -0.1 1.8 1.8" fill="none"
                         xmlns="http://www.w3.org/2000/svg">
                         <path width="30" height="30" fill="white" fill-opacity="0.01" d="M0 0H1.8V1.8H0V0z" />
                         <path
@@ -1514,15 +2070,15 @@ async function processQueue() {
                             stroke-linecap="round" stroke-linejoin="round" />
                     </svg></div>`;
     }
-    checkSyncStatus();
+    updateFabSyncVisibility();
   }
 }
 
 // Adjusted init to load Dashboard first
 async function init() {
   setNetBadge();
-  window.addEventListener("online", () => { setNetBadge(); checkSyncStatus(); });
-  window.addEventListener("offline", () => { setNetBadge(); checkSyncStatus(); });
+  window.addEventListener("online", () => { setNetBadge(); updateFabSyncVisibility(); });
+  window.addEventListener("offline", () => { setNetBadge(); updateFabSyncVisibility(); });
 
   const parsed = parseFromURL();
 
@@ -1560,15 +2116,49 @@ async function init() {
 
   await bootstrapData();
 
+  state.bootstrapReady = true;
+
+  // Verifica status de sincronização inicial
+  updateFabSyncVisibility();
+
   // Initialize Sync Button Logic
   if (state.bootstrapReady) {
-    checkSyncStatus();
+    updateFabSyncVisibility();
     const fab = document.getElementById("fabSync");
     if (fab) fab.onclick = processQueue;
   }
 
-  // START AT DASHBOARD
-  await openDashboard();
+  // Restaura estado de navegação salvo
+  const restored = await restoreNavigationState();
+  
+  if (restored && state.view && state.bootstrapReady) {
+    // Restaura a navegação salva
+    if (state.view === "dashboard") {
+      await openDashboard();
+    } else if (state.view === "module" && state.activeKey) {
+      // Restaura o módulo ativo
+      state.view = "module";
+      const dash = $("#modDashboard");
+      if (dash) dash.hidden = true;
+      
+      await renderActiveModule();
+      
+      // Se for módulo de animais e estava em form, restaura
+      if (state.activeKey === "animal_create" && state.animalView === "form") {
+        if (state.animalEditingId) {
+          await openAnimalFormForEdit(state.animalEditingId);
+        } else {
+          await openAnimalFormForCreate();
+        }
+      }
+    } else {
+      // Fallback para dashboard se estado inválido
+      await openDashboard();
+    }
+  } else {
+    // START AT DASHBOARD (primeira vez ou sem estado salvo)
+    await openDashboard();
+  }
 }
 
 init();

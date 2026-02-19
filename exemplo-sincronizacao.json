@@ -1,0 +1,230 @@
+{
+  "descricao": "Exemplo de JSON que será enviado para sincronização dos dados com o servidor Bubble",
+  "endpoint": "https://app.bovichain.com/version-0342o/api/1.1/wf/sync_dados",
+  "metodo": "POST",
+  "headers": {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer {token_se_necessario}"
+  },
+  "exemplo_request": {
+    "fazenda_id": "1778833844472x419477654361438700",
+    "owner_id": "1778833659131x474365249714733700",
+    "timestamp": 1771513538032,
+    "operacoes": [
+      {
+        "op": "animal_create",
+        "at": 1771513538032,
+        "payload": {
+          "_id": "local:0c3cb953-98f7-4f8a-b2e7-03045f16c433",
+          "_local": true,
+          "_sync": "pending",
+          "fazenda": "1778833844472x419477654361438700",
+          "organizacao": "organizacao_id_aqui",
+          "deleted": false,
+          "ativo": true,
+          "morto": false,
+          "brinco_padrao": "987654",
+          "nome_completo": "Mimoso",
+          "sexo": "MACHO",
+          "raca": "Nelore",
+          "categoria": "Novilho",
+          "peso_atual_kg": 450.5,
+          "peso_nascimento": 35.0,
+          "data_nascimento": "2023-01-15",
+          "entry_type": "Compra",
+          "animal_type": "Físico",
+          "finalidade": "Reprodução",
+          "sisbov": "",
+          "identificacao_eletronica": "",
+          "rgd": "",
+          "rgn": "",
+          "lote": "lote_id_aqui",
+          "pasto": "Pasto 1",
+          "etiquetas": "",
+          "observacoes": "Animal criado offline",
+          "mae_cadastrada": "0",
+          "pai_cadastrado": "0",
+          "mae_vinculo": "",
+          "pai_vinculo": "",
+          "gta": "",
+          "uf": "BA",
+          "owner": "1778833659131x474365249714733700",
+          "list_lotes": []
+        }
+      },
+      {
+        "op": "animal_create",
+        "at": 1771514763151,
+        "payload": {
+          "_id": "local:1f22cb51-6260-4851-8501-ada09f24d9ca",
+          "_local": true,
+          "_sync": "pending",
+          "fazenda": "1778833844472x419477654361438700",
+          "organizacao": "organizacao_id_aqui",
+          "deleted": false,
+          "ativo": true,
+          "morto": false,
+          "brinco_padrao": "1234",
+          "nome_completo": "Vaca Senepol",
+          "sexo": "FEMEA",
+          "raca": "Senepol",
+          "categoria": "Vaca",
+          "peso_atual_kg": 140.0,
+          "peso_nascimento": 30.0,
+          "data_nascimento": "2022-05-20",
+          "entry_type": "Nascimento",
+          "animal_type": "Físico",
+          "finalidade": "Leite",
+          "sisbov": "",
+          "identificacao_eletronica": "",
+          "rgd": "",
+          "rgn": "",
+          "lote": "lote_id_aqui",
+          "pasto": "Pasto 2",
+          "etiquetas": "",
+          "observacoes": "",
+          "mae_cadastrada": "1",
+          "pai_cadastrado": "1",
+          "mae_vinculo": "animal_id_mae",
+          "pai_vinculo": "animal_id_pai",
+          "gta": "",
+          "uf": "BA",
+          "owner": "1778833659131x474365249714733700",
+          "list_lotes": []
+        }
+      },
+      {
+        "op": "animal_update",
+        "at": 1771514943115,
+        "targetId": "1778833844472x123456789012345678",
+        "payload": {
+          "_id": "1778833844472x123456789012345678",
+          "_local": true,
+          "_sync": "pending",
+          "fazenda": "1778833844472x419477654361438700",
+          "organizacao": "organizacao_id_aqui",
+          "deleted": false,
+          "ativo": true,
+          "morto": false,
+          "brinco_padrao": "5678",
+          "nome_completo": "Boi Atualizado",
+          "sexo": "MACHO",
+          "raca": "Brahman",
+          "categoria": "Touro",
+          "peso_atual_kg": 650.0,
+          "peso_nascimento": 40.0,
+          "data_nascimento": "2021-03-10",
+          "entry_type": "Compra",
+          "animal_type": "Físico",
+          "finalidade": "Reprodução",
+          "sisbov": "",
+          "identificacao_eletronica": "",
+          "rgd": "",
+          "rgn": "",
+          "lote": "lote_id_aqui",
+          "pasto": "Pasto 3",
+          "etiquetas": "",
+          "observacoes": "Peso atualizado offline",
+          "mae_cadastrada": "0",
+          "pai_cadastrado": "0",
+          "mae_vinculo": "",
+          "pai_vinculo": "",
+          "gta": "",
+          "uf": "BA",
+          "owner": "1778833659131x474365249714733700",
+          "list_lotes": []
+        }
+      }
+    ]
+  },
+  "exemplo_response_sucesso": {
+    "success": true,
+    "message": "Sincronização concluída com sucesso",
+    "processados": 3,
+    "resultados": [
+      {
+        "op": "animal_create",
+        "local_id": "local:0c3cb953-98f7-4f8a-b2e7-03045f16c433",
+        "server_id": "1778833844472x987654321098765432",
+        "status": "created"
+      },
+      {
+        "op": "animal_create",
+        "local_id": "local:1f22cb51-6260-4851-8501-ada09f24d9ca",
+        "server_id": "1778833844472x987654321098765433",
+        "status": "created"
+      },
+      {
+        "op": "animal_update",
+        "targetId": "1778833844472x123456789012345678",
+        "status": "updated"
+      }
+    ]
+  },
+  "exemplo_response_erro": {
+    "success": false,
+    "message": "Erro ao processar algumas operações",
+    "processados": 2,
+    "erros": [
+      {
+        "op": "animal_create",
+        "local_id": "local:0c3cb953-98f7-4f8a-b2e7-03045f16c433",
+        "erro": "Brinco padrão já existe",
+        "codigo": "DUPLICATE_BRINCO"
+      }
+    ],
+    "resultados": [
+      {
+        "op": "animal_create",
+        "local_id": "local:1f22cb51-6260-4851-8501-ada09f24d9ca",
+        "server_id": "1778833844472x987654321098765433",
+        "status": "created"
+      },
+      {
+        "op": "animal_update",
+        "targetId": "1778833844472x123456789012345678",
+        "status": "updated"
+      }
+    ]
+  },
+  "notas": {
+    "1": "O campo '_id' com prefixo 'local:' indica que é um ID temporário gerado localmente",
+    "2": "Após sincronização bem-sucedida, o servidor deve retornar o ID real do servidor",
+    "3": "O cliente deve atualizar o '_id' local com o ID do servidor após sincronização",
+    "4": "O campo '_local' e '_sync' devem ser removidos após sincronização bem-sucedida",
+    "5": "Operações são processadas em ordem cronológica (campo 'at')",
+    "6": "Para operações UPDATE, o campo 'targetId' contém o ID do servidor do animal a ser atualizado",
+    "7": "O campo 'payload' contém todos os dados do animal, incluindo campos opcionais vazios",
+    "8": "Campos numéricos devem ser enviados como números, não strings",
+    "9": "Campos de data devem ser enviados no formato ISO 8601 (YYYY-MM-DD)",
+    "10": "O endpoint pode processar múltiplas operações em um único request (batch)"
+  },
+  "estrutura_fila_indexeddb": {
+    "store": "records",
+    "chave": "queue:{fazenda_id}:{owner_id}:animal",
+    "valor": [
+      {
+        "op": "animal_create",
+        "at": 1771513538032,
+        "payload": { /* objeto animal completo */ }
+      },
+      {
+        "op": "animal_update",
+        "at": 1771514943115,
+        "targetId": "id_do_servidor",
+        "payload": { /* objeto animal completo atualizado */ }
+      }
+    ]
+  },
+  "fluxo_sincronizacao": {
+    "1": "Usuário cria/atualiza animal offline → salvo em 'animais' store com _local=true e _sync='pending'",
+    "2": "Operação adicionada à fila 'records' store com chave 'queue:{fazenda}:{owner}:animal'",
+    "3": "Quando online, botão FAB Sync aparece no dashboard",
+    "4": "Usuário clica no botão → processQueue() é chamado",
+    "5": "processQueue() lê todas as filas da store 'records'",
+    "6": "Para cada fila, envia POST para endpoint de sincronização",
+    "7": "Se sucesso: remove fila da store 'records' e atualiza '_id' local com ID do servidor",
+    "8": "Se erro: mantém fila para retry posterior",
+    "9": "Atualiza UI removendo flags de sincronização pendente"
+  }
+}
