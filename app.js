@@ -968,15 +968,35 @@ async function renderAnimalList() {
     }
   }
 
-  // Tabela Desktop: preenche linhas com a mesma lista
+  // Tabela Desktop: preenche linhas com paginação (10 itens por página quando há >= 10 itens)
+  const ITEMS_PER_PAGE = 10;
+  const paginationEl = $("#animalTablePagination");
   if (tableBody) {
     tableBody.innerHTML = "";
     if (list.length === 0) {
       tableBody.innerHTML = `
         <tr><td colspan="7" style="text-align: center; padding: 32px; color: var(--muted); font-size: 13px;">Nenhum animal encontrado. Tente ajustar a busca.</td></tr>
       `;
+      if (paginationEl) {
+        paginationEl.hidden = true;
+        paginationEl.innerHTML = "";
+      }
     } else {
-      for (const a of list) {
+      const totalItems = list.length;
+      const showPagination = totalItems >= ITEMS_PER_PAGE;
+      if (!showPagination) {
+        if (state.animalListDesktopPage !== undefined) state.animalListDesktopPage = 1;
+      }
+      const totalPages = showPagination ? Math.ceil(totalItems / ITEMS_PER_PAGE) : 1;
+      let page = showPagination ? (state.animalListDesktopPage || 1) : 1;
+      if (page < 1) page = 1;
+      if (page > totalPages) page = totalPages;
+      state.animalListDesktopPage = page;
+
+      const start = (page - 1) * ITEMS_PER_PAGE;
+      const pageList = showPagination ? list.slice(start, start + ITEMS_PER_PAGE) : list;
+
+      for (const a of pageList) {
         const tr = document.createElement("tr");
         tr.dataset.id = a._id || "";
         const statusClass = a._sync === "pending" ? "pending" : "synced";
@@ -994,6 +1014,34 @@ async function renderAnimalList() {
           await openAnimalFormForEdit(a._id);
         };
         tableBody.appendChild(tr);
+      }
+
+      if (paginationEl) {
+        if (showPagination) {
+          paginationEl.hidden = false;
+          paginationEl.innerHTML = `
+            <button type="button" class="paginationBtn" id="animalPaginationPrev" ${page <= 1 ? "disabled" : ""}>Anterior</button>
+            <span class="paginationInfo">Página ${page} de ${totalPages}</span>
+            <button type="button" class="paginationBtn" id="animalPaginationNext" ${page >= totalPages ? "disabled" : ""}>Próxima</button>
+          `;
+          const prevBtn = $("#animalPaginationPrev");
+          const nextBtn = $("#animalPaginationNext");
+          if (prevBtn && page > 1) {
+            prevBtn.onclick = () => {
+              state.animalListDesktopPage = page - 1;
+              renderAnimalList();
+            };
+          }
+          if (nextBtn && page < totalPages) {
+            nextBtn.onclick = () => {
+              state.animalListDesktopPage = page + 1;
+              renderAnimalList();
+            };
+          }
+        } else {
+          paginationEl.hidden = true;
+          paginationEl.innerHTML = "";
+        }
       }
     }
   }
@@ -2627,12 +2675,13 @@ async function processQueue() {
         return operacao;
       });
 
-      // Prepara o payload para envio
+      // Prepara o payload para envio (inclui qtd de itens enviados)
       const syncPayload = {
         dados: {
           fazenda_id: fazendaId,
           user_id: userId,
           timestamp: Date.now(),
+          qtd_itens: operacoes.length,
           operacoes: operacoes
         }
       };
