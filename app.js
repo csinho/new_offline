@@ -270,8 +270,49 @@ const MODULE_CATALOG = {
   }
 };
 
-function parseFromURL() {
+async function parseFromURL() {
   const u = new URL(location.href);
+  const idParam = (u.searchParams.get("id") || "").trim();
+  
+  // Novo fluxo: se existe parâmetro "id", busca módulos via API
+  if (idParam) {
+    try {
+      const modulosUrl = API_CONFIG.getModulosUrl(idParam);
+      const response = await fetch(modulosUrl);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: Falha ao buscar módulos`);
+      }
+      
+      const data = await response.json();
+      
+      // Extrai fazenda, owner e modules da resposta
+      const fazendaId = String(data?.fazenda || "").trim();
+      const ownerId = String(data?.owner || "").trim();
+      const modulesArray = Array.isArray(data?.modules) ? data.modules : [];
+      const modules = modulesArray.length > 0 ? modulesArray : ["animal_create"];
+      
+      return {
+        modules,
+        fazendaId,
+        ownerId,
+      };
+    } catch (error) {
+      console.error("[parseFromURL] Erro ao buscar módulos:", error);
+      showBoot(
+        "Erro ao buscar configuração",
+        `Não foi possível buscar os módulos. Verifique sua conexão e tente novamente.`
+      );
+      // Retorna valores vazios para não prosseguir sem dados válidos
+      return {
+        modules: ["animal_create"],
+        fazendaId: "",
+        ownerId: "",
+      };
+    }
+  }
+  
+  // Fluxo antigo (compatibilidade): lê parâmetros diretamente da URL
   const rawModules = (u.searchParams.get("modules") || "").trim();
   const modules = rawModules.split(",").map((s) => s.trim()).filter(Boolean);
   const fazendaId = (u.searchParams.get("fazenda") || "").trim();
@@ -403,7 +444,7 @@ async function bootstrapData() {
   if (!state.ctx.fazendaId || !state.ctx.ownerId) {
     showBoot(
       "Faltam parâmetros na URL",
-      "Use: ?modules=animal_create&fazenda=<id>&owner=<id>"
+      "Use: ?id=<id> ou ?modules=animal_create&fazenda=<id>&owner=<id>"
     );
     state.bootstrapReady = false;
     return;
@@ -2776,7 +2817,7 @@ async function init() {
   window.addEventListener("online", () => { setNetBadge(); updateFabSyncVisibility(); });
   window.addEventListener("offline", () => { setNetBadge(); updateFabSyncVisibility(); });
 
-  const parsed = parseFromURL();
+  const parsed = await parseFromURL();
 
   if (parsed.fazendaId && parsed.ownerId) {
     await idbSet("meta", "session_config", {

@@ -17,6 +17,7 @@ export const API_CONFIG = {
   // Endpoints
   ENDPOINTS: {
     GET_DADOS: "get_dados",
+    GET_MODULOS: "get_modulos",
     SYNC_DADOS: "sync_dados",
     STATUS_OFFLINE: "status_offline"
   },
@@ -32,6 +33,13 @@ export const API_CONFIG = {
     const url = new URL(`${this.BOOTSTRAP_BASE_URL}/${this.ENDPOINTS.GET_DADOS}`);
     url.searchParams.set("fazenda", fazendaId);
     url.searchParams.set("owner", ownerId);
+    return url.toString();
+  },
+  
+  // Função auxiliar para construir URL de busca de módulos com parâmetro id
+  getModulosUrl(id) {
+    const url = new URL(`${this.BOOTSTRAP_BASE_URL}/${this.ENDPOINTS.GET_MODULOS}`);
+    url.searchParams.set("id", id);
     return url.toString();
   }
 };
