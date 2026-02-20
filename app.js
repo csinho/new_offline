@@ -102,19 +102,17 @@ function toast(msg) {
 
 function setNetBadge() {
   const online = navigator.onLine;
-  const dot = $("#netDot");
-  const lbl = $("#netLabel");
-  if (dot) dot.style.background = online ? "#22c55e" : "#ef4444";
-  if (lbl) lbl.textContent = online ? "online" : "offline";
-  
-  // Atualiza a bolinha do avatar no dashboard
+  // Borda do avatar no sidebar: verde = online, vermelho = offline
+  const sidebarAvatar = $("#sidebarAvatar");
+  if (sidebarAvatar) {
+    if (online) sidebarAvatar.classList.remove("offline");
+    else sidebarAvatar.classList.add("offline");
+  }
+  // Avatar no dashboard (mobile)
   const avatar = $("#dashAvatar");
   if (avatar) {
-    if (online) {
-      avatar.classList.remove("offline");
-    } else {
-      avatar.classList.add("offline");
-    }
+    if (online) avatar.classList.remove("offline");
+    else avatar.classList.add("offline");
   }
 }
 
@@ -220,6 +218,14 @@ const MODULE_CATALOG = {
     pageTitle: "Fazenda",
     pageSub: "Dados da fazenda",
     storageKey: "fazenda",
+  },
+  colaboradores: {
+    key: "colaboradores",
+    label: "Colaboradores",
+    icon: "👥",
+    pageTitle: "Colaboradores",
+    pageSub: "Gestão de colaboradores",
+    storageKey: "colaboradores",
   },
   // Aliases / Extras
   vacinacao: {
@@ -638,24 +644,60 @@ function renderSidebar() {
   if (!nav) return;
   nav.innerHTML = "";
 
+  // Início (Dashboard)
+  const inicioItem = document.createElement("div");
+  const isDashboard = state.view === "dashboard";
+  inicioItem.className = "navItem" + (isDashboard ? " active" : "");
+  inicioItem.innerHTML = `<span class="navIcon">🏠</span><span>Início</span>`;
+  inicioItem.onclick = async () => {
+    state.view = "dashboard";
+    state.activeKey = null;
+    renderSidebar();
+    await openDashboard();
+  };
+  nav.appendChild(inicioItem);
+
+  // Módulos (Fazenda, Animais, Lotes, Colaboradores, etc.) — usa openModule para esconder dashboard (mobile e desktop)
   for (const m of state.modules) {
+    const mDef = MODULE_CATALOG[m.key] || m;
+    const icon = mDef.icon || "📦";
     const item = document.createElement("div");
-    item.className = "navItem" + (m.key === state.activeKey ? " active" : "");
-    item.innerHTML = `<span class="navIcon"></span><span>${escapeHtml(m.label)}</span>`;
+    item.className = "navItem" + (state.view === "module" && m.key === state.activeKey ? " active" : "");
+    item.innerHTML = `<span class="navIcon">${icon}</span><span>${escapeHtml(m.label)}</span>`;
     item.onclick = async () => {
-      state.activeKey = m.key;
-
-      // reset view do módulo animais ao trocar de módulo
-      if (m.key === "animal_create") {
-        state.animalView = "list";
-        state.animalEditingId = null;
-      }
-
-      renderSidebar();
-      await renderActiveModule();
+      await openModule(m.key);
     };
     nav.appendChild(item);
   }
+
+  renderSidebarUser();
+}
+
+async function renderSidebarUser() {
+  const avatarEl = $("#sidebarAvatar");
+  const nameEl = $("#sidebarUserName");
+  const farmEl = $("#sidebarFarmName");
+  if (!avatarEl && !nameEl && !farmEl) return;
+
+  const sessionOwner = await idbGet("owner", "current");
+  let owner = sessionOwner;
+  if (!owner && state.ctx?.ownerId) {
+    const owners = (await idbGet("fazenda", "list_proprietarios")) || [];
+    owner = owners.find(o => String(o._id) === String(state.ctx.ownerId));
+  }
+  const name = owner?.nome || "Usuário";
+  const firstLetter = name.charAt(0).toUpperCase();
+
+  const fazenda = await idbGet("fazenda", "current");
+  const farmName = fazenda?.name || "—";
+
+  if (avatarEl) {
+    avatarEl.textContent = firstLetter;
+    if (navigator.onLine) avatarEl.classList.remove("offline");
+    else avatarEl.classList.add("offline");
+  }
+  if (nameEl) nameEl.textContent = name;
+  if (farmEl) farmEl.textContent = farmName;
 }
 
 // ---------------- Form helpers ----------------
@@ -754,6 +796,55 @@ function fmtKg(v) {
   return `${s} KG`;
 }
 
+function fmtDateDisplay(iso) {
+  if (!iso || String(iso).toLowerCase() === "nan" || String(iso).trim() === "") return "—";
+  const str = String(iso).trim();
+  let yyyy, mm, dd;
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+    yyyy = str.slice(0, 4);
+    mm = str.slice(5, 7);
+    dd = str.slice(8, 10);
+  } else {
+    const d = new Date(str);
+    if (Number.isNaN(d.getTime()) || !d.getTime()) return "—";
+    yyyy = d.getFullYear();
+    mm = String(d.getMonth() + 1).padStart(2, "0");
+    dd = String(d.getDate()).padStart(2, "0");
+  }
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+/** Calcula idade em meses a partir de data (YYYY-MM-DD) e retorna texto: "0,2 mês", "1 mês", "5 meses" */
+function formatIdadeMeses(dateStr) {
+  if (!dateStr || String(dateStr).trim() === "" || String(dateStr).toLowerCase() === "nan") return "—";
+  const str = String(dateStr).trim();
+  if (!/^\d{4}-\d{2}-\d{2}/.test(str)) return "—";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const birth = new Date(str + "T12:00:00");
+  birth.setHours(0, 0, 0, 0);
+  const diffMs = today.getTime() - birth.getTime();
+  if (diffMs < 0) return "—";
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  const months = diffDays / 30.44;
+  if (months < 0) return "—";
+  if (months < 1) {
+    const dec = Math.round(months * 10) / 10;
+    return `${String(dec).replace(".", ",")} mês`;
+  }
+  const n = Math.floor(months);
+  if (n === 1) return "1 mês";
+  return `${n} meses`;
+}
+
+function updateAnimalIdadeDisplay() {
+  const nascEl = $("#animalNasc");
+  const displayEl = $("#animalIdadeDisplay");
+  if (!displayEl) return;
+  const dateStr = nascEl ? nascEl.value : "";
+  displayEl.textContent = formatIdadeMeses(dateStr);
+}
+
 function animalDisplayName(a) {
   const name = String(a?.nome_completo || "").trim();
   if (name) return name;
@@ -793,7 +884,11 @@ async function renderAnimalList() {
 
   const all = (await idbGet("animais", "list")) || [];
   const searchEl = $("#animalSearch");
+  const searchElDesktop = $("#animalSearchDesktop");
   const cardsList = $("#animalCardsList");
+  const tableBody = $("#animalTableBody");
+  const isDesktop = typeof window !== "undefined" && window.innerWidth >= 800;
+  const searchVal = normText(isDesktop ? (searchElDesktop ? searchElDesktop.value : "") : (searchEl ? searchEl.value : ""));
 
   if (!cardsList) {
     // Tenta novamente após um pequeno delay se não encontrou
@@ -806,7 +901,7 @@ async function renderAnimalList() {
     return;
   }
 
-  const q = normText(searchEl ? searchEl.value : "");
+  const q = searchVal;
 
   let list = Array.isArray(all) ? all.slice() : [];
   list = list.map(normalizeAnimal);
@@ -838,8 +933,8 @@ async function renderAnimalList() {
     if (list.length === 0) {
       cardsList.innerHTML = `
         <div style="text-align: center; padding: 40px 20px; color: var(--muted);">
-          <p style="font-size: 16px; font-weight: 600;">Nenhum animal encontrado</p>
-          <p style="font-size: 14px; margin-top: 8px;">Tente ajustar sua busca</p>
+          <p style="font-size: 14px; font-weight: 600;">Nenhum animal encontrado</p>
+          <p style="font-size: 13px; margin-top: 8px;">Tente ajustar sua busca</p>
         </div>
       `;
     } else {
@@ -873,15 +968,46 @@ async function renderAnimalList() {
     }
   }
 
-  // Bind Search
+  // Tabela Desktop: preenche linhas com a mesma lista
+  if (tableBody) {
+    tableBody.innerHTML = "";
+    if (list.length === 0) {
+      tableBody.innerHTML = `
+        <tr><td colspan="7" style="text-align: center; padding: 32px; color: var(--muted); font-size: 13px;">Nenhum animal encontrado. Tente ajustar a busca.</td></tr>
+      `;
+    } else {
+      for (const a of list) {
+        const tr = document.createElement("tr");
+        tr.dataset.id = a._id || "";
+        const statusClass = a._sync === "pending" ? "pending" : "synced";
+        const statusText = a._sync === "pending" ? "Pendente" : "Sincronizado";
+        tr.innerHTML = `
+          <td>${escapeHtml(a?.brinco_padrao || "—")}</td>
+          <td>${escapeHtml(a?.nome_completo || "—")}</td>
+          <td>${fmtDateDisplay(a?.data_nascimento)}</td>
+          <td>${escapeHtml(renderSex(a?.sexo))}</td>
+          <td>${escapeHtml(a?.categoria || "—")}</td>
+          <td>${escapeHtml(fmtKg(a?.peso_atual_kg))}</td>
+          <td><span class="animalTableStatus ${statusClass}">${statusText}</span></td>
+        `;
+        tr.onclick = async () => {
+          await openAnimalFormForEdit(a._id);
+        };
+        tableBody.appendChild(tr);
+      }
+    }
+  }
+
+  // Bind Search (mobile): atualiza lista e mantém desktop em sync
   if (searchEl && !searchEl.__bound) {
     searchEl.__bound = true;
     searchEl.addEventListener("input", async () => {
+      if (searchElDesktop) searchElDesktop.value = searchEl.value;
       await renderAnimalList();
     });
   }
 
-  // Bind Search Button
+  // Bind Search Button (mobile)
   const searchBtn = document.querySelector(".animalSearchBtn");
   if (searchBtn && !searchBtn.__bound) {
     searchBtn.__bound = true;
@@ -890,11 +1016,29 @@ async function renderAnimalList() {
     };
   }
 
-  // Bind Create Animal Button
+  // Bind Search Desktop: atualiza lista e mantém mobile em sync
+  if (searchElDesktop && !searchElDesktop.__bound) {
+    searchElDesktop.__bound = true;
+    searchElDesktop.addEventListener("input", async () => {
+      if (searchEl) searchEl.value = searchElDesktop.value;
+      await renderAnimalList();
+    });
+  }
+
+  // Bind Create Animal Button (mobile)
   const btnCreateAnimal = $("#btnCreateAnimal");
   if (btnCreateAnimal && !btnCreateAnimal.__bound) {
     btnCreateAnimal.__bound = true;
     btnCreateAnimal.addEventListener("click", async () => {
+      await openAnimalFormForCreate();
+    });
+  }
+
+  // Bind Create Animal Button (desktop)
+  const btnCreateAnimalDesktop = $("#btnCreateAnimalDesktop");
+  if (btnCreateAnimalDesktop && !btnCreateAnimalDesktop.__bound) {
+    btnCreateAnimalDesktop.__bound = true;
+    btnCreateAnimalDesktop.addEventListener("click", async () => {
       await openAnimalFormForCreate();
     });
   }
@@ -993,9 +1137,11 @@ function readAnimalFormByIds() {
   };
 }
 
-function writeAnimalFormByIds(data = {}) {
+async function writeAnimalFormByIds(data = {}) {
+  const fazenda = await idbGet("fazenda", "current");
+  const farmName = fazenda?.name || "—";
   const fazendaNome = $("#fazendaSelecionadaNome");
-  if (fazendaNome) fazendaNome.textContent = ($("#farmCurrent")?.textContent || "—");
+  if (fazendaNome) fazendaNome.textContent = farmName;
 
   if ($("#animalOwnerSelect")) $("#animalOwnerSelect").value = String(data.owner || "");
   if ($("#animalTipo")) $("#animalTipo").value = String(data.animal_type || "Físico");
@@ -1003,6 +1149,7 @@ function writeAnimalFormByIds(data = {}) {
   if ($("#animalSexo")) $("#animalSexo").value = String(data.sexo || "");
   if ($("#animalPesoAtual")) $("#animalPesoAtual").value = String(toNumberOrZero(data.peso_atual_kg));
   if ($("#animalNasc")) $("#animalNasc").value = isoToDateInput(data.data_nascimento || "");
+  updateAnimalIdadeDisplay();
   if ($("#animalCategoria")) $("#animalCategoria").value = String(data.categoria || "");
   if ($("#animalRaca")) $("#animalRaca").value = String(data.raca || "");
 
@@ -1058,19 +1205,16 @@ function validateAnimalFormRequired() {
 }
 
 function updateSaveButtonState() {
-  const btnSaveBottom = $("#btnSaveBottom");
-  if (!btnSaveBottom) return;
-  
+  const btns = document.querySelectorAll(".btnSaveAnimal");
+  if (!btns.length) return;
+
   const check = validateAnimalFormRequired();
-  if (check.ok) {
-    btnSaveBottom.disabled = false;
-    btnSaveBottom.style.opacity = "1";
-    btnSaveBottom.style.cursor = "pointer";
-  } else {
-    btnSaveBottom.disabled = true;
-    btnSaveBottom.style.opacity = "0.5";
-    btnSaveBottom.style.cursor = "not-allowed";
-  }
+  const enabled = check.ok;
+  btns.forEach((btn) => {
+    btn.disabled = !enabled;
+    btn.style.opacity = enabled ? "1" : "0.5";
+    btn.style.cursor = enabled ? "pointer" : "not-allowed";
+  });
 }
 
 /**
@@ -1205,35 +1349,33 @@ function bindAnimalFormUIOnce() {
     });
   }
 
-  // Botão salvar fixo - validação e estado
-  const btnSaveBottom = $("#btnSaveBottom");
-  if (btnSaveBottom && !btnSaveBottom.__bound) {
-    btnSaveBottom.__bound = true;
-    btnSaveBottom.addEventListener("click", async () => {
+  // Botão salvar (footer e header) - validação e estado
+  const saveButtons = document.querySelectorAll(".btnSaveAnimal");
+  saveButtons.forEach((btn) => {
+    if (btn.__bound) return;
+    btn.__bound = true;
+    btn.addEventListener("click", async () => {
       const check = validateAnimalFormRequired();
       if (!check.ok) {
         toast(`Campo obrigatório: ${check.key}`);
         return;
       }
-      
-      // Mostra loading
-      const btn = $("#btnSaveBottom");
-      if (btn) {
-        btn.disabled = true;
-        btn.textContent = "Salvando...";
-      }
-      
+      const allSaveBtns = document.querySelectorAll(".btnSaveAnimal");
+      allSaveBtns.forEach((b) => {
+        b.disabled = true;
+        b.textContent = "Salvando...";
+      });
       try {
         await saveAnimalFromForm();
       } finally {
-        const btnFinal = $("#btnSaveBottom");
-        if (btnFinal) {
-          btnFinal.disabled = false;
-          btnFinal.textContent = "Salvar Animal";
-        }
+        document.querySelectorAll(".btnSaveAnimal").forEach((b) => {
+          b.disabled = false;
+          b.textContent = "Salvar Animal";
+        });
+        updateSaveButtonState();
       }
     });
-  }
+  });
 
   // Validação em tempo real dos campos obrigatórios
   const requiredFields = [
@@ -1254,7 +1396,14 @@ function bindAnimalFormUIOnce() {
     }
   });
 
-  // Atualiza estado inicial do botão
+  const nascEl = $("#animalNasc");
+  if (nascEl && !nascEl.__idadeBound) {
+    nascEl.__idadeBound = true;
+    nascEl.addEventListener("input", updateAnimalIdadeDisplay);
+    nascEl.addEventListener("change", updateAnimalIdadeDisplay);
+  }
+
+  updateAnimalIdadeDisplay();
   updateSaveButtonState();
 
   // botões voltar
@@ -1333,6 +1482,11 @@ async function openAnimalList() {
 }
 
 async function openAnimalFormForCreate() {
+  if (await isSyncInProgress()) {
+    toast("Aguarde a finalização da sincronização para criar um novo animal.");
+    return;
+  }
+
   state.view = "module";
   state.activeKey = "animal_create";
   state.animalView = "form";
@@ -1396,7 +1550,7 @@ async function openAnimalFormForCreate() {
     uf: "",
   };
 
-  writeAnimalFormByIds(initData);
+  await writeAnimalFormByIds(initData);
 
   // título no header (se você quiser diferenciar)
   setPageHeadTexts("Informações do animal", "Cadastre ou atualize aqui");
@@ -1416,6 +1570,11 @@ async function openAnimalFormForCreate() {
 }
 
 async function openAnimalFormForEdit(animalId) {
+  if (await isSyncInProgress()) {
+    toast("Aguarde a finalização da sincronização para editar animais.");
+    return;
+  }
+
   const all = (await idbGet("animais", "list")) || [];
   const a = (Array.isArray(all) ? all : []).find(x => String(x?._id) === String(animalId));
 
@@ -1454,10 +1613,14 @@ async function openAnimalFormForEdit(animalId) {
   if (tgl) tgl.checked = false;
   applyAdvancedVisibility();
 
-  // mapeia do seu objeto (cache) para campos do form
+  // mapeia do seu objeto (cache) para campos do form (proprietario = dono do animal, usado no dropdown)
   const data = normalizeAnimal(a);
+  const rawOwner = data.proprietario ?? data.owner ?? state.ctx.ownerId ?? "";
+  const ownerId = (typeof rawOwner === "object" && rawOwner !== null && rawOwner._id)
+    ? String(rawOwner._id).trim()
+    : String(rawOwner || "").trim();
   const mapped = {
-    owner: data.owner || state.ctx.ownerId || "",
+    owner: ownerId,
     entry_type: data.entry_type || "Compra",
     animal_type: data.animal_type || "Físico",
     brinco_padrao: data.brinco_padrao || "",
@@ -1489,7 +1652,7 @@ async function openAnimalFormForEdit(animalId) {
     uf: data.uf || "",
   };
 
-  writeAnimalFormByIds(mapped);
+  await writeAnimalFormByIds(mapped);
 
   // Garante que FAB Sync está escondido no form
   const fabSync3 = document.getElementById("fabSync");
@@ -1508,6 +1671,11 @@ async function openAnimalFormForEdit(animalId) {
 // ---------------- Save: CREATE or UPDATE offline (com validação de brinco) ----------------
 
 async function saveAnimalFromForm() {
+  if (await isSyncInProgress()) {
+    toast("Aguarde a finalização da sincronização para salvar alterações.");
+    return;
+  }
+
   const check = validateAnimalFormRequired();
   if (!check.ok) {
     toast(`Campo obrigatório: ${check.key}`);
@@ -1756,7 +1924,7 @@ async function renderDashboard() {
   const hasPending = allAnimais.some(a => a._sync === "pending");
 
   if (elName) {
-    elName.innerHTML = escapeHtml(name) + (hasPending ? " <span style='font-size:14px; vertical-align:middle' title='Dados pendentes'>☁️</span>" : "");
+    elName.innerHTML = escapeHtml(name) + (hasPending ? " <span style='font-size:13px; vertical-align:middle' title='Dados pendentes'>☁️</span>" : "");
   }
   if (elAvatar) {
     elAvatar.textContent = firstLetter;
@@ -1769,37 +1937,24 @@ async function renderDashboard() {
     }
   }
 
-  // 2. Modules Carousel
+  // Atualiza bloco do usuário no sidebar (desktop)
+  renderSidebarUser();
+
+  // Módulos (carrossel mobile)
   const modContainer = $("#dashModules");
   if (modContainer) {
-    modContainer.innerHTML = ""; // clear
+    modContainer.innerHTML = "";
     state.modules.forEach(mod => {
-      // Use catalog definition OR fallback to mod properties (from buildModules)
-      // If mod from buildModules didn't have icon, use default
-      let mDef = MODULE_CATALOG[mod.key];
-
-      if (!mDef) {
-        // Fallback object if not in catalog
-        mDef = {
-          key: mod.key,
-          label: mod.label || prettifyKey(mod.key),
-          icon: "📦" // Default icon
-        };
-      }
-
+      const mDef = MODULE_CATALOG[mod.key] || { key: mod.key, label: mod.label || prettifyKey(mod.key), icon: "📦" };
       const div = document.createElement("div");
       div.className = "dashModCard";
       div.onclick = () => openModule(mod.key);
-
-      div.innerHTML = `
-        <div class="dashModIcon">${mDef.icon}</div>
-        <div class="dashModTitle">${mDef.label}</div>
-      `;
+      div.innerHTML = `<div class="dashModIcon">${mDef.icon}</div><div class="dashModTitle">${escapeHtml(mDef.label)}</div>`;
       modContainer.appendChild(div);
     });
   }
 
-  // 3. Charts Stats
+  // Charts Stats
   const animais = (await idbGet("animais", "list")) || [];
   const activeAnimais = animais.filter(a => !a.deleted);
   const total = activeAnimais.length;
@@ -1895,6 +2050,63 @@ async function renderDashboard() {
       });
     }
   }
+
+  // --- Desktop Dashboard: preencher mesmos dados ---
+  const dashDate = $("#dashDesktopDate");
+  if (dashDate) {
+    const d = new Date();
+    const opts = { day: "numeric", month: "long", year: "numeric" };
+    dashDate.textContent = d.toLocaleDateString("pt-BR", opts);
+  }
+  const dashNameDesktop = $("#dashNameDesktop");
+  if (dashNameDesktop) dashNameDesktop.textContent = name;
+  const cardTotal = $("#dashDesktopCardTotal"); if (cardTotal) cardTotal.textContent = total;
+  const totalLotes = Array.isArray(lotesList) ? lotesList.length : 0;
+  const cardLotes = $("#dashDesktopCardLotes"); if (cardLotes) cardLotes.textContent = totalLotes;
+
+  const elTotalSexD = $("#chartTotalSexDesktop");
+  if (elTotalSexD) elTotalSexD.innerHTML = `${total}<br><span style="font-size:10px;font-weight:400;color:#6b7280">Total</span>`;
+  const lblMD = $("#lblMDesktop"); if (lblMD) lblMD.textContent = machos;
+  const lblFD = $("#lblFDesktop"); if (lblFD) lblFD.textContent = femeas;
+  const pathSexMD = document.querySelector("#chartPathSexMDesktop");
+  if (pathSexMD) {
+    pathSexMD.style.strokeDasharray = `${pctM}, 100`;
+    pathSexMD.style.animation = "none";
+    pathSexMD.offsetHeight;
+    pathSexMD.style.animation = "progress 1s ease-out forwards";
+  }
+
+  const elListCatD = $("#chartListCatDesktop");
+  if (elListCatD) {
+    if (catList.length === 0) {
+      elListCatD.innerHTML = `<div style="text-align:center; color:#9ca3af; padding:20px;">Nenhum dado</div>`;
+    } else {
+      elListCatD.innerHTML = "";
+      const maxVal = catList[0].count;
+      catList.slice(0, 5).forEach(item => {
+        const visualPct = (item.count / maxVal) * 100;
+        const row = document.createElement("div");
+        row.innerHTML = `<div class="statRow"><span class="statLabel">${item.cat}</span><span class="statVal">${item.count}</span></div><div class="statBarBg"><div class="statBarFill" style="width: ${visualPct}%"></div></div>`;
+        elListCatD.appendChild(row);
+      });
+    }
+  }
+
+  const elListLoteD = $("#chartListLoteDesktop");
+  if (elListLoteD) {
+    if (loteAgg.length === 0) {
+      elListLoteD.innerHTML = `<div style="text-align:center; color:#9ca3af; padding:20px;">Nenhum dado de peso</div>`;
+    } else {
+      elListLoteD.innerHTML = "";
+      const maxAvg = loteAgg[0].avg;
+      loteAgg.slice(0, 5).forEach(item => {
+        const visualPct = (item.avg / maxAvg) * 100;
+        const row = document.createElement("div");
+        row.innerHTML = `<div class="statRow"><span class="statLabel">${escapeHtml(item.name)}</span><span class="statVal">${item.avg.toFixed(1)} kg</span></div><div class="statBarBg"><div class="statBarFill" style="width: ${visualPct}%"></div></div>`;
+        elListLoteD.appendChild(row);
+      });
+    }
+  }
 }
 
 async function openDashboard() {
@@ -1921,15 +2133,17 @@ async function openDashboard() {
   const secForm = $("#modAnimaisForm");
   if (secForm) secForm.hidden = true;
 
-  // Show Dashboard
+  // Show Dashboard (mobile e desktop; a visibilidade por viewport é feita via CSS)
   const dash = $("#modDashboard");
   if (dash) dash.hidden = false;
+  const dashDesktop = document.getElementById("modDashboardDesktop");
+  if (dashDesktop) dashDesktop.hidden = false;
 
   // Render Data
   await renderDashboard();
 
-  // Reset module nav active state
-  document.querySelectorAll(".navItem").forEach(n => n.classList.remove("active"));
+  // Atualiza sidebar para marcar "Início" como ativo
+  renderSidebar();
 
   // Atualiza visibilidade do FAB Sync
   updateFabSyncVisibility();
@@ -1939,19 +2153,21 @@ async function openDashboard() {
 }
 
 async function openModule(moduleKey) {
-  // Logic from renderActiveModule but simplified for switching
   state.activeKey = moduleKey;
   state.view = "module";
-  
-  // Atualiza visibilidade do FAB Sync
+  if (moduleKey === "animal_create") {
+    state.animalView = "list";
+    state.animalEditingId = null;
+  }
+
+  renderSidebar();
   updateFabSyncVisibility();
 
-  // Hide Dashboard
   const dash = $("#modDashboard");
   if (dash) dash.hidden = true;
+  const dashDesktop = document.getElementById("modDashboardDesktop");
+  if (dashDesktop) dashDesktop.hidden = true;
 
-  // Show generic container logic
-  // Re-run renderActiveModule to handle the specific module's view (list/form etc)
   await renderActiveModule();
 
   // Salva estado de navegação
@@ -2061,18 +2277,27 @@ async function checkSyncStatus() {
 // URLs e configurações agora vêm de config.js
 
 function showSyncStatusBanner(text, isError = false) {
-  const el = document.getElementById("syncStatusBanner");
-  const textEl = document.getElementById("syncStatusText");
-  if (!el || !textEl) return;
-  textEl.textContent = text;
-  el.style.background = isError ? "#fef2f2" : "#eff6ff";
-  el.style.borderColor = isError ? "#fecaca" : "#bfdbfe";
-  el.style.display = "block";
+  const ids = [
+    ["syncStatusBanner", "syncStatusText"],
+    ["syncStatusBannerDesktop", "syncStatusTextDesktop"]
+  ];
+  ids.forEach(([bannerId, textId]) => {
+    const el = document.getElementById(bannerId);
+    const textEl = document.getElementById(textId);
+    if (el && textEl) {
+      textEl.textContent = text;
+      el.style.background = isError ? "#fef2f2" : "#eff6ff";
+      el.style.borderColor = isError ? "#fecaca" : "#bfdbfe";
+      el.style.display = "block";
+    }
+  });
 }
 
 function hideSyncStatusBanner() {
-  const el = document.getElementById("syncStatusBanner");
-  if (el) el.style.display = "none";
+  ["syncStatusBanner", "syncStatusBannerDesktop"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+  });
 }
 
 /** Aplica resultado da sincronização (resultados) aos animais locais e atualiza UI. */
@@ -2251,6 +2476,12 @@ async function startPollSyncStatus(idResponse, qKey) {
   if (!syncPollDone) {
     syncPollTimerId = setInterval(check, SYNC_CONFIG.POLL_INTERVAL_MS);
   }
+}
+
+/** Retorna true se há sincronização em andamento (polling ativo). */
+async function isSyncInProgress() {
+  const pendingId = await idbGet("meta", "sync_pending_id");
+  return !!pendingId;
 }
 
 async function processQueue() {
@@ -2520,8 +2751,20 @@ async function init() {
     }
   }
 
-  // Setup Sidebar (still useful for desktop or backup)
+  // Setup Sidebar (desktop: Início + módulos + usuário)
   renderSidebar();
+
+  const dashDesktopCta = document.getElementById("dashDesktopCta");
+  if (dashDesktopCta) {
+    dashDesktopCta.onclick = async () => {
+      await openModule("animal_create");
+      state.animalView = "form";
+      state.animalEditingId = null;
+      await renderActiveModule();
+      await openAnimalFormForCreate();
+    };
+  }
+
   await registerSW();
 
   if (!state.ctx.fazendaId || !state.ctx.ownerId) {
@@ -2552,11 +2795,13 @@ async function init() {
     if (state.view === "dashboard") {
       await openDashboard();
     } else if (state.view === "module" && state.activeKey) {
-      // Restaura o módulo ativo
+      // Restaura o módulo ativo (esconde dashboard mobile e desktop)
       state.view = "module";
       const dash = $("#modDashboard");
       if (dash) dash.hidden = true;
-      
+      const dashDesktop = document.getElementById("modDashboardDesktop");
+      if (dashDesktop) dashDesktop.hidden = true;
+
       await renderActiveModule();
       
       // Se for módulo de animais e estava em form, restaura
@@ -2567,6 +2812,7 @@ async function init() {
           await openAnimalFormForCreate();
         }
       }
+      renderSidebar();
     } else {
       // Fallback para dashboard se estado inválido
       await openDashboard();

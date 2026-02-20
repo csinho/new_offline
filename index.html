@@ -37,7 +37,8 @@
             --shadow: 0 10px 28px rgba(17, 24, 39, .06);
 
             --font-main: "Inter", "Rethink Sans", sans-serif;
-            /* --font-serif removida pois não será mais usada */
+            /* Breakpoint padrão: mobile < 800px, desktop >= 800px (dashboard e listagem de animais) */
+            --bp-desktop: 800px;
         }
 
         * {
@@ -47,6 +48,7 @@
         body {
             margin: 0;
             font-family: var(--font-main);
+            font-size: 14px;
             background: var(--bg);
             color: var(--text);
             font-weight: 400;
@@ -67,20 +69,34 @@
             min-height: 100vh;
             display: grid;
             grid-template-columns: 240px 1fr;
+            transition: grid-template-columns .2s ease;
         }
 
-        /* Sidebar */
+        /* Sidebar desktop */
         .sidebar {
             background: var(--sidebar);
-            padding: 8px 14px;
-            border-right: 1px solid rgba(0, 0, 0, .04);
+            border-right: 1px solid rgba(0, 0, 0, .06);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .sidebarInner {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 16px 12px;
+            min-height: 0;
         }
 
         .logoWrap {
             display: flex;
             align-items: center;
             justify-content: flex-start;
-            padding: 4px 8px 14px;
+            gap: 8px;
+            padding: 6px 10px 20px;
+            border-bottom: 1px solid rgba(0, 0, 0, .05);
+            margin-bottom: 12px;
         }
 
         .logo {
@@ -93,39 +109,115 @@
         .nav {
             display: flex;
             flex-direction: column;
-            gap: 8px;
-            margin-top: 6px;
+            gap: 6px;
+            flex: 1;
+            overflow-y: auto;
         }
 
         .navItem {
             display: flex;
             align-items: center;
-            gap: 10px;
-            padding: 10px 12px;
+            gap: 12px;
+            padding: 12px 14px;
             border-radius: 999px;
             cursor: pointer;
             user-select: none;
-            color: #111827;
-            font-weight: 600;
-            font-size: 14px;
+            color: var(--text);
+            font-weight: 500;
+            font-size: 12px;
+            transition: background .15s ease;
         }
 
         .navItem:hover {
-            background: rgba(0, 0, 0, .03);
+            background: rgba(0, 0, 0, .04);
         }
 
         .navItem.active {
-            background: rgba(237, 255, 119, .65);
-            box-shadow: 0 10px 22px rgba(17, 24, 39, .06);
-            outline: 1px solid rgba(0, 0, 0, .04);
+            background: var(--btn);
+            color: var(--btnText);
+            box-shadow: 0 2px 8px rgba(237, 255, 119, .35);
+            border: #1118279c;
+            border-width: 1px;
+            border-style: solid;
         }
 
         .navIcon {
-            width: 18px;
-            height: 18px;
-            border-radius: 6px;
+            width: 22px;
+            height: 22px;
+            border-radius: 8px;
             background: rgba(17, 24, 39, .08);
-            display: inline-block;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            flex-shrink: 0;
+        }
+
+        .navItem.active .navIcon {
+            background: rgba(18, 24, 38, .12);
+        }
+
+        /* Rodapé do sidebar: usuário + logout */
+        .sidebarFooter {
+            padding-top: 16px;
+            margin-top: auto;
+            border-top: 1px solid rgba(0, 0, 0, .05);
+        }
+
+        .sidebarUser {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 8px;
+            border-radius: 12px;
+        }
+
+        .sidebarUser:hover {
+            background: rgba(0, 0, 0, .03);
+        }
+
+        .sidebarAvatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #e5e7eb;
+            color: var(--text);
+            font-weight: 700;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            border: 2px solid #22c55e;
+            box-sizing: border-box;
+        }
+        .sidebarAvatar.offline {
+            border-color: #ef4444;
+        }
+
+        .sidebarUserInfo {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+            flex: 1;
+        }
+
+        .sidebarUserName {
+            font-weight: 700;
+            font-size: 12px;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .sidebarUserEmail {
+            font-size: 12px;
+            color: var(--muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         /* Main */
@@ -135,35 +227,28 @@
             min-width: 0;
         }
 
-        .topbar {
-            height: 56px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 18px;
-            background: rgba(251, 255, 227, .55);
-            border-bottom: 1px solid rgba(0, 0, 0, .04);
-        }
-
-        .farmPill {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-            font-size: 12px;
-            color: var(--muted);
-        }
-
-        .farmPill b {
-            color: var(--text);
-            font-size: 13px;
-        }
-
         .content {
             padding: 18px;
             max-width: 1220px;
             width: 100%;
+            margin-left: auto;
+            margin-right: auto;
         }
 
+        /* Desktop: todas as telas na área principal centralizadas com mesma largura máxima */
+        @media (min-width: 800px) {
+            .content {
+                max-width: 90%;
+            }
+            main > section.moduleSection {
+                max-width: 90%;
+                width: 100%;
+                margin-left: auto;
+                margin-right: auto;
+                padding: 48px;
+                box-sizing: border-box;
+            }
+        }
 
         .pageHead {
             background: var(--card);
@@ -171,15 +256,48 @@
             box-shadow: var(--shadow);
             padding: 16px 18px;
             display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 16px;
+            flex-direction: column;
+            gap: 14px;
             margin-bottom: 14px;
+        }
+
+        .pageHeadRow1 {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .pageHeadRow2 {
+            margin: 0;
+        }
+
+        .pageHeadRow2 .pageTitle {
+            margin: 0;
+        }
+
+        .pageHeadRow2 .pageSub {
+            margin: 4px 0 0;
+        }
+
+        .pageHeadRow3 {
+            margin: 0;
+        }
+
+        .pageHeadActions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* Botão Salvar no header: escondido no mobile (usa o do footer) */
+        #btnSaveHeader {
+            display: none;
         }
 
         .pageTitle {
             margin: 0;
-            font-size: 18px;
+            font-size: 12px;
             font-weight: 800;
             letter-spacing: .2px;
         }
@@ -187,7 +305,7 @@
         .pageSub {
             margin: 4px 0 0;
             color: var(--muted);
-            font-size: 13px;
+            font-size: 12px;
         }
 
         .actions {
@@ -231,7 +349,7 @@
             background: rgba(0, 0, 0, .03);
             border: 1px solid rgba(0, 0, 0, .04);
             font-weight: 700;
-            font-size: 13px;
+            font-size: 12px;
             color: var(--text);
         }
 
@@ -327,12 +445,12 @@
         }
 
         .dashedText .k {
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 800;
         }
 
         .dashedText .v {
-            font-size: 14px;
+            font-size: 12px;
             color: var(--muted);
             font-weight: 800;
             margin-top: 2px;
@@ -359,7 +477,7 @@
         }
 
         .label {
-            font-size: 11px;
+            font-size: 12px;
             color: #6b7280;
             font-weight: 800;
             text-transform: uppercase;
@@ -381,7 +499,7 @@
             background: #fff;
             padding: 0 16px;
             outline: none;
-            font-size: 15px;
+            font-size: 12px;
             color: var(--text);
             font-family: var(--font-main);
             transition: border-color .2s, box-shadow .2s;
@@ -403,6 +521,21 @@
             min-height: 120px;
             padding: 16px;
             resize: vertical;
+        }
+
+        .animalIdadeDisplay {
+            height: 54px;
+            border-radius: 16px;
+            border: 1px solid var(--stroke);
+            background: #f9fafb;
+            padding: 0 16px;
+            font-size: 12px;
+            color: var(--text);
+            font-family: var(--font-main);
+            display: flex;
+            align-items: center;
+            pointer-events: none;
+            cursor: default;
         }
 
         input::placeholder,
@@ -512,7 +645,7 @@
             cursor: pointer;
             position: relative;
             user-select: none;
-            font-size: 14px;
+            font-size: 12px;
             white-space: nowrap;
         }
 
@@ -612,7 +745,7 @@
                 width: 100%;
                 margin: 0;
                 height: 56px;
-                font-size: 17px;
+                font-size: 12px;
                 box-shadow: 0 10px 25px rgba(237, 255, 119, 0.4);
             }
         }
@@ -636,7 +769,7 @@
             max-width: 360px;
             box-shadow: 0 14px 28px rgba(0, 0, 0, .22);
             font-weight: 700;
-            font-size: 13px;
+            font-size: 12px;
         }
 
         @media (max-width: 980px) {
@@ -680,7 +813,7 @@
                 padding: 8px 12px;
                 border-radius: 16px;
                 /* Mais arredondado */
-                font-size: 11px;
+                font-size: 12px;
                 color: #9ca3af;
                 background: transparent !important;
                 box-shadow: none !important;
@@ -710,7 +843,7 @@
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                font-size: 18px;
+                font-size: 12px;
                 margin: 0 auto;
                 transition: .2s;
             }
@@ -725,13 +858,9 @@
                 background: var(--bg);
                 font-family: var(--font-main);
                 font-weight: 900;
-                font-size: 22px;
+                font-size: 12px;
                 letter-spacing: -0.04em;
                 color: #111827;
-            }
-
-            .topbar {
-                display: none;
             }
 
             .content {
@@ -744,7 +873,7 @@
             .chip,
             .btn {
                 height: 54px;
-                font-size: 16px;
+                font-size: 12px;
                 border-radius: 16px;
             }
 
@@ -800,7 +929,7 @@
                 grid-column: 1 / 2;
                 grid-row: 1;
                 font-weight: 900;
-                font-size: 20px;
+                font-size: 12px;
                 color: #111827;
                 letter-spacing: -0.02em;
                 margin-bottom: 4px;
@@ -832,7 +961,7 @@
                 display: inline-block;
                 /* Ficar na mesma linha se der */
                 width: auto;
-                font-size: 13px;
+                font-size: 12px;
                 color: #6b7280;
                 font-weight: 600;
                 margin-right: 12px;
@@ -890,14 +1019,14 @@
 
         .bootTitle {
             font-weight: 900;
-            font-size: 16px;
+            font-size: 12px;
             margin-bottom: 6px;
         }
 
         .bootSub {
             color: #6b7280;
             font-weight: 700;
-            font-size: 13px;
+            font-size: 12px;
             margin-bottom: 12px;
         }
 
@@ -951,7 +1080,7 @@
 
         .listHeaderLeft h2 {
             margin: 0;
-            font-size: 28px;
+            font-size: 12px;
             font-weight: 900;
         }
 
@@ -1049,7 +1178,7 @@
 
         thead th {
             background: #f3f4f6;
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 900;
             text-align: left;
             padding: 12px 12px;
@@ -1060,7 +1189,7 @@
             padding: 12px 12px;
             border-bottom: 1px solid rgba(0, 0, 0, .06);
             font-weight: 700;
-            font-size: 14px;
+            font-size: 12px;
         }
 
         tbody tr:hover td {
@@ -1111,11 +1240,14 @@
             overflow-x: hidden;
         }
 
-        /* Container fixo para header e botão */
-        #modAnimaisList>.animalListHeader,
-        #modAnimaisList>.animalCreateButtonWrap {
+        /* Container fixo para header e botão (mobile: dentro de .animalListMobile) */
+        #modAnimaisList > .animalListHeader,
+        #modAnimaisList > .animalCreateButtonWrap,
+        .animalListMobile > .animalListHeader,
+        .animalListMobile > .animalCreateButtonWrap {
             flex-shrink: 0;
         }
+
 
         /* Toggle Switch Custom */
         .switch {
@@ -1168,6 +1300,334 @@
             display: none !important;
         }
 
+        /* Dashboard: Mobile (< 800px) vs Desktop (>= 800px) */
+        /* [hidden] sempre esconde: ao abrir módulo (ex.: Animais), o dashboard não pode ficar visível */
+        #modDashboard[hidden],
+        #modDashboardDesktop[hidden] {
+            display: none !important;
+        }
+        .dashMobile {
+            display: block;
+        }
+        .dashDesktop {
+            display: none;
+        }
+        @media (min-width: 800px) {
+            .dashMobile {
+                display: none !important;
+            }
+            .dashDesktop:not([hidden]) {
+                display: block !important;
+            }
+        }
+        @media (max-width: 799px) {
+            .dashDesktop {
+                display: none !important;
+            }
+        }
+
+        /* Listagem Animais: mobile (< 800px) vs desktop (>= 800px) - mesmo breakpoint do dashboard */
+        .animalListMobile {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            flex: 1;
+            overflow: hidden;
+        }
+        .animalListDesktop {
+            display: none;
+        }
+        @media (min-width: 800px) {
+            .animalListMobile {
+                display: none !important;
+            }
+            .animalListDesktop {
+                display: block !important;
+            }
+        }
+        @media (max-width: 799px) {
+            .animalListDesktop {
+                display: none !important;
+            }
+        }
+
+        /* Listagem Animais: em desktop a seção não usa layout mobile (altura fixa / margin negativo) */
+        @media (min-width: 800px) {
+            #modAnimaisList {
+                margin: 0;
+                height: auto;
+                max-height: none;
+                overflow: visible;
+            }
+        }
+
+        /* Listagem Animais Desktop: tabela */
+        .animalListDesktop {
+            padding: 20px;
+            max-width: 100%;
+        }
+        .animalListDesktop .animalListDesktopHeader {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            margin-bottom: 20px;
+            width: 100%;
+            max-width: 100%;
+        }
+        .animalListDesktop .animalListDesktopTitleBlock {
+            flex: 0 0 auto;
+        }
+        .animalListDesktop .animalListDesktopTitle {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text);
+            margin: 0 0 4px 0;
+            letter-spacing: -0.02em;
+        }
+        .animalListDesktop .animalListDesktopSub {
+            font-size: 12px;
+            color: var(--muted);
+            margin: 0;
+        }
+        .animalListDesktop .animalListDesktopBar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: nowrap;
+            width: 100%;
+            max-width: 100%;
+        }
+        .animalListDesktop .animalSearchDesktopWrap {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 6px 12px;
+            height: 36px;
+            min-height: 36px;
+            flex: 1;
+            min-width: 0;
+        }
+        .animalListDesktop .animalSearchDesktopIcon {
+            font-size: 12px;
+            color: var(--muted);
+            flex-shrink: 0;
+        }
+        .animalListDesktop .animalSearchDesktopWrap input {
+            border: none;
+            outline: none;
+            background: transparent;
+            font-size: 12px;
+            color: var(--text);
+            flex: 1;
+            min-width: 0;
+            height: 24px;
+            padding: 0;
+        }
+        .animalListDesktop .animalSearchDesktopWrap input:focus {
+            outline: none;
+            box-shadow: none;
+            border: none;
+        }
+        .animalListDesktop .animalSearchDesktopWrap:focus-within {
+            box-shadow: none;
+            border-color: var(--border);
+        }
+        .animalListDesktop .animalListDesktopBar .animalCreateBtnDesktop {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            height: 36px;
+            padding: 0 14px;
+            flex-shrink: 0;
+        }
+        .animalListDesktop .animalCreateBtnDesktopIcon {
+            font-size: 12px;
+        }
+        .animalListDesktop .animalTableWrap {
+            background: var(--card);
+            border-radius: 10px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+        .animalListDesktop table.animalTable {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+        .animalListDesktop table.animalTable th {
+            text-align: left;
+            padding: 12px 14px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text);
+            background: var(--bg);
+            border-bottom: 1px solid var(--border);
+        }
+        .animalListDesktop table.animalTable td {
+            padding: 12px 14px;
+            font-weight: 400;
+            border-bottom: 1px solid var(--border);
+            color: var(--text);
+        }
+        .animalListDesktop table.animalTable tbody tr {
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .animalListDesktop table.animalTable tbody tr:hover {
+            background: rgba(0, 0, 0, 0.03);
+        }
+        .animalListDesktop .animalTableStatus {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        .animalListDesktop .animalTableStatus.pending {
+            background: rgba(245, 158, 11, 0.2);
+            color: #b45309;
+        }
+        .animalListDesktop .animalTableStatus.synced {
+            background: rgba(22, 163, 74, 0.15);
+            color: var(--green);
+        }
+        .animalListDesktop .animalCreateBtnDesktop {
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: var(--radius);
+            background: var(--btn);
+            color: var(--text);
+            border: none;
+            cursor: pointer;
+            padding: 0 14px;
+            height: 36px;
+            box-shadow: 0 4px 12px rgba(237, 255, 119, 0.3);
+            transition: opacity 0.2s;
+        }
+        .animalListDesktop .animalCreateBtnDesktop:hover {
+            opacity: 0.9;
+        }
+
+        /* Dashboard Desktop layout (>= 800px) */
+        .dashDesktopTop {
+            margin-bottom: 20px;
+        }
+        .dashDesktopTitle {
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--text);
+            margin: 0;
+            letter-spacing: -0.02em;
+        }
+        .dashDesktopWelcome {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 24px;
+            padding: 20px;
+            background: var(--card);
+            border-radius: var(--radius2);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+        }
+        .dashDesktopWelcomeText {
+            flex: 1;
+            min-width: 0;
+        }
+        .dashDesktopDate {
+            font-size: 12px;
+            color: var(--muted);
+            display: block;
+            margin-bottom: 4px;
+        }
+        .dashDesktopGreeting {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text);
+            margin: 0 0 4px 0;
+            letter-spacing: -0.02em;
+        }
+        .dashDesktopSub {
+            font-size: 12px;
+            color: var(--muted);
+            margin: 0;
+        }
+        .dashDesktopCta {
+            flex-shrink: 0;
+        }
+        .dashDesktopCards {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .dashDesktopCard {
+            background: var(--card);
+            border-radius: var(--radius2);
+            padding: 20px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .dashDesktopCardLabel {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--muted);
+        }
+        .dashDesktopCardVal {
+            font-size: 26px;
+            font-weight: 800;
+            color: var(--text);
+            letter-spacing: -0.02em;
+        }
+        .dashDesktopModules {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .dashDesktopModules .dashModCard {
+            flex: none;
+            width: 100%;
+            height: 90px;
+            min-width: 0;
+        }
+        .dashDesktopCharts {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+        .dashDesktopChartBlock {
+            min-width: 0;
+        }
+        .dashDesktopChartBlock .dashChartCard {
+            height: 100%;
+        }
+        /* Chart Sexo dos Animais: maior no desktop */
+        .dashDesktopCharts .dashDesktopChartBlock:first-child .donutWrapper {
+            width: 180px;
+            height: 180px;
+        }
+        .dashDesktopCharts .dashDesktopChartBlock:first-child .donutCenter {
+            font-size: 16px;
+        }
+        .dashDesktopCharts .dashDesktopChartBlock:first-child .chartLegend {
+            font-size: 13px;
+        }
+        @media (max-width: 1100px) {
+            .dashDesktopCharts {
+                grid-template-columns: 1fr;
+            }
+        }
+
         /* Dashboard Styles Refined */
         #modDashboard {
             padding-bottom: 40px;
@@ -1211,7 +1671,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 18px;
+            font-size: 12px;
             font-weight: 700;
             color: #111827;
             border: 1px solid rgba(17, 24, 39, 0.1);
@@ -1253,7 +1713,7 @@
         }
 
         .dashName {
-            font-size: 18px;
+            font-size: 12px;
             font-weight: 800;
             letter-spacing: -0.02em;
             color: #111827;
@@ -1261,7 +1721,7 @@
         }
 
         .dashSectionTitle {
-            font-size: 16px;
+            font-size: 12px;
             font-weight: 700;
             color: #1f2937;
             margin-bottom: 12px;
@@ -1308,7 +1768,7 @@
         }
 
         .dashModIcon {
-            font-size: 28px;
+            font-size: 12px;
         }
 
         .dashModTitle {
@@ -1361,7 +1821,7 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            font-size: 20px;
+            font-size: 12px;
             font-weight: 800;
             color: #374151 !important;
             line-height: 1;
@@ -1387,7 +1847,7 @@
         }
 
         .chartLegend {
-            font-size: 13px;
+            font-size: 12px;
             color: #4b5563;
             display: flex;
             flex-direction: column;
@@ -1424,13 +1884,13 @@
         }
 
         .statLabel {
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 500;
             color: #374151;
         }
 
         .statVal {
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 700;
             color: #111827;
         }
@@ -1450,7 +1910,7 @@
         }
 
         .statSub {
-            font-size: 11px;
+            font-size: 12px;
             color: #9ca3af;
         }
 
@@ -1476,7 +1936,7 @@
             border: 1px solid var(--text);
             border-radius: 8px;
             color: var(--text);
-            font-size: 16px;
+            font-size: 12px;
             font-weight: 700;
             cursor: pointer;
             padding: 8px 12px;
@@ -1493,10 +1953,17 @@
         }
 
         .animalListTitle {
-            margin: 20px 0 40px 0;
-            font-size: 24px;
+            margin: 20px 0 8px 0;
+            font-size: 18px;
             font-weight: 800;
             color: var(--text);
+            text-align: center;
+        }
+
+        .animalListSub {
+            margin: 0 0 24px 0;
+            font-size: 13px;
+            color: var(--muted);
             text-align: center;
         }
 
@@ -1516,7 +1983,7 @@
             outline: none !important;
             height: 40px;
             padding: 0;
-            font-size: 15px;
+            font-size: 12px;
             background: transparent;
             box-shadow: none !important;
         }
@@ -1531,7 +1998,7 @@
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            font-size: 18px;
+            font-size: 12px;
             padding: 0;
         }
 
@@ -1546,7 +2013,7 @@
         .animalCreateBtn {
             width: 100%;
             height: 56px;
-            font-size: 18px;
+            font-size: 12px;
             font-weight: 700;
             border-radius: 16px;
             background: var(--btn);
@@ -1566,17 +2033,21 @@
             transform: scale(0.98);
         }
 
-        /* Container da Lista - área scrollável */
+        /* Container da Lista - área scrollável (apenas esta área rola no mobile) */
         .animalListContainer {
             margin-top: 0;
-            padding: 0 20px 20px;
+            padding: 0 20px 24px;
             flex: 1;
             overflow-y: auto;
             overflow-x: hidden;
             -webkit-overflow-scrolling: touch;
             min-height: 0;
             scroll-behavior: smooth;
-            /* Garante que o scroll funcione corretamente */
+        }
+
+        .animalListMobile .animalListContainer {
+            flex: 1;
+            min-height: 0;
         }
 
         .animalCardsList {
@@ -1634,7 +2105,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 32px;
+            font-size: 26px;
             flex-shrink: 0;
         }
 
@@ -1645,7 +2116,7 @@
         }
 
         .animalCardBrinco {
-            font-size: 18px;
+            font-size: 12px;
             font-weight: 800;
             color: var(--text);
             margin: 0 0 6px 0;
@@ -1653,7 +2124,7 @@
         }
 
         .animalCardDetails {
-            font-size: 14px;
+            font-size: 12px;
             color: var(--muted);
             font-weight: 500;
             line-height: 1.4;
@@ -1673,7 +2144,7 @@
             border: 1px solid var(--text);
             border-radius: 8px;
             color: var(--text);
-            font-size: 16px;
+            font-size: 12px;
             font-weight: 700;
             cursor: pointer;
             padding: 8px 12px;
@@ -1694,7 +2165,7 @@
             border: 1px solid var(--text);
             border-radius: 8px;
             color: var(--text);
-            font-size: 16px;
+            font-size: 12px;
             font-weight: 700;
             cursor: pointer;
             padding: 8px 12px;
@@ -1739,7 +2210,7 @@
             cursor: pointer;
             user-select: none;
             font-weight: 700;
-            font-size: 15px;
+            font-size: 12px;
             color: var(--text);
             background: #f9fafb;
             transition: background 0.2s;
@@ -1777,6 +2248,226 @@
             padding: 18px;
         }
 
+        /* ==========================================================
+           FORMULÁRIO ANIMAL - DESKTOP (≥800px): elementos menores
+        ========================================================== */
+        @media (min-width: 800px) {
+            #modAnimaisForm .pageHead {
+                display: grid;
+                grid-template-columns: 1fr auto;
+                grid-template-rows: auto auto;
+                padding: 24px 28px;
+                gap: 12px 16px;
+                margin-bottom: 16px;
+                align-items: center;
+                min-height: 72px;
+                border-radius: 10px;
+            }
+            #modAnimaisForm .pageHeadRow1 {
+                grid-column: 1 / -1;
+            }
+            #modAnimaisForm .pageHeadRow2 {
+                grid-column: 1;
+                text-align: left;
+            }
+            #modAnimaisForm .pageHeadRow2 .pageTitle,
+            #modAnimaisForm .pageHeadRow2 .pageSub {
+                text-align: left;
+            }
+            #modAnimaisForm .pageHeadRow3 {
+                grid-column: 2;
+                grid-row: 2;
+            }
+            #modAnimaisForm .pageTitle {
+                font-size: 14px;
+                font-weight: 700;
+            }
+            #modAnimaisForm .pageSub {
+                font-size: 11px;
+                margin-top: 2px;
+            }
+            /* Botões do header: mesmo tamanho do "Novo Animal" da listagem desktop (36px, 12px, 600) */
+            #modAnimaisForm .animalFormBackBtn,
+            #modAnimaisForm .animalFormHeaderBtn {
+                height: 36px;
+                padding: 0 14px;
+                font-size: 12px;
+                font-weight: 600;
+                border-radius: var(--radius);
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 0;
+            }
+            #modAnimaisForm .animalFormBackBtn {
+                background: transparent;
+                border: 1px solid var(--text);
+                color: var(--text);
+            }
+            #modAnimaisForm #btnBioId {
+                background: var(--btn);
+                border: none;
+                color: var(--text);
+                box-shadow: 0 4px 12px rgba(237, 255, 119, 0.3);
+            }
+            #modAnimaisForm #btnSaveHeader {
+                display: inline-flex;
+                background: var(--btn);
+                border: none;
+                color: var(--text);
+                box-shadow: 0 4px 12px rgba(237, 255, 119, 0.3);
+            }
+            /* No desktop, esconde o footer Salvar e usa o botão do header */
+            #modAnimaisForm .footerSave {
+                display: none !important;
+            }
+            #modAnimaisForm .toggleRow {
+                padding: 5px 8px;
+                font-size: 11px;
+                font-weight: 600;
+                margin: 0;
+            }
+            #modAnimaisForm .switch {
+                width: 36px;
+                height: 20px;
+            }
+            #modAnimaisForm .slider:before {
+                width: 14px;
+                height: 14px;
+                left: 2px;
+                top: 2px;
+            }
+            #modAnimaisForm .switch input:checked + .slider:before {
+                transform: translateX(16px);
+            }
+            #modAnimaisForm .card {
+                padding: 12px;
+                margin-bottom: 10px;
+            }
+            #modAnimaisForm .grid {
+                gap: 10px;
+            }
+            #modAnimaisForm .field {
+                gap: 4px;
+                margin-bottom: 2px;
+            }
+            #modAnimaisForm .label {
+                font-size: 10px;
+                font-weight: 700;
+            }
+            #modAnimaisForm input,
+            #modAnimaisForm select,
+            #modAnimaisForm textarea {
+                height: 36px;
+                padding: 0 10px;
+                font-size: 11px;
+                border-radius: 10px;
+            }
+            #modAnimaisForm select {
+                padding-right: 32px;
+                background-size: 1.2em 1.2em;
+                background-position: right 10px center;
+            }
+            #modAnimaisForm textarea {
+                min-height: 80px;
+                padding: 10px;
+            }
+            #modAnimaisForm .animalIdadeDisplay {
+                height: 36px;
+                padding: 0 10px;
+                font-size: 11px;
+                border-radius: 10px;
+            }
+            #modAnimaisForm .dashedBox {
+                padding: 10px 12px;
+                gap: 10px;
+                margin-bottom: 10px;
+            }
+            #modAnimaisForm .dashedLeft {
+                gap: 8px;
+            }
+            #modAnimaisForm .farmIcon {
+                width: 28px;
+                height: 28px;
+                border-radius: 8px;
+                font-size: 14px;
+            }
+            #modAnimaisForm .dashedText .k,
+            #modAnimaisForm .dashedText .v {
+                font-size: 11px;
+                font-weight: 700;
+            }
+            #modAnimaisForm .dashedBox .field {
+                min-width: 0;
+            }
+            #modAnimaisForm .chips {
+                gap: 6px;
+                margin: 4px 0 8px;
+            }
+            #modAnimaisForm .chip {
+                padding: 0 12px;
+                height: 34px;
+                min-width: 90px;
+                font-size: 11px;
+                font-weight: 600;
+                border-radius: 10px;
+                gap: 6px;
+            }
+            #modAnimaisForm .chip .box {
+                width: 14px;
+                height: 14px;
+                border-radius: 4px;
+            }
+            #modAnimaisForm .chip.active .box:after {
+                font-size: 10px;
+            }
+            #modAnimaisForm .accordionItem {
+                border-radius: 10px;
+            }
+            #modAnimaisForm .accordionHeader {
+                padding: 10px 12px;
+                font-size: 11px;
+                font-weight: 600;
+            }
+            #modAnimaisForm .accordionIcon {
+                font-size: 10px;
+            }
+            #modAnimaisForm .accordionPanel {
+                padding: 0 12px;
+            }
+            #modAnimaisForm .accordionPanel.active {
+                padding: 12px;
+            }
+            #modAnimaisForm .pill {
+                padding: 8px 12px;
+                font-size: 11px;
+                font-weight: 700;
+                border-radius: 10px;
+            }
+            #modAnimaisForm .pill .switch {
+                width: 32px;
+                height: 18px;
+            }
+            #modAnimaisForm .pill .slider:before {
+                width: 12px;
+                height: 12px;
+                left: 2px;
+                top: 2px;
+            }
+            #modAnimaisForm .pill .switch input:checked + .slider:before {
+                transform: translateX(14px);
+            }
+            #modAnimaisForm .footerSave {
+                margin-top: 16px;
+                padding-top: 8px;
+            }
+            #modAnimaisForm .footerSave .btn {
+                height: 40px !important;
+                font-size: 12px !important;
+                font-weight: 600;
+            }
+        }
+
         /* Ajustes Mobile específicos */
         @media (max-width: 980px) {
             /* Compensa o padding do .content no mobile (16px top, 20px horizontal) */
@@ -1806,15 +2497,23 @@
                FORMULÁRIO MOBILE - ADAPTAÇÕES
             ========================================================== */
 
-            /* Header do Form */
+            /* Header do Form: 3 divs — 1ª Voltar+BioID, 2ª título+subtítulo centralizados, 3ª toggle */
             .pageHead {
-                flex-direction: column;
-                gap: 16px;
+                gap: 12px;
                 padding: 16px;
             }
 
+            .pageHeadRow2 {
+                text-align: center;
+            }
+
+            .pageHeadRow2 .pageTitle,
+            .pageHeadRow2 .pageSub {
+                text-align: center;
+            }
+
             .pageTitle {
-                font-size: 20px;
+                font-size: 12px;
             }
 
             .pageSub {
@@ -1830,7 +2529,7 @@
             .actions .btn {
                 width: 100%;
                 height: 48px;
-                font-size: 16px;
+                font-size: 12px;
                 font-weight: 700;
             }
 
@@ -1838,7 +2537,7 @@
                 width: 100%;
                 justify-content: space-between;
                 padding: 12px 16px;
-                font-size: 14px;
+                font-size: 12px;
             }
 
             /* Campos do Formulário */
@@ -1855,7 +2554,7 @@
             select,
             textarea {
                 height: 50px;
-                font-size: 16px;
+                font-size: 12px;
                 padding: 0 16px;
                 border-radius: 12px;
             }
@@ -1886,7 +2585,7 @@
                 height: 50px;
                 justify-content: flex-start;
                 padding: 0 18px;
-                font-size: 15px;
+                font-size: 12px;
             }
 
             /* Dashed Box */
@@ -1913,13 +2612,13 @@
 
             .pill {
                 padding: 16px;
-                font-size: 15px;
+                font-size: 12px;
             }
 
             /* Accordion Mobile */
             .accordionHeader {
                 padding: 18px;
-                font-size: 16px;
+                font-size: 12px;
             }
 
             .accordionPanel.active {
@@ -1929,7 +2628,7 @@
             /* Botão Voltar Form Mobile - mantém mesmo tamanho da listagem */
             .animalFormBackBtn {
                 padding: 8px 12px;
-                font-size: 16px;
+                font-size: 12px;
             }
 
             /* Page Head Mobile */
@@ -1975,7 +2674,7 @@
         }
 
         .fabIcon {
-            font-size: 24px;
+            font-size: 12px;
             color: white;
         }
 
@@ -1997,29 +2696,27 @@
 
 <body>
     <div class="app">
-        <aside class="sidebar">
-            <div class="logoWrap">
-                <img class="logo"
-                    src="https://e45a1d9b2fd81a177eaa3a70ba83bda4.cdn.bubble.io/f1771430285555x676420989400587900/Bovichain-logo.png"
-                    alt="BoviChain" />
-            </div>
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebarInner">
+                <div class="logoWrap">
+                    <img class="logo" src="https://e45a1d9b2fd81a177eaa3a70ba83bda4.cdn.bubble.io/f1771430285555x676420989400587900/Bovichain-logo.png" alt="BOVICHAIN" />
+                </div>
 
-            <nav class="nav" id="moduleNav"></nav>
+                <nav class="nav" id="moduleNav"></nav>
+
+                <div class="sidebarFooter">
+                    <div class="sidebarUser">
+                        <div class="sidebarAvatar" id="sidebarAvatar">U</div>
+                        <div class="sidebarUserInfo">
+                            <span class="sidebarUserName" id="sidebarUserName">Usuário</span>
+                            <span class="sidebarUserEmail" id="sidebarFarmName">—</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </aside>
 
         <main class="main">
-            <div class="topbar">
-                <div class="farmPill">
-                    Fazenda atual
-                    <b id="farmCurrent">—</b>
-                </div>
-                <div style="display:flex; gap:10px; align-items:center;">
-                    <span style="font-size:12px; color:#6b7280; font-weight:800;" id="netLabel">—</span>
-                    <span id="netDot"
-                        style="width:10px;height:10px;border-radius:999px;background:#ef4444;display:inline-block;"></span>
-                </div>
-            </div>
-
             <section class="content">
                 <!-- ==========================================================
                      CONTAINER P/ MÓDULO ANIMAIS (FIXO)
@@ -2030,28 +2727,66 @@
 
                     <!-- LISTA -->
                     <section class="moduleSection" id="modAnimaisList">
-                        <!-- Header Amarelo Mobile -->
-                        <div class="animalListHeader">
-                            <button class="animalBackBtn" id="animalBackBtn">← Voltar</button>
-                            <h1 class="animalListTitle">Módulo Animais</h1>
-                            <div class="animalSearchWrap">
-                                <input id="animalSearch" type="text" placeholder="Buscar por brinco ou nome..."
-                                    autocomplete="off" />
-                                <button class="animalSearchBtn">🔍</button>
+                        <!-- Versão MOBILE (< 800px): cards -->
+                        <div class="animalListMobile">
+                            <div class="animalListHeader">
+                                <button class="animalBackBtn" id="animalBackBtn">← Voltar</button>
+                                <h1 class="animalListTitle">Animais</h1>
+                                <p class="animalListSub">Gerencie todos seus animais com facilidade</p>
+                                <div class="animalSearchWrap">
+                                    <input id="animalSearch" type="text" placeholder="Buscar por brinco ou nome..."
+                                        autocomplete="off" />
+                                    <button class="animalSearchBtn">🔍</button>
+                                </div>
+                            </div>
+                            <div class="animalCreateButtonWrap">
+                                <button class="btn primary animalCreateBtn" id="btnCreateAnimal">
+                                    ➕ Criar Novo Animal
+                                </button>
+                            </div>
+                            <div class="animalListContainer">
+                                <div id="animalCardsList" class="animalCardsList">
+                                    <!-- Cards inseridos via JS -->
+                                </div>
                             </div>
                         </div>
 
-                        <!-- Botão Criar Novo Animal -->
-                        <div class="animalCreateButtonWrap">
-                            <button class="btn primary animalCreateBtn" id="btnCreateAnimal">
-                                ➕ Criar Novo Animal
-                            </button>
-                        </div>
-
-                        <!-- Lista de Cards Brancos -->
-                        <div class="animalListContainer">
-                            <div id="animalCardsList" class="animalCardsList">
-                                <!-- Cards serão inseridos via JS -->
+                        <!-- Versão DESKTOP (>= 800px): tabela -->
+                        <div class="animalListDesktop">
+                            <div class="animalListDesktopHeader">
+                                <div class="animalListDesktopTitleBlock">
+                                    <h1 class="animalListDesktopTitle">Animais</h1>
+                                    <p class="animalListDesktopSub">Gerencie todos seus animais com facilidade</p>
+                                </div>
+                                <div class="animalListDesktopBar">
+                                    <div class="animalSearchDesktopWrap">
+                                        <span class="animalSearchDesktopIcon" aria-hidden="true">&#128269;</span>
+                                        <input id="animalSearchDesktop" type="text" placeholder="Buscar"
+                                            autocomplete="off" />
+                                    </div>
+                                    <button type="button" class="animalCreateBtnDesktop" id="btnCreateAnimalDesktop">
+                                        <span class="animalCreateBtnDesktopIcon" aria-hidden="true">&#128046;</span>
+                                        Novo Animal
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="animalTableWrap">
+                                <table class="animalTable">
+                                    <thead>
+                                        <tr>
+                                            <th>Brinco</th>
+                                            <th>Nome</th>
+                                            <th>Data nasc.</th>
+                                            <th>Sexo</th>
+                                            <th>Categoria</th>
+                                            <th>Peso (kg)</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="animalTableBody">
+                                        <!-- Linhas inseridas via JS -->
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </section>
@@ -2059,27 +2794,27 @@
                     <!-- FORMULÁRIO -->
                     <section class="moduleSection" id="modAnimaisForm" hidden>
 
-                        <!-- Header específico do form -->
+                        <!-- Header específico do form: 3 divs (linha1: Voltar+BioID, linha2: título+subtítulo, linha3: toggle) -->
                         <div class="pageHead">
-                            <!-- Botões Voltar e BioID acima do título -->
-                            <div class="formHeaderActions">
+                            <div class="pageHeadRow1">
                                 <button class="animalFormBackBtn" id="btnVoltarTopo">← Voltar</button>
-                                <button class="animalFormBackBtn" id="btnBioId">BioID</button>
+                                <div class="pageHeadActions">
+                                    <button type="button" class="animalFormHeaderBtn" id="btnBioId">BioID</button>
+                                    <button type="button" class="animalFormHeaderBtn btnSaveAnimal" id="btnSaveHeader" disabled>Salvar Animal</button>
+                                </div>
                             </div>
-
-                            <!-- Título -->
-                            <div style="margin-top: 16px;">
+                            <div class="pageHeadRow2">
                                 <h1 class="pageTitle" id="formTitle">Informações do animal</h1>
                                 <p class="pageSub" id="formSub">Cadastre ou atualize aqui</p>
                             </div>
-
-                            <!-- Toggle Cadastro Avançado -->
-                            <div class="toggleRow" style="margin-top: 16px;">
-                                <span>Cadastro avançado</span>
-                                <label class="switch">
-                                    <input type="checkbox" id="toggleAdvanced" />
-                                    <span class="slider"></span>
-                                </label>
+                            <div class="pageHeadRow3">
+                                <div class="toggleRow">
+                                    <span>Cadastro avançado</span>
+                                    <label class="switch">
+                                        <input type="checkbox" id="toggleAdvanced" />
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
                             </div>
                         </div>
 
@@ -2148,6 +2883,11 @@
                                 <div class="field" style="grid-column: span 2;">
                                     <div class="label">Data de nascimento <span class="req">*</span></div>
                                     <input id="animalNasc" type="date" />
+                                </div>
+
+                                <div class="field" style="grid-column: span 2;">
+                                    <div class="label">Idade <span class="req">*</span></div>
+                                    <div id="animalIdadeDisplay" class="animalIdadeDisplay" aria-readonly="true">—</div>
                                 </div>
 
                                 <div class="field" style="grid-column: span 2;">
@@ -2302,8 +3042,8 @@
 
                         <!-- Mobile Floating Save Button -->
                         <div class="footerSave">
-                            <button class="btn primary" id="btnSaveBottom"
-                                style="width:100%; height:56px; font-size:18px;" disabled>
+                            <button class="btn primary btnSaveAnimal" id="btnSaveBottom"
+                                style="width:100%; height:56px; font-size:15px;" disabled>
                                 Salvar Animal
                             </button>
                         </div>
@@ -2315,8 +3055,8 @@
                 <!-- Container GENÉRICO para outros módulos -->
                 <div id="moduleView"></div>
 
-                <!-- DASHBOARD (Mobile First View) -->
-                <section class="moduleSection" id="modDashboard">
+                <!-- DASHBOARD Mobile: visível apenas abaixo de 800px -->
+                <section class="moduleSection dashMobile" id="modDashboard" aria-hidden="false">
                     <!-- Header Personalizado -->
                     <!-- Header Personalizado -->
                     <div class="dashHeader">
@@ -2338,14 +3078,10 @@
                         <span id="syncStatusText">Sincronização em andamento...</span>
                     </div>
 
-                    <!-- Módulos Carrossel -->
+                    <!-- Módulos (apenas mobile) -->
                     <div class="dashSectionTitle">Módulos</div>
                     <div class="dashModules" id="dashModules">
                         <!-- Cards injetados via JS -->
-                        <div class="dashModCard" onclick="openModule('animal_create')">
-                            <div class="dashModIcon">🐮</div>
-                            <div class="dashModTitle">Animais</div>
-                        </div>
                     </div>
 
                     <!-- Charts Section -->
@@ -2388,6 +3124,59 @@
                     </div>
 
                     <div style="height: 40px;"></div>
+                </section>
+
+                <!-- DASHBOARD Desktop: visível a partir de 800px -->
+                <section class="moduleSection dashDesktop" id="modDashboardDesktop" aria-hidden="false">
+                    <div class="dashDesktopTop">
+                        <h1 class="dashDesktopTitle">Dashboard</h1>
+                    </div>
+                    <div class="dashDesktopWelcome">
+                        <div class="dashDesktopWelcomeText">
+                            <span class="dashDesktopDate" id="dashDesktopDate">—</span>
+                            <h2 class="dashDesktopGreeting">Bem-vindo de volta, <span id="dashNameDesktop">Usuário</span>!</h2>
+                            <p class="dashDesktopSub">Explore seus módulos</p>
+                        </div>
+                    </div>
+                    <div id="syncStatusBannerDesktop" class="syncStatusBanner" style="display:none; text-align:center; padding:12px 16px; margin:0 0 16px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">
+                        <span id="syncStatusTextDesktop">Sincronização em andamento...</span>
+                    </div>
+                    <div class="dashDesktopCards">
+                        <div class="dashDesktopCard">
+                            <span class="dashDesktopCardLabel">Total de Animais</span>
+                            <span class="dashDesktopCardVal" id="dashDesktopCardTotal">0</span>
+                        </div>
+                        <div class="dashDesktopCard">
+                            <span class="dashDesktopCardLabel">Total de Lotes</span>
+                            <span class="dashDesktopCardVal" id="dashDesktopCardLotes">0</span>
+                        </div>
+                    </div>
+                    <div class="dashDesktopCharts">
+                        <div class="dashDesktopChartBlock">
+                            <div class="dashSectionTitle">Sexo dos Animais</div>
+                            <div class="dashChartCard row-based">
+                                <div class="donutWrapper">
+                                    <svg viewBox="0 0 36 36" class="circular-chart dual">
+                                        <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                        <path class="circle" id="chartPathSexMDesktop" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                    </svg>
+                                    <div class="donutCenter" id="chartTotalSexDesktop">0<br><span style="font-size:10px;font-weight:400;color:#6b7280">Total</span></div>
+                                </div>
+                                <div class="chartLegend">
+                                    <div><span class="dot blue"></span> Macho <b id="lblMDesktop">0</b></div>
+                                    <div><span class="dot pink"></span> Fêmea <b id="lblFDesktop">0</b></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="dashDesktopChartBlock">
+                            <div class="dashSectionTitle">Total por Categoria</div>
+                            <div class="dashChartCard column-based" id="chartListCatDesktop"></div>
+                        </div>
+                        <div class="dashDesktopChartBlock">
+                            <div class="dashSectionTitle">Peso Médio por Lote (KG)</div>
+                            <div class="dashChartCard column-based" id="chartListLoteDesktop"></div>
+                        </div>
+                    </div>
                 </section>
 
             </section> <!-- .content end -->
