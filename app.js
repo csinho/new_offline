@@ -689,7 +689,7 @@ function renderSidebar() {
   const inicioItem = document.createElement("div");
   const isDashboard = state.view === "dashboard";
   inicioItem.className = "navItem" + (isDashboard ? " active" : "");
-  inicioItem.innerHTML = `<span class="navIcon">🏠</span><span>Início</span>`;
+  inicioItem.innerHTML = `<span class="navIcon">🏠</span><span>Dashboard</span>`;
   inicioItem.onclick = async () => {
     state.view = "dashboard";
     state.activeKey = null;
