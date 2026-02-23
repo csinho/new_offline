@@ -1,16 +1,20 @@
-const CACHE = "bovichain-offline-v5";
+const CACHE = "bovichain-offline-v6";
 const SHELL = [
     "./",
     "./index.html",
-    "./app.js",
-    "./idb.js",
-    "./manifest.json"
+    "./manifest.json",
+    "./assets/css/style.css",
+    "./assets/js/app.js",
+    "./assets/js/idb.js",
+    "./assets/js/config.js"
 ];
 
 function isShellRequest(url) {
     const path = url.pathname;
     return path.endsWith("index.html") || path === "/" || path === "" ||
-        path.endsWith("app.js") || path.endsWith("idb.js") || path.endsWith("manifest.json");
+        path.endsWith("manifest.json") ||
+        path.endsWith("style.css") ||
+        path.endsWith("app.js") || path.endsWith("idb.js") || path.endsWith("config.js");
 }
 
 self.addEventListener("install", (e) => {
@@ -23,8 +27,7 @@ self.addEventListener("install", (e) => {
 self.addEventListener("activate", (e) => {
     e.waitUntil(
         caches.keys().then((keys) =>
-            Promise.all(keys.map((k) => (k === CACHE ? null : caches.delete(k))))
-        )
+            Promise.all(keys.map((k) => (k === CACHE ? null : caches.delete(k)))))
     );
     self.clients.claim();
 });
@@ -50,7 +53,7 @@ self.addEventListener("fetch", (e) => {
         return;
     }
 
-    // 2) Shell (index, app.js, idb.js, etc.): rede primeiro quando online, para F5 trazer versão nova
+    // 2) Shell (index, css, js, manifest): rede primeiro quando online
     if (url.origin === location.origin && isShellRequest(url)) {
         e.respondWith(
             fetch(req, { cache: "reload" })

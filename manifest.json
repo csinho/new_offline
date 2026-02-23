@@ -1,8 +1,16 @@
 {
-    "name": "Bovichain - Offline",
-    "short_name": "Bovichain",
-    "start_url": "./index.html",
-    "display": "standalone",
-    "background_color": "#0b0f17",
-    "theme_color": "#f9bc01"
+  "name": "Bovichain - Offline",
+  "short_name": "Bovichain",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0b0f17",
+  "theme_color": "#f9bc01",
+  "icons": [
+    {
+      "src": "https://e45a1d9b2fd81a177eaa3a70ba83bda4.cdn.bubble.io/f1750077006501x159873402843107020/bovichain-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
 }
