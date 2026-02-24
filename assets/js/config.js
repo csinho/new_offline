@@ -29,10 +29,10 @@ export const API_CONFIG = {
   },
   
   // Função auxiliar para construir URL de busca com parâmetros
-  getBootstrapUrl(fazendaId, ownerId) {
+  getBootstrapUrl(fazendaId, userId) {
     const url = new URL(`${this.BOOTSTRAP_BASE_URL}/${this.ENDPOINTS.GET_DADOS}`);
     url.searchParams.set("fazenda", fazendaId);
-    url.searchParams.set("owner", ownerId);
+    url.searchParams.set("user", userId);
     return url.toString();
   },
   

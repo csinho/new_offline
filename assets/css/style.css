@@ -2443,6 +2443,54 @@
             #modAnimaisForm .chip.active .box:after {
                 font-size: 10px;
             }
+            /* Multi-select Lote (chips) */
+            .animalLoteMultiWrap .animalLoteAdd {
+                width: 100%;
+                padding: 10px 12px;
+                font-size: 14px;
+                border: 1px solid var(--border, #e5e7eb);
+                border-radius: 8px;
+                background: #fff;
+                margin-bottom: 8px;
+            }
+            .animalLoteChips {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                min-height: 24px;
+            }
+            .animalLoteChip {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 6px 10px;
+                font-size: 13px;
+                font-weight: 500;
+                color: var(--text, #111827);
+                background: rgba(198, 224, 18, 0.2);
+                border: 1px solid var(--btn, #c6e012);
+                border-radius: 8px;
+            }
+            .animalLoteChipRemove {
+                padding: 0;
+                margin: 0;
+                width: 20px;
+                height: 20px;
+                border: none;
+                background: transparent;
+                font-size: 16px;
+                line-height: 1;
+                color: var(--muted, #6b7280);
+                cursor: pointer;
+                border-radius: 4px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .animalLoteChipRemove:hover {
+                background: rgba(0, 0, 0, 0.08);
+                color: var(--text, #111827);
+            }
             #modAnimaisForm .accordionItem {
                 border-radius: 10px;
             }
@@ -2713,3 +2761,578 @@
                 box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
             }
         }
+
+/* ==========================================================
+   MÓDULO MOVIMENTAÇÕES (Lotes / Pastos / Fazendas)
+   ========================================================== */
+.movPage {
+  max-width: 1220px;
+  margin: 0 auto;
+  padding: 0 16px 24px;
+  width: 100%;
+}
+
+.movTabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  margin-bottom: 20px;
+}
+
+.movTab {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted, #6b7280);
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.movTab:hover {
+  color: var(--text, #111827);
+}
+
+.movTab.active {
+  color: var(--text, #111827);
+  border-bottom-color: var(--btn, #c6e012);
+}
+
+.movContent {
+  padding-top: 8px;
+}
+
+.movHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.movTitle {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text, #111827);
+  margin: 0 0 4px 0;
+}
+
+.movSub {
+  font-size: 14px;
+  color: var(--muted, #6b7280);
+  margin: 0;
+}
+
+.movBtnTransferir {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.movBtnTransferirIcon {
+  font-size: 16px;
+}
+
+.movBtnTransferir:not(.movBtnTransferir--disabled) {
+  cursor: pointer;
+}
+
+.movBtnTransferir.movBtnTransferir--disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.movCards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.movCard {
+  background: #fff;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  padding: 16px;
+  flex: 1;
+  min-width: 240px;
+}
+
+.movCardHighlight {
+  border-color: var(--btn, #c6e012);
+  box-shadow: 0 0 0 1px rgba(198, 224, 18, 0.2);
+}
+
+.movCardLabel,
+.movCardTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text, #111827);
+  margin: 0 0 10px 0;
+}
+
+.movCardIcon {
+  font-size: 16px;
+  opacity: 0.9;
+}
+
+.movSelect {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text, #111827);
+}
+
+.movFazendaNome {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text, #111827);
+  margin-top: 8px;
+  padding: 10px 14px;
+  background: var(--card, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+}
+
+.movCardHint {
+  margin-top: 8px;
+  color: var(--muted, #6b7280);
+  font-size: 0.875rem;
+}
+
+.movToggleGroup {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.movToggleBtn {
+  flex: 1;
+  padding: 10px 16px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--card, #fff);
+  color: var(--text, #111827);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.movToggleBtn:hover {
+  background: #f9fafb;
+  border-color: var(--green, #16a34a);
+}
+
+.movToggleBtn.movToggleBtnActive {
+  background: var(--text, #111827);
+  color: var(--card, #fff);
+  border-color: var(--text, #111827);
+}
+
+.movToggleBtn.movToggleBtnActive:hover {
+  background: var(--text, #111827);
+  opacity: 0.9;
+}
+
+.movCardTable {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+/* Tabela no mesmo estilo da listagem de animais */
+.movTableWrap.animalTableWrap,
+.movPage .movTableWrap {
+  background: var(--card, #fff);
+  border-radius: 10px;
+  box-shadow: var(--shadow, 0 1px 3px rgba(0,0,0,0.08));
+  border: 1px solid var(--border, #e5e7eb);
+  overflow: hidden;
+}
+
+.movTable.animalTable,
+.movPage .movTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.movTable thead {
+  background: var(--bg, #f9fafb);
+}
+
+.movTable th {
+  text-align: left;
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text, #111827);
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.movTable th.movThCheck {
+  width: 44px;
+  padding-right: 8px;
+  vertical-align: middle;
+}
+
+.movTable td {
+  padding: 12px 14px;
+  font-weight: 400;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  color: var(--text, #111827);
+}
+
+.movTable td.movTdCheck {
+  width: 44px;
+  padding-right: 8px;
+  vertical-align: middle;
+}
+
+.movTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.movTable tbody tr {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.movTable tbody tr:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.movTableEmpty {
+  text-align: center;
+  color: var(--muted, #6b7280);
+  padding: 32px 16px !important;
+}
+
+/* Checkbox customizado para seleção de animais */
+.movCheckWrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin: 0;
+}
+
+.movCheckWrap input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.movCheckWrap .movCheckbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border, #d1d5db);
+  border-radius: 4px;
+  background: #fff;
+  transition: border-color 0.2s, background 0.2s;
+  flex-shrink: 0;
+}
+
+.movCheckWrap .movCheckbox::after {
+  content: "";
+  width: 6px;
+  height: 10px;
+  border: solid #111827;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) scale(0);
+  margin-bottom: 3px;
+  transition: transform 0.15s;
+}
+
+.movCheckWrap input:checked + .movCheckbox {
+  background: var(--btn, #edff77);
+  border-color: var(--btn, #edff77);
+}
+
+.movCheckWrap input:checked + .movCheckbox::after {
+  transform: rotate(45deg) scale(1);
+  border-color: #111827;
+}
+
+.movCheckWrap input:focus-visible + .movCheckbox {
+  outline: 2px solid var(--btn, #c6e012);
+  outline-offset: 2px;
+}
+
+/* Modal confirmação transferência (layout do print) */
+.movModalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3000;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.movModal {
+  background: #fff;
+  border-radius: 16px;
+  max-width: 560px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+}
+
+.movModalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 20px 0;
+}
+
+.movModalHeaderText {
+  flex: 1;
+}
+
+.movModalTitle {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 4px 0;
+  color: var(--text, #111827);
+}
+
+.movModalSub {
+  font-size: 14px;
+  color: var(--muted, #6b7280);
+  margin: 0;
+}
+
+.movModalClose {
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--muted, #6b7280);
+  cursor: pointer;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.movModalClose:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text, #111827);
+}
+
+.movModalBody {
+  padding: 20px 20px 16px;
+  font-size: 14px;
+  color: var(--text, #111827);
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Cards Origem | Seta | Destino */
+.movModalCards {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.movModalCard {
+  flex: 1;
+  min-width: 0;
+  background: #f9fafb;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.movModalCardIcon {
+  font-size: 18px;
+  color: var(--muted, #6b7280);
+  margin-bottom: 2px;
+}
+
+.movModalCardIconDestino {
+  opacity: 0.9;
+}
+
+.movModalCardLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.movModalCardVal {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text, #111827);
+}
+
+.movModalArrow {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  background: var(--btn, #c6e012);
+  color: var(--btnText, #121826);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: bold;
+}
+
+/* Lista de animais no modal */
+.movModalListSection {
+  margin-bottom: 16px;
+}
+
+.movModalListTitle {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 10px 0;
+  color: var(--text, #111827);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.movModalListIcon {
+  font-size: 18px;
+}
+
+.movModalListWrap {
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  overflow: hidden;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.movModalAnimaisList {
+  background: #fff;
+}
+
+.movModalAnimalRow {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  font-size: 13px;
+}
+
+.movModalAnimalRow:last-child {
+  border-bottom: none;
+}
+
+.movModalAnimalId {
+  font-weight: 500;
+  color: var(--text, #111827);
+  min-width: 0;
+}
+
+.movModalAnimalRaca {
+  background: rgba(198, 224, 18, 0.2);
+  color: var(--text, #111827);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.movModalAnimalPeso {
+  color: var(--muted, #6b7280);
+  white-space: nowrap;
+}
+
+.movModalAnimalSexo {
+  color: var(--text, #111827);
+  white-space: nowrap;
+}
+
+/* Aviso */
+.movModalWarning {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 10px;
+}
+
+.movModalWarningIcon {
+  font-size: 20px;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+
+.movModalWarning p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text, #111827);
+  line-height: 1.4;
+}
+
+.movModalFooter {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  padding: 16px 20px 20px;
+  border-top: 1px solid var(--border, #e5e7eb);
+  flex-shrink: 0;
+}
+
+.movModalFooter .btn {
+  min-width: 120px;
+}
+
+.movModalBtnCancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.movModalBtnConfirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.movModalBtnConfirmIcon {
+  font-size: 16px;
+}

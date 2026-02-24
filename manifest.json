@@ -14,3 +14,27 @@
     }
   ]
 }
+
+
+
+{
+  "organizacao": {
+    "owner": {
+      "_id": "",
+      "nome": ""
+    },
+    "list_fazendas": [
+      "fazenda": {
+        "_id": "1778833844472x419477654361438700"","name": "Fazenda 1",
+        "cpf_cnpj": "1234567890",
+        "list_proprietarios": [],
+        "ativa": true,
+        "proprietario_principal": "",
+        "organizacao": "1778833844472x419477654361438700"","list_animais": [],
+        "list_lotes": [],
+        "list_vacinacao": [],
+        "list_pasto": []
+      }
+    ]
+  }
+}

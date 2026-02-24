@@ -1,4 +1,4 @@
-const CACHE = "bovichain-offline-v6";
+const CACHE = "bovichain-offline-v7";
 const SHELL = [
     "./",
     "./index.html",
@@ -6,7 +6,9 @@ const SHELL = [
     "./assets/css/style.css",
     "./assets/js/app.js",
     "./assets/js/idb.js",
-    "./assets/js/config.js"
+    "./assets/js/config.js",
+    "./assets/mobile/content.html",
+    "./assets/desktop/content.html"
 ];
 
 function isShellRequest(url) {
@@ -14,7 +16,8 @@ function isShellRequest(url) {
     return path.endsWith("index.html") || path === "/" || path === "" ||
         path.endsWith("manifest.json") ||
         path.endsWith("style.css") ||
-        path.endsWith("app.js") || path.endsWith("idb.js") || path.endsWith("config.js");
+        path.endsWith("app.js") || path.endsWith("idb.js") || path.endsWith("config.js") ||
+        path.endsWith("mobile/content.html") || path.endsWith("desktop/content.html");
 }
 
 self.addEventListener("install", (e) => {

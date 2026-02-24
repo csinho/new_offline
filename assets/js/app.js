@@ -286,9 +286,9 @@ async function parseFromURL() {
       
       const data = await response.json();
       
-      // Extrai fazenda, owner e modules da resposta
+      // Extrai fazenda, user e modules da resposta (mantém compat com owner antigo)
       const fazendaId = String(data?.fazenda || "").trim();
-      const ownerId = String(data?.owner || "").trim();
+      const ownerId = String(data?.user || data?.owner || "").trim();
       const modulesArray = Array.isArray(data?.modules) ? data.modules : [];
       const modules = modulesArray.length > 0 ? modulesArray : ["animal_create"];
       
@@ -316,7 +316,8 @@ async function parseFromURL() {
   const rawModules = (u.searchParams.get("modules") || "").trim();
   const modules = rawModules.split(",").map((s) => s.trim()).filter(Boolean);
   const fazendaId = (u.searchParams.get("fazenda") || "").trim();
-  const ownerId = (u.searchParams.get("owner") || "").trim();
+  // Aceita ?user= (novo) ou ?owner= (antigo)
+  const ownerId = (u.searchParams.get("user") || u.searchParams.get("owner") || "").trim();
 
   return {
     modules: modules.length ? modules : ["animal_create"],
@@ -401,7 +402,11 @@ function normalizeAnimal(a = {}) {
   out.peso_nascimento = toNumberOrZero(out.peso_nascimento);
 
   // listas
-  if (!Array.isArray(out.list_lotes)) out.list_lotes = [];
+  if (!Array.isArray(out.list_lotes)) out.list_lotes = out.lote ? [String(out.lote)] : [];
+  out.list_lotes = out.list_lotes.map(id => String(id)).filter(Boolean);
+  out.lote = out.list_lotes.length > 0 ? out.list_lotes[0] : (out.lote ? String(out.lote) : "");
+  // animal 1:1 pasto (id único)
+  out.pasto = String(out.pasto || "");
   return out;
 }
 
@@ -416,8 +421,18 @@ function normalizeLote(l = {}) {
   out.qtd_animais = toNumberOrZero(out.qtd_animais);
   out.peso_medio = toNumberOrZero(out.peso_medio);
 
-  // Preserva data_modificacao (vinda do servidor) para uso na sync
   if (l.data_modificacao !== undefined) out.data_modificacao = l.data_modificacao;
+
+  return out;
+}
+
+function normalizePasto(p = {}) {
+  const out = { ...p };
+  out._id = String(out._id || "");
+  out.nome = String(out.nome || "");
+  out.fazenda = String(out.fazenda || "");
+
+  if (p.data_modificacao !== undefined) out.data_modificacao = p.data_modificacao;
 
   return out;
 }
@@ -444,7 +459,7 @@ async function bootstrapData() {
   if (!state.ctx.fazendaId || !state.ctx.ownerId) {
     showBoot(
       "Faltam parâmetros na URL",
-      "Use: ?id=<id> ou ?modules=animal_create&fazenda=<id>&owner=<id>"
+      "Use: ?id=<id> ou ?modules=animal_create&fazenda=<id>&user=<id>"
     );
     state.bootstrapReady = false;
     return;
@@ -495,23 +510,45 @@ async function bootstrapData() {
       throw new Error(`Falha ao ler JSON: ${e?.message || e}`);
     }
 
-    // Normaliza
-    const fazendaRaw = data?.fazenda || null;
-    const ownerRaw = data?.owner || null;
+    // Novo formato: organizacao { _id, user, list_fazendas: [ { fazenda: {...} }, ... ] }
+    // Antigo: data.fazenda + data.user|data.owner (uma fazenda só)
+    let organizacaoRaw = null;
+    let listFazendaObjects = [];
+    let fazendaCurrentRaw = null;
+    let ownerRaw = null;
 
-    const animaisRaw = fazendaRaw?.list_animais || [];
-    const lotesRaw = fazendaRaw?.list_lotes || [];
-    const vacinacaoRaw = fazendaRaw?.list_vacinacao || [];
-    const proprietariosRaw = fazendaRaw?.list_proprietarios || [];
+    if (data?.organizacao) {
+      organizacaoRaw = data.organizacao;
+      ownerRaw = data.organizacao.user ?? null;
+      if (ownerRaw?.management_fazenda && !state.ctx.fazendaId) {
+        state.ctx = { ...state.ctx, fazendaId: String(ownerRaw.management_fazenda).trim() };
+      }
+      const listFazendas = Array.isArray(data.organizacao.list_fazendas) ? data.organizacao.list_fazendas : [];
+      listFazendaObjects = listFazendas.map((item) => item?.fazenda).filter(Boolean);
+      const fazendaIdCtx = String(state.ctx.fazendaId || "").trim();
+      const userMgmtFazenda = ownerRaw && String(ownerRaw.management_fazenda || "").trim();
+      const entry = listFazendas.find(
+        (item) => String(item?.fazenda?._id || "") === fazendaIdCtx || String(item?.fazenda?._id || "") === userMgmtFazenda
+      );
+      fazendaCurrentRaw = entry?.fazenda ?? listFazendaObjects[0] ?? null;
+    } else {
+      fazendaCurrentRaw = data?.fazenda || null;
+      ownerRaw = data?.user ?? data?.owner ?? null;
+      if (fazendaCurrentRaw) listFazendaObjects = [fazendaCurrentRaw];
+    }
 
-    // ✅ Sanitiza/clone-safe (evita DataCloneError / undefined etc)
-    const fazenda = toCloneable(fazendaRaw);
+    // Listas agregadas: TODOS os itens de TODAS as fazendas
+    const allAnimaisRaw = listFazendaObjects.reduce((acc, f) => acc.concat(Array.isArray(f?.list_animais) ? f.list_animais : []), []);
+    const allLotesRaw = listFazendaObjects.reduce((acc, f) => acc.concat(Array.isArray(f?.list_lotes) ? f.list_lotes : []), []);
+    const allPastosRaw = listFazendaObjects.reduce((acc, f) => acc.concat(Array.isArray(f?.list_pasto) ? f.list_pasto : []), []);
+    const allVacinacaoRaw = listFazendaObjects.reduce((acc, f) => acc.concat(Array.isArray(f?.list_vacinacao) ? f.list_vacinacao : []), []);
+
     const owner = toCloneable(ownerRaw);
+    const fazendaCurrent = toCloneable(fazendaCurrentRaw);
+    const organizacao = organizacaoRaw ? toCloneable(organizacaoRaw) : null;
+    const listFazendasClone = listFazendaObjects.map((f) => toCloneable(f));
 
-    // normaliza listas
-    const animaisServidor = toCloneable(
-      (Array.isArray(animaisRaw) ? animaisRaw : []).map(normalizeAnimal)
-    );
+    const animaisServidor = toCloneable(allAnimaisRaw.map(normalizeAnimal));
     
     // Preserva animais locais que ainda não foram sincronizados
     // IMPORTANTE: Não normaliza aqui, pois pode perder propriedades _local e _sync
@@ -539,46 +576,12 @@ async function bootstrapData() {
         })
       : [];
     
-    // Mescla: animais do servidor + animais locais pendentes
-    // Remove duplicatas baseado no _id (prioriza servidor se houver conflito)
-    const animaisMap = new Map();
-    
-    // Primeiro adiciona animais do servidor (exceto os que têm IDs locais)
-    animaisServidor.forEach(a => {
-      if (a?._id) {
-        const id = String(a._id);
-        // Só adiciona animais do servidor que não são locais
-        if (!id.startsWith("local:")) {
-          animaisMap.set(id, a);
-        }
-      }
-    });
-    
-    // Depois adiciona TODOS os animais locais pendentes (sempre preserva)
-    // Isso garante que animais criados localmente nunca sejam perdidos
-    animaisLocaisPendentes.forEach(a => {
-      const id = String(a?._id || "");
-      if (id) {
-        // Animais locais sempre são adicionados, mesmo que já exista no servidor
-        // porque são versões locais pendentes de sincronização
-        animaisMap.set(id, a);
-      }
-    });
-    
-    // Garante que animais locais pendentes sejam preservados
-    const animaisFinal = Array.from(animaisMap.values());
-    
-    // Verifica se todos os animais locais pendentes foram preservados
-    const idsLocaisPendentes = new Set(animaisLocaisPendentes.map(a => String(a?._id || "")));
-    const idsFinais = new Set(animaisFinal.map(a => String(a?._id || "")));
-    const todosPreservados = Array.from(idsLocaisPendentes).every(id => idsFinais.has(id));
-    
-    if (!todosPreservados) {
-      console.warn("[BOOT] Alguns animais locais pendentes não foram preservados!");
-    }
-    
-    // IMPORTANTE: Normaliza os animais locais pendentes ANTES de aplicar toCloneable
-    // Isso garante que _local e _sync sejam preservados
+    // Todos os animais do servidor (de todas as fazendas), sem remover duplicatas; depois os locais pendentes
+    const locaisNormalizados = animaisLocaisPendentes.map((a) =>
+      normalizeAnimal({ ...a, _local: true, _sync: "pending" })
+    );
+    const animaisFinal = [...animaisServidor, ...locaisNormalizados];
+
     const animaisFinalNormalizados = animaisFinal.map(a => {
       // Se é um animal local pendente, preserva as propriedades explicitamente
       const id = String(a?._id || "").toLowerCase();
@@ -603,33 +606,20 @@ async function bootstrapData() {
       return (a?._local === true || id.startsWith("local:")) && String(a?._sync || "").toLowerCase() === "pending";
     });
     
-    const lotes = toCloneable(
-      (Array.isArray(lotesRaw) ? lotesRaw : []).map(normalizeLote)
-    );
-    const vacinacao = toCloneable(
-      (Array.isArray(vacinacaoRaw) ? vacinacaoRaw : []).map(normalizeVacinacaoItem)
-    );
-    const proprietarios = toCloneable(Array.isArray(proprietariosRaw) ? proprietariosRaw : []);
+    const lotes = toCloneable((Array.isArray(allLotesRaw) ? allLotesRaw : []).map(normalizeLote));
+    const pastos = toCloneable((Array.isArray(allPastosRaw) ? allPastosRaw : []).map(normalizePasto));
+    const vacinacao = toCloneable((Array.isArray(allVacinacaoRaw) ? allVacinacaoRaw : []).map(normalizeVacinacaoItem));
+    const proprietarios = toCloneable(Array.isArray(fazendaCurrentRaw?.list_proprietarios) ? fazendaCurrentRaw.list_proprietarios : []);
 
     // ✅ Gravação com debug por etapa (pra não “sumir” o erro)
     try {
-      await idbSet("fazenda", "current", fazenda);
+      if (organizacao) await idbSet("organizacao", "current", organizacao);
+      await idbSet("fazenda", "list", listFazendasClone);
+      await idbSet("fazenda", "current", fazendaCurrent);
       await idbSet("owner", "current", owner);
       await idbSet("animais", "list", animais);
-      
-      // Verifica se foi salvo corretamente
-      const verificaSalvamento = await idbGet("animais", "list");
-      
-      const animaisLocaisSalvos = Array.isArray(verificaSalvamento) 
-        ? verificaSalvamento.filter(a => {
-            const id = String(a?._id || "").toLowerCase();
-            const isLocal = a?._local === true || id.startsWith("local:");
-            const isPending = String(a?._sync || "").toLowerCase() === "pending";
-            return isLocal && isPending;
-          })
-        : [];
-      
       await idbSet("lotes", "list", lotes);
+      await idbSet("pastos", "list", pastos);
       await idbSet("vacinacao", "list", vacinacao);
       await idbSet("fazenda", "list_proprietarios", proprietarios);
 
@@ -924,6 +914,8 @@ async function renderAnimalList() {
   if (farmLabel) farmLabel.textContent = farmName;
 
   const all = (await idbGet("animais", "list")) || [];
+  const pastos = (await idbGet("pastos", "list")) || [];
+  const pastoById = Object.fromEntries((pastos || []).map(p => [String(p._id || ""), p.nome || "—"]));
   const searchEl = $("#animalSearch");
   const searchElDesktop = $("#animalSearchDesktop");
   const cardsList = $("#animalCardsList");
@@ -931,13 +923,12 @@ async function renderAnimalList() {
   const isDesktop = typeof window !== "undefined" && window.innerWidth >= 800;
   const searchVal = normText(isDesktop ? (searchElDesktop ? searchElDesktop.value : "") : (searchEl ? searchEl.value : ""));
 
-  if (!cardsList) {
-    // Tenta novamente após um pequeno delay se não encontrou
+  // No desktop só existe tableBody; no mobile só existe cardsList. Só retorna se nenhum dos dois existir.
+  if (!cardsList && !tableBody) {
     setTimeout(async () => {
-      const retryCardsList = $("#animalCardsList");
-      if (retryCardsList) {
-        await renderAnimalList();
-      }
+      const retryCards = $("#animalCardsList");
+      const retryTable = $("#animalTableBody");
+      if (retryCards || retryTable) await renderAnimalList();
     }, 100);
     return;
   }
@@ -984,10 +975,11 @@ async function renderAnimalList() {
         card.className = `animalCard ${a.sexo === "M" ? "male" : "female"}`;
         card.dataset.id = a._id || "";
 
-        // Determina texto de detalhes (raça e peso)
+        // Determina texto de detalhes (raça, peso e pasto)
         const raca = escapeHtml(a?.raca || "—");
         const peso = fmtKg(a?.peso_atual_kg);
-        const details = `${raca} • ${peso}`;
+        const pastoNome = pastoById[String(a?.pasto || "")] || "—";
+        const details = `${raca} • ${peso} • Pasto: ${escapeHtml(pastoNome)}`;
 
         // Flag de sincronização
         const syncFlag = a._sync === "pending" ? '<span style="font-size: 10px; color: #f59e0b; margin-left: 4px;">⏳</span>' : '';
@@ -1016,7 +1008,7 @@ async function renderAnimalList() {
     tableBody.innerHTML = "";
     if (list.length === 0) {
       tableBody.innerHTML = `
-        <tr><td colspan="7" style="text-align: center; padding: 32px; color: var(--muted); font-size: 13px;">Nenhum animal encontrado. Tente ajustar a busca.</td></tr>
+        <tr><td colspan="8" style="text-align: center; padding: 32px; color: var(--muted); font-size: 13px;">Nenhum animal encontrado. Tente ajustar a busca.</td></tr>
       `;
       if (paginationEl) {
         paginationEl.hidden = true;
@@ -1042,6 +1034,7 @@ async function renderAnimalList() {
         tr.dataset.id = a._id || "";
         const statusClass = a._sync === "pending" ? "pending" : "synced";
         const statusText = a._sync === "pending" ? "Pendente" : "Sincronizado";
+        const pastoNome = pastoById[String(a?.pasto || "")] || "—";
         tr.innerHTML = `
           <td>${escapeHtml(a?.brinco_padrao || "—")}</td>
           <td>${escapeHtml(a?.nome_completo || "—")}</td>
@@ -1049,6 +1042,7 @@ async function renderAnimalList() {
           <td>${escapeHtml(renderSex(a?.sexo))}</td>
           <td>${escapeHtml(a?.categoria || "—")}</td>
           <td>${escapeHtml(fmtKg(a?.peso_atual_kg))}</td>
+          <td>${escapeHtml(pastoNome)}</td>
           <td><span class="animalTableStatus ${statusClass}">${statusText}</span></td>
         `;
         tr.onclick = async () => {
@@ -1169,7 +1163,8 @@ function readAnimalFormByIds() {
   const eletronica = $("#animalEletronica")?.value ?? "";
   const rgd = $("#animalRgd")?.value ?? "";
   const rgn = $("#animalRgn")?.value ?? "";
-  const lote = $("#animalLote")?.value ?? "";
+  const listLotes = getAnimalLoteIdsFromChips();
+  const lote = listLotes.length > 0 ? listLotes[0] : "";
   const pasto = $("#animalPasto")?.value ?? "";
   const obs = $("#animalObs")?.value ?? "";
 
@@ -1212,6 +1207,7 @@ function readAnimalFormByIds() {
     identificacao_eletronica: eletronica,
     rgd,
     rgn,
+    list_lotes: listLotes,
     lote,
     pasto,
     observacoes: obs,
@@ -1249,7 +1245,8 @@ async function writeAnimalFormByIds(data = {}) {
   if ($("#animalEletronica")) $("#animalEletronica").value = String(data.identificacao_eletronica || "");
   if ($("#animalRgd")) $("#animalRgd").value = String(data.rgd || "");
   if ($("#animalRgn")) $("#animalRgn").value = String(data.rgn || "");
-  if ($("#animalLote")) $("#animalLote").value = String(data.lote || "");
+  const listLotesForForm = Array.isArray(data.list_lotes) ? data.list_lotes : (data.lote ? [data.lote] : []);
+  await renderAnimalLoteChips(listLotesForForm);
   if ($("#animalPasto")) $("#animalPasto").value = String(data.pasto || "");
   if ($("#animalObs")) $("#animalObs").value = String(data.observacoes || "");
 
@@ -1364,12 +1361,39 @@ function populateFixedDropdowns() {
   }
 }
 
+function getAnimalLoteIdsFromChips() {
+  const wrap = document.getElementById("animalLoteChips");
+  if (!wrap) return [];
+  return Array.from(wrap.querySelectorAll(".animalLoteChip")).map(el => el.getAttribute("data-id")).filter(Boolean);
+}
+
+async function renderAnimalLoteChips(ids = []) {
+  const wrap = document.getElementById("animalLoteChips");
+  if (!wrap) return;
+  const lotes = (await idbGet("lotes", "list")) || [];
+  const idSet = new Set(ids.map(id => String(id)).filter(Boolean));
+  wrap.innerHTML = "";
+  idSet.forEach(id => {
+    const lote = lotes.find(l => String(l._id) === String(id));
+    const nome = lote?.nome_lote || id;
+    const chip = document.createElement("span");
+    chip.className = "animalLoteChip";
+    chip.setAttribute("data-id", id);
+    chip.innerHTML = `${escapeHtml(nome)} <button type="button" class="animalLoteChipRemove" aria-label="Remover lote">×</button>`;
+    const btn = chip.querySelector(".animalLoteChipRemove");
+    if (btn) btn.addEventListener("click", () => { chip.remove(); });
+    wrap.appendChild(chip);
+  });
+}
+
 async function fillOwnersAndLotesInForm() {
   const proprietarios = (await idbGet("fazenda", "list_proprietarios")) || [];
   const lotes = (await idbGet("lotes", "list")) || [];
+  const pastos = (await idbGet("pastos", "list")) || [];
 
   const selOwner = $("#animalOwnerSelect");
-  const selLote = $("#animalLote");
+  const selLoteAdd = $("#animalLoteAdd");
+  const selPasto = $("#animalPasto");
 
   if (selOwner) {
     selOwner.innerHTML = [
@@ -1377,18 +1401,36 @@ async function fillOwnersAndLotesInForm() {
       ...proprietarios.map(p => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`)
     ].join("");
 
-    // Seleciona o primeiro proprietário por padrão (index 1 pois 0 é placeholder)
     if (proprietarios.length > 0) {
       selOwner.selectedIndex = 1;
-      // Dispara evento para atualizar validação do botão salvar
-      selOwner.dispatchEvent(new Event('change', { bubbles: true }));
+      selOwner.dispatchEvent(new Event("change", { bubbles: true }));
     }
   }
 
-  if (selLote) {
-    selLote.innerHTML = [
-      `<option value="">Lote</option>`,
+  if (selLoteAdd) {
+    selLoteAdd.innerHTML = [
+      `<option value="">Adicionar lote…</option>`,
       ...lotes.map(l => `<option value="${escapeHtml(l._id)}">${escapeHtml(l.nome_lote || "—")}</option>`)
+    ].join("");
+
+    if (!selLoteAdd.__loteAddBound) {
+      selLoteAdd.__loteAddBound = true;
+      selLoteAdd.addEventListener("change", async () => {
+        const val = selLoteAdd.value;
+        if (!val) return;
+        const ids = getAnimalLoteIdsFromChips();
+        if (ids.includes(val)) return;
+        ids.push(val);
+        await renderAnimalLoteChips(ids);
+        selLoteAdd.value = "";
+      });
+    }
+  }
+
+  if (selPasto) {
+    selPasto.innerHTML = [
+      `<option value="">Pasto</option>`,
+      ...pastos.map(p => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`)
     ].join("");
   }
 }
@@ -1628,6 +1670,7 @@ async function openAnimalFormForCreate() {
     identificacao_eletronica: "",
     rgd: "",
     rgn: "",
+    list_lotes: [],
     lote: "",
     pasto: "",
     observacoes: "",
@@ -1728,7 +1771,8 @@ async function openAnimalFormForEdit(animalId) {
     identificacao_eletronica: data.identificacao_eletronica || "",
     rgd: data.rgd || "",
     rgn: data.rgn || "",
-    lote: data.lote || "",
+    list_lotes: Array.isArray(data.list_lotes) ? data.list_lotes : (data.lote ? [data.lote] : []),
+    lote: data.lote || (data.list_lotes && data.list_lotes[0]) || "",
     pasto: data.pasto || "",
     observacoes: data.observacoes || data.observacoes || "",
 
@@ -1961,8 +2005,16 @@ async function renderActiveModule() {
   if (animalContainer) animalContainer.hidden = true;
   if (moduleView) moduleView.hidden = false;
 
-  // default render
   setPageHeadVisible(true);
+
+  // Módulo Lotes = Movimentações (Entre lotes, Entre pastos, Entre fazendas)
+  if (m.key === "lotes") {
+    setPageHeadVisible(false);
+    await renderMovimentacoesModule(moduleView);
+    return;
+  }
+
+  // default render
   setPageHeadTexts(m.pageTitle || m.label, m.pageSub || "");
 
   if (moduleView) {
@@ -1976,6 +2028,959 @@ async function renderActiveModule() {
     const btn = moduleView.querySelector("#btnBackToDashGeneric");
     if (btn) btn.onclick = openDashboard;
   }
+}
+
+// ---------------- Movimentações (módulo Lotes) ----------------
+const MOV_TAB = { LOTES: "lotes", PASTOS: "pastos", FAZENDAS: "fazendas" };
+
+async function renderMovimentacoesModule(container) {
+  if (!container) return;
+
+  container.hidden = false;
+  container.innerHTML = `
+    <div class="movPage">
+      <div class="movTabs" role="tablist">
+        <button type="button" class="movTab active" data-tab="lotes" role="tab">Entre lotes</button>
+        <button type="button" class="movTab" data-tab="pastos" role="tab">Entre pastos</button>
+        <button type="button" class="movTab" data-tab="fazendas" role="tab">Entre fazendas</button>
+      </div>
+
+      <div class="movContent movTabLotes" id="movContentLotes">
+        <div class="movHead">
+          <div>
+            <h1 class="movTitle">Movimentação entre lotes</h1>
+            <p class="movSub">Altere os animais da fazenda de um lote para outro</p>
+          </div>
+          <button type="button" class="btn primary movBtnTransferir" id="movBtnTransferir" aria-label="Abrir confirmação de transferência">
+            <span class="movBtnTransferirIcon" aria-hidden="true">⇄</span> Transferir
+          </button>
+        </div>
+
+        <div class="movCards">
+          <div class="movCard movCardHighlight">
+            <label class="movCardLabel"><span class="movCardIcon">📍</span> Seleção do lote de origem</label>
+            <select id="movLoteOrigem" class="movSelect">
+              <option value="">Selecione o lote de origem</option>
+            </select>
+          </div>
+          <div class="movCard">
+            <label class="movCardLabel"><span class="movCardIcon">◆</span> Seleção do lote de destino</label>
+            <select id="movLoteDestino" class="movSelect">
+              <option value="">Selecione o lote de destino</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="movCard movCardTable">
+          <h2 class="movCardTitle"><span class="movCardIcon">🐮</span> Lista de animais</h2>
+          <div class="movTableWrap animalTableWrap">
+            <table class="movTable animalTable">
+              <thead>
+                <tr>
+                  <th class="movThCheck"><label class="movCheckWrap"><input type="checkbox" id="movSelectAll" aria-label="Selecionar todos" /><span class="movCheckbox"></span></label></th>
+                  <th>Brinco</th>
+                  <th>Sexo</th>
+                  <th>Raça</th>
+                  <th>Peso</th>
+                </tr>
+              </thead>
+              <tbody id="movTableBody">
+                <tr><td colspan="5" class="movTableEmpty">Selecione um lote de origem para listar os animais.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="movContent movTabPastos" id="movContentPastos" hidden>
+        <div class="movHead">
+          <div>
+            <h1 class="movTitle">Movimentação entre pastos</h1>
+            <p class="movSub">Altere os animais da fazenda de um pasto para outro</p>
+          </div>
+          <button type="button" class="btn primary movBtnTransferir" id="movBtnTransferirPastos" aria-label="Abrir confirmação de transferência">
+            <span class="movBtnTransferirIcon" aria-hidden="true">⇄</span> Transferir
+          </button>
+        </div>
+
+        <div class="movCards">
+          <div class="movCard movCardHighlight">
+            <label class="movCardLabel"><span class="movCardIcon">📍</span> Seleção do pasto de origem</label>
+            <select id="movPastoOrigem" class="movSelect">
+              <option value="">Selecione o pasto de origem</option>
+            </select>
+          </div>
+          <div class="movCard">
+            <label class="movCardLabel"><span class="movCardIcon">◆</span> Seleção do pasto de destino</label>
+            <select id="movPastoDestino" class="movSelect">
+              <option value="">Selecione o pasto de destino</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="movCard movCardTable">
+          <h2 class="movCardTitle"><span class="movCardIcon">🐮</span> Lista de animais</h2>
+          <div class="movTableWrap animalTableWrap">
+            <table class="movTable animalTable">
+              <thead>
+                <tr>
+                  <th class="movThCheck"><label class="movCheckWrap"><input type="checkbox" id="movSelectAllPastos" aria-label="Selecionar todos" /><span class="movCheckbox"></span></label></th>
+                  <th>Brinco</th>
+                  <th>Sexo</th>
+                  <th>Raça</th>
+                  <th>Peso</th>
+                </tr>
+              </thead>
+              <tbody id="movTableBodyPastos">
+                <tr><td colspan="5" class="movTableEmpty">Selecione um pasto de origem para listar os animais.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="movContent movTabFazendas" id="movContentFazendas" hidden>
+        <div class="movHead">
+          <div>
+            <h1 class="movTitle">Movimentação entre fazendas</h1>
+            <p class="movSub">Altere os animais de uma fazenda para outra</p>
+          </div>
+          <button type="button" class="btn primary movBtnTransferir" id="movBtnTransferirFazendas" aria-label="Abrir confirmação de transferência">
+            <span class="movBtnTransferirIcon" aria-hidden="true">⇄</span> Transferir
+          </button>
+        </div>
+
+        <div class="movCards">
+          <div class="movCard movCardHighlight">
+            <label class="movCardLabel"><span class="movCardIcon">📍</span> Seleção da fazenda de origem</label>
+            <div id="movFazendaOrigemNome" class="movFazendaNome">—</div>
+            <p class="movCardHint" style="margin-top: 8px; color: #6b7280; font-size: 0.875rem;">Agora, selecione o Lote ou Pasto de origem:</p>
+            <div class="movToggleGroup" style="margin-top: 12px; display: flex; gap: 8px;">
+              <button type="button" class="movToggleBtn" id="movToggleLoteOrigem" data-type="lote">Lote</button>
+              <button type="button" class="movToggleBtn movToggleBtnActive" id="movTogglePastoOrigem" data-type="pasto">Pasto</button>
+            </div>
+            <select id="movLoteOrigemFazenda" class="movSelect" style="display: none; margin-top: 12px;">
+              <option value="">Selecione o lote de origem</option>
+            </select>
+            <select id="movPastoOrigemFazenda" class="movSelect" style="margin-top: 12px;">
+              <option value="">Selecione o pasto de origem</option>
+            </select>
+          </div>
+          <div class="movCard">
+            <label class="movCardLabel"><span class="movCardIcon">◆</span> Seleção da fazenda de destino</label>
+            <select id="movFazendaDestino" class="movSelect">
+              <option value="">Selecione a fazenda de destino</option>
+            </select>
+            <p class="movCardHint" style="margin-top: 12px; color: #6b7280; font-size: 0.875rem;">Agora, selecione o Lote ou Pasto de destino:</p>
+            <div class="movToggleGroup" style="margin-top: 12px; display: flex; gap: 8px;">
+              <button type="button" class="movToggleBtn movToggleBtnActive" id="movToggleLoteDestino" data-type="lote">Lote</button>
+              <button type="button" class="movToggleBtn" id="movTogglePastoDestino" data-type="pasto">Pasto</button>
+            </div>
+            <select id="movLoteDestinoFazenda" class="movSelect" style="margin-top: 12px;">
+              <option value="">Selecione o lote de destino</option>
+            </select>
+            <select id="movPastoDestinoFazenda" class="movSelect" style="display: none; margin-top: 12px;">
+              <option value="">Selecione o pasto de destino</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="movCard movCardTable">
+          <h2 class="movCardTitle"><span class="movCardIcon">🐮</span> Lista de animais</h2>
+          <div class="movTableWrap animalTableWrap">
+            <table class="movTable animalTable">
+              <thead>
+                <tr>
+                  <th class="movThCheck"><label class="movCheckWrap"><input type="checkbox" id="movSelectAllFazendas" aria-label="Selecionar todos" /><span class="movCheckbox"></span></label></th>
+                  <th>Brinco</th>
+                  <th>Sexo</th>
+                  <th>Raça</th>
+                  <th>Peso</th>
+                </tr>
+              </thead>
+              <tbody id="movTableBodyFazendas">
+                <tr><td colspan="5" class="movTableEmpty">Selecione um lote ou pasto de origem para listar os animais.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal confirmação transferência (oculto até clicar em Transferir) -->
+    <div id="movModalOverlay" class="movModalOverlay" style="display:none;">
+      <div class="movModal" role="dialog" aria-labelledby="movModalTitle" aria-modal="true">
+        <div class="movModalHeader">
+          <div class="movModalHeaderText">
+            <h2 id="movModalTitle" class="movModalTitle">Confirmar Transferência</h2>
+            <p class="movModalSub">Revise os detalhes antes de confirmar a movimentação dos animais.</p>
+          </div>
+          <button type="button" class="movModalClose" id="movModalClose" aria-label="Fechar">×</button>
+        </div>
+        <div class="movModalBody">
+          <div class="movModalCards">
+            <div class="movModalCard movModalCardOrigem">
+              <span class="movModalCardIcon" aria-hidden="true">⊕</span>
+              <span class="movModalCardLabel">Origem</span>
+              <span class="movModalCardVal" id="movModalOrigem">—</span>
+            </div>
+            <div class="movModalArrow" aria-hidden="true">→</div>
+            <div class="movModalCard movModalCardDestino">
+              <span class="movModalCardIcon movModalCardIconDestino" aria-hidden="true">◎</span>
+              <span class="movModalCardLabel">Destino</span>
+              <span class="movModalCardVal" id="movModalDestino">—</span>
+            </div>
+          </div>
+          <div class="movModalListSection">
+            <h3 class="movModalListTitle"><span class="movModalListIcon" aria-hidden="true">🐮</span> Lista de animais <span id="movModalAnimaisCount">0</span></h3>
+            <div class="movModalListWrap">
+              <div id="movModalAnimais" class="movModalAnimaisList"></div>
+            </div>
+          </div>
+          <div class="movModalWarning">
+            <span class="movModalWarningIcon" aria-hidden="true">⚠</span>
+            <p>Por favor, confira se as informações estão corretas. Essa ação não poderá ser desfeita!</p>
+          </div>
+        </div>
+        <div class="movModalFooter">
+          <button type="button" class="btn secondary movModalBtnCancel" id="movModalCancelar"><span aria-hidden="true">×</span> Cancelar</button>
+          <button type="button" class="btn primary movModalBtnConfirm" id="movModalConfirmar"><span class="movModalBtnConfirmIcon" aria-hidden="true">⇄</span> Confirmar Transferência</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const tabLotes = container.querySelector('[data-tab="lotes"]');
+  const tabPastos = container.querySelector('[data-tab="pastos"]');
+  const tabFazendas = container.querySelector('[data-tab="fazendas"]');
+  const contentLotes = document.getElementById("movContentLotes");
+  const contentPastos = document.getElementById("movContentPastos");
+  const contentFazendas = document.getElementById("movContentFazendas");
+
+  function setActiveTab(tabKey) {
+    [tabLotes, tabPastos, tabFazendas].forEach(t => t && t.classList.remove("active"));
+    const active = container.querySelector(`[data-tab="${tabKey}"]`);
+    if (active) active.classList.add("active");
+    if (contentLotes) contentLotes.hidden = tabKey !== "lotes";
+    if (contentPastos) contentPastos.hidden = tabKey !== "pastos";
+    if (contentFazendas) contentFazendas.hidden = tabKey !== "fazendas";
+  }
+
+  tabLotes && (tabLotes.onclick = () => setActiveTab("lotes"));
+  tabPastos && (tabPastos.onclick = () => setActiveTab("pastos"));
+  tabFazendas && (tabFazendas.onclick = () => setActiveTab("fazendas"));
+
+  const lotes = (await idbGet("lotes", "list")) || [];
+  const pastos = (await idbGet("pastos", "list")) || [];
+  const selOrigem = container.querySelector("#movLoteOrigem");
+  const selDestino = container.querySelector("#movLoteDestino");
+  const tbody = container.querySelector("#movTableBody");
+  const selectAll = container.querySelector("#movSelectAll");
+  const btnTransferir = container.querySelector("#movBtnTransferir");
+  const selPastoOrigem = container.querySelector("#movPastoOrigem");
+  const selPastoDestino = container.querySelector("#movPastoDestino");
+  const tbodyPastos = container.querySelector("#movTableBodyPastos");
+  const selectAllPastos = container.querySelector("#movSelectAllPastos");
+  const btnTransferirPastos = container.querySelector("#movBtnTransferirPastos");
+  const modalOverlay = container.querySelector("#movModalOverlay");
+  const modalClose = container.querySelector("#movModalClose");
+  const modalCancelar = container.querySelector("#movModalCancelar");
+  const modalConfirmar = container.querySelector("#movModalConfirmar");
+
+  if (!selOrigem || !selDestino || !tbody) return;
+
+  selOrigem.innerHTML = '<option value="">Selecione o lote de origem</option>' +
+    lotes.map(l => `<option value="${escapeHtml(l._id)}">${escapeHtml(l.nome_lote || "—")}</option>`).join("");
+
+  if (selPastoOrigem) {
+    selPastoOrigem.innerHTML = '<option value="">Selecione o pasto de origem</option>' +
+      (pastos || []).map(p => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`).join("");
+  }
+
+  let animaisDoLote = [];
+  let selectedIds = new Set();
+  let animaisDoPasto = [];
+  let selectedIdsPastos = new Set();
+
+  function getSelectedAnimals() {
+    return animaisDoLote.filter(a => selectedIds.has(String(a._id)));
+  }
+
+  function updateTransferirButton() {
+    const dest = selDestino && selDestino.value;
+    const canTransfer = !!dest && selectedIds.size > 0;
+    if (btnTransferir) {
+      btnTransferir.classList.toggle("movBtnTransferir--disabled", !canTransfer);
+      btnTransferir.setAttribute("aria-disabled", canTransfer ? "false" : "true");
+    }
+  }
+  updateTransferirButton();
+
+  function renderTable(animais) {
+    animaisDoLote = animais;
+    tbody.innerHTML = "";
+    if (animais.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="movTableEmpty">Nenhum animal neste lote.</td></tr>';
+      selectAll && (selectAll.checked = false);
+      selectedIds.clear();
+      updateTransferirButton();
+      return;
+    }
+    animais.forEach(a => {
+      const tr = document.createElement("tr");
+      tr.dataset.id = a._id || "";
+      const id = String(a._id || "");
+      const checked = selectedIds.has(id);
+      tr.innerHTML = `
+        <td class="movTdCheck"><label class="movCheckWrap"><input type="checkbox" class="movRowCheck" data-id="${escapeHtml(id)}" ${checked ? "checked" : ""} /><span class="movCheckbox"></span></label></td>
+        <td>${escapeHtml(a?.brinco_padrao || "—")}</td>
+        <td>${escapeHtml(renderSex(a?.sexo))}</td>
+        <td>${escapeHtml(a?.raca || "—")}</td>
+        <td>${escapeHtml(fmtKg(a?.peso_atual_kg))}</td>
+      `;
+      const cb = tr.querySelector(".movRowCheck");
+      if (cb) {
+        cb.addEventListener("change", () => {
+          if (cb.checked) selectedIds.add(id); else selectedIds.delete(id);
+          selectAll && (selectAll.checked = selectedIds.size === animais.length);
+          updateTransferirButton();
+        });
+      }
+      tbody.appendChild(tr);
+    });
+    selectAll && (selectAll.checked = selectedIds.size === animais.length);
+    updateTransferirButton();
+  }
+
+  selectAll && selectAll.addEventListener("change", () => {
+    if (selectAll.checked) animaisDoLote.forEach(a => selectedIds.add(String(a._id)));
+    else selectedIds.clear();
+    tbody.querySelectorAll(".movRowCheck").forEach(cb => { cb.checked = selectAll.checked; });
+    updateTransferirButton();
+  });
+
+  function updateTransferirPastosButton() {
+    const dest = selPastoDestino && selPastoDestino.value;
+    const canTransfer = !!dest && selectedIdsPastos.size > 0;
+    if (btnTransferirPastos) {
+      btnTransferirPastos.classList.toggle("movBtnTransferir--disabled", !canTransfer);
+      btnTransferirPastos.setAttribute("aria-disabled", canTransfer ? "false" : "true");
+    }
+  }
+  updateTransferirPastosButton();
+
+  function renderTablePastos(animais) {
+    if (!tbodyPastos) return;
+    animaisDoPasto = animais;
+    tbodyPastos.innerHTML = "";
+    if (animais.length === 0) {
+      tbodyPastos.innerHTML = '<tr><td colspan="5" class="movTableEmpty">Nenhum animal neste pasto.</td></tr>';
+      if (selectAllPastos) selectAllPastos.checked = false;
+      selectedIdsPastos.clear();
+      updateTransferirPastosButton();
+      return;
+    }
+    animais.forEach(a => {
+      const tr = document.createElement("tr");
+      tr.dataset.id = a._id || "";
+      const id = String(a._id || "");
+      const checked = selectedIdsPastos.has(id);
+      tr.innerHTML = `
+        <td class="movTdCheck"><label class="movCheckWrap"><input type="checkbox" class="movRowCheck movRowCheckPastos" data-id="${escapeHtml(id)}" ${checked ? "checked" : ""} /><span class="movCheckbox"></span></label></td>
+        <td>${escapeHtml(a?.brinco_padrao || "—")}</td>
+        <td>${escapeHtml(renderSex(a?.sexo))}</td>
+        <td>${escapeHtml(a?.raca || "—")}</td>
+        <td>${escapeHtml(fmtKg(a?.peso_atual_kg))}</td>
+      `;
+      const cb = tr.querySelector(".movRowCheck");
+      if (cb) {
+        cb.addEventListener("change", () => {
+          if (cb.checked) selectedIdsPastos.add(id); else selectedIdsPastos.delete(id);
+          if (selectAllPastos) selectAllPastos.checked = selectedIdsPastos.size === animais.length;
+          updateTransferirPastosButton();
+        });
+      }
+      tbodyPastos.appendChild(tr);
+    });
+    if (selectAllPastos) selectAllPastos.checked = selectedIdsPastos.size === animais.length;
+    updateTransferirPastosButton();
+  }
+
+  if (selectAllPastos) {
+    selectAllPastos.addEventListener("change", () => {
+      if (selectAllPastos.checked) animaisDoPasto.forEach(a => selectedIdsPastos.add(String(a._id)));
+      else selectedIdsPastos.clear();
+      if (tbodyPastos) tbodyPastos.querySelectorAll(".movRowCheckPastos").forEach(cb => { cb.checked = selectAllPastos.checked; });
+      updateTransferirPastosButton();
+    });
+  }
+
+  if (selPastoOrigem) {
+    selPastoOrigem.addEventListener("change", async () => {
+      const originId = selPastoOrigem.value;
+      selectedIdsPastos.clear();
+      const all = (await idbGet("animais", "list")) || [];
+      const list = all.filter(a => !a.deleted && String(a?.pasto || "") === String(originId)).map(normalizeAnimal);
+      renderTablePastos(list);
+
+      const destinos = (pastos || []).filter(p => String(p._id) !== String(originId));
+      if (selPastoDestino) {
+        selPastoDestino.innerHTML = '<option value="">Selecione o pasto de destino</option>' +
+          destinos.map(p => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`).join("");
+        selPastoDestino.value = "";
+      }
+      updateTransferirPastosButton();
+    });
+  }
+  if (selPastoDestino) selPastoDestino.addEventListener("change", updateTransferirPastosButton);
+
+  selOrigem.addEventListener("change", async () => {
+    const originId = selOrigem.value;
+    selectedIds.clear();
+    const all = (await idbGet("animais", "list")) || [];
+    const list = all.filter(a => {
+      const norm = normalizeAnimal(a);
+      const inLote = norm.list_lotes && norm.list_lotes.some(lid => String(lid) === String(originId));
+      return !a.deleted && (inLote || String(a?.lote || "") === String(originId));
+    }).map(normalizeAnimal);
+    renderTable(list);
+
+    const destinos = lotes.filter(l => String(l._id) !== String(originId));
+    selDestino.innerHTML = '<option value="">Selecione o lote de destino</option>' +
+      destinos.map(l => `<option value="${escapeHtml(l._id)}">${escapeHtml(l.nome_lote || "—")}</option>`).join("");
+    selDestino.value = "";
+    updateTransferirButton();
+  });
+
+  selDestino && selDestino.addEventListener("change", updateTransferirButton);
+
+  function openTransferModal() {
+    const destId = selDestino && selDestino.value;
+    const selected = getSelectedAnimals();
+    if (!destId || selected.length === 0) return;
+    const origemNome = lotes.find(l => String(l._id) === String(selOrigem.value))?.nome_lote || "—";
+    const destinoNome = lotes.find(l => String(l._id) === String(destId))?.nome_lote || "—";
+
+    const modalOrigem = container.querySelector("#movModalOrigem");
+    const modalDestino = container.querySelector("#movModalDestino");
+    const countEl = container.querySelector("#movModalAnimaisCount");
+    const listEl = container.querySelector("#movModalAnimais");
+    if (modalOrigem) modalOrigem.textContent = origemNome;
+    if (modalDestino) modalDestino.textContent = destinoNome;
+    if (countEl) countEl.textContent = selected.length;
+    if (listEl) {
+      listEl.innerHTML = selected.map(a => {
+        const tag = escapeHtml(a?.brinco_padrao || "—");
+        const name = escapeHtml((a?.nome_completo || "").trim() || "—");
+        const raca = escapeHtml(a?.raca || "—");
+        const peso = escapeHtml(fmtKg(a?.peso_atual_kg));
+        const sexo = escapeHtml(renderSex(a?.sexo));
+        return `<div class="movModalAnimalRow">
+          <div class="movModalAnimalId">#${tag} ${name !== "—" ? name : ""}</div>
+          <span class="movModalAnimalRaca">${raca}</span>
+          <span class="movModalAnimalPeso">${peso}</span>
+          <span class="movModalAnimalSexo">${sexo}</span>
+        </div>`;
+      }).join("");
+    }
+
+    if (modalOverlay) {
+      modalOverlay.dataset.destId = destId;
+      modalOverlay.style.display = "flex";
+    }
+  }
+
+  container.addEventListener("click", (e) => {
+    const btnPastos = e.target.closest("#movBtnTransferirPastos");
+    if (btnPastos) {
+      e.preventDefault();
+      e.stopPropagation();
+      const destId = selPastoDestino && selPastoDestino.value;
+      const selected = animaisDoPasto.filter(a => selectedIdsPastos.has(String(a._id)));
+      if (!destId || selected.length === 0) {
+        toast("Selecione pelo menos um animal e o pasto de destino.");
+        return;
+      }
+      const origemNome = (pastos || []).find(p => String(p._id) === String(selPastoOrigem?.value))?.nome || "—";
+      const destinoNome = (pastos || []).find(p => String(p._id) === String(destId))?.nome || "—";
+      const modalOrigem = container.querySelector("#movModalOrigem");
+      const modalDestino = container.querySelector("#movModalDestino");
+      const countEl = container.querySelector("#movModalAnimaisCount");
+      const listEl = container.querySelector("#movModalAnimais");
+      if (modalOrigem) modalOrigem.textContent = origemNome;
+      if (modalDestino) modalDestino.textContent = destinoNome;
+      if (countEl) countEl.textContent = selected.length;
+      if (listEl) {
+        listEl.innerHTML = selected.map(a => {
+          const tag = escapeHtml(a?.brinco_padrao || "—");
+          const name = escapeHtml((a?.nome_completo || "").trim() || "—");
+          const raca = escapeHtml(a?.raca || "—");
+          const peso = escapeHtml(fmtKg(a?.peso_atual_kg));
+          const sexo = escapeHtml(renderSex(a?.sexo));
+          return `<div class="movModalAnimalRow">
+            <div class="movModalAnimalId">#${tag} ${name !== "—" ? name : ""}</div>
+            <span class="movModalAnimalRaca">${raca}</span>
+            <span class="movModalAnimalPeso">${peso}</span>
+            <span class="movModalAnimalSexo">${sexo}</span>
+          </div>`;
+        }).join("");
+      }
+      if (modalOverlay) {
+        modalOverlay.dataset.context = "pastos";
+        modalOverlay.dataset.destId = destId;
+        modalOverlay.style.display = "flex";
+      }
+      return;
+    }
+    const btn = e.target.closest("#movBtnTransferir");
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const destId = selDestino && selDestino.value;
+    const selected = getSelectedAnimals();
+    if (!destId || selected.length === 0) {
+      toast("Selecione pelo menos um animal e o lote de destino.");
+      return;
+    }
+    openTransferModal();
+  });
+
+  function closeTransferModal() {
+    if (modalOverlay) modalOverlay.style.display = "none";
+  }
+  modalClose && modalClose.addEventListener("click", closeTransferModal);
+  modalCancelar && modalCancelar.addEventListener("click", closeTransferModal);
+
+  modalConfirmar && modalConfirmar.addEventListener("click", async () => {
+    const context = modalOverlay && modalOverlay.dataset.context;
+    const destId = modalOverlay && modalOverlay.dataset.destId;
+
+    if (context === "pastos") {
+      const selected = animaisDoPasto.filter(a => selectedIdsPastos.has(String(a._id)));
+      if (!destId || selected.length === 0) {
+        closeTransferModal();
+        if (modalOverlay) delete modalOverlay.dataset.context;
+        return;
+      }
+      const list = (await idbGet("animais", "list")) || [];
+      const ids = new Set(selected.map(a => String(a._id)));
+      const qKey = `queue:${state.ctx.fazendaId || ""}:${state.ctx.ownerId || ""}:animal`;
+      const queue = (await idbGet("records", qKey)) || [];
+
+      for (let i = 0; i < list.length; i++) {
+        if (!ids.has(String(list[i]._id))) continue;
+        const prev = list[i];
+        const updated = normalizeAnimal({
+          ...prev,
+          pasto: destId,
+          _local: prev._local || true,
+          _sync: "pending",
+          data_modificacao: prev.data_modificacao,
+        });
+        list[i] = updated;
+        queue.push({ op: "animal_update", at: Date.now(), payload: updated, targetId: prev._id });
+      }
+
+      await idbSet("animais", "list", list);
+      await idbSet("records", qKey, queue);
+
+      closeTransferModal();
+      if (modalOverlay) delete modalOverlay.dataset.context;
+      toast("Transferência de pasto registrada offline. " + selected.length + " animal(is) na fila para sincronizar.");
+
+      selectedIdsPastos.clear();
+      const originPastoId = selPastoOrigem && selPastoOrigem.value;
+      const all = (await idbGet("animais", "list")) || [];
+      const refreshedPastos = all.filter(a => !a.deleted && String(a?.pasto || "") === String(originPastoId)).map(normalizeAnimal);
+      renderTablePastos(refreshedPastos);
+      updateTransferirPastosButton();
+      return;
+    }
+
+    const selected = getSelectedAnimals();
+    if (!destId || selected.length === 0) {
+      closeTransferModal();
+      return;
+    }
+
+    const list = (await idbGet("animais", "list")) || [];
+    const ids = new Set(selected.map(a => String(a._id)));
+    const qKey = `queue:${state.ctx.fazendaId || ""}:${state.ctx.ownerId || ""}:animal`;
+    const queue = (await idbGet("records", qKey)) || [];
+
+    for (let i = 0; i < list.length; i++) {
+      if (!ids.has(String(list[i]._id))) continue;
+      const prev = list[i];
+      const updated = normalizeAnimal({
+        ...prev,
+        list_lotes: [destId],
+        lote: destId,
+        _local: prev._local || true,
+        _sync: "pending",
+        data_modificacao: prev.data_modificacao,
+      });
+      list[i] = updated;
+      queue.push({ op: "animal_update", at: Date.now(), payload: updated, targetId: prev._id });
+    }
+
+    await idbSet("animais", "list", list);
+    await idbSet("records", qKey, queue);
+
+    closeTransferModal();
+    toast("Transferência registrada offline. " + selected.length + " animal(is) na fila para sincronizar.");
+
+    selectedIds.clear();
+    const originId = selOrigem.value;
+    const all = (await idbGet("animais", "list")) || [];
+    const refreshed = all.filter(a => {
+      const norm = normalizeAnimal(a);
+      const inLote = norm.list_lotes && norm.list_lotes.some(lid => String(lid) === String(originId));
+      return !a.deleted && (inLote || String(a?.lote || "") === String(originId));
+    }).map(normalizeAnimal);
+    renderTable(refreshed);
+    updateTransferirButton();
+  });
+
+  if (modalOverlay) {
+    modalOverlay.addEventListener("click", (e) => {
+      if (e.target === modalOverlay) closeTransferModal();
+    });
+  }
+
+  // ========== MOVIMENTAÇÃO ENTRE FAZENDAS ==========
+  const btnTransferirFazendas = container.querySelector("#movBtnTransferirFazendas");
+  const fazendaOrigemNome = container.querySelector("#movFazendaOrigemNome");
+  const toggleLoteOrigem = container.querySelector("#movToggleLoteOrigem");
+  const togglePastoOrigem = container.querySelector("#movTogglePastoOrigem");
+  const selLoteOrigemFazenda = container.querySelector("#movLoteOrigemFazenda");
+  const selPastoOrigemFazenda = container.querySelector("#movPastoOrigemFazenda");
+  const selFazendaDestino = container.querySelector("#movFazendaDestino");
+  const toggleLoteDestino = container.querySelector("#movToggleLoteDestino");
+  const togglePastoDestino = container.querySelector("#movTogglePastoDestino");
+  const selLoteDestinoFazenda = container.querySelector("#movLoteDestinoFazenda");
+  const selPastoDestinoFazenda = container.querySelector("#movPastoDestinoFazenda");
+  const tbodyFazendas = container.querySelector("#movTableBodyFazendas");
+  const selectAllFazendas = container.querySelector("#movSelectAllFazendas");
+
+  let animaisFazendas = [];
+  let selectedIdsFazendas = new Set();
+  let origemTipo = "pasto"; // "lote" ou "pasto"
+  let fazendaAtualId = "";
+  let fazendaAtualNome = "";
+
+  async function initMovimentacaoFazendas() {
+    const owner = await idbGet("owner", "current");
+    const fazendaAtual = await idbGet("fazenda", "current");
+    const listFazendas = (await idbGet("fazenda", "list")) || [];
+    
+    fazendaAtualId = String(owner?.management_fazenda || state.ctx.fazendaId || fazendaAtual?._id || "").trim();
+    fazendaAtualNome = fazendaAtual?.name || "Fazenda atual";
+    
+    if (fazendaOrigemNome) fazendaOrigemNome.textContent = fazendaAtualNome;
+
+    const fazendasDestino = listFazendas.filter(f => String(f._id || "") !== fazendaAtualId);
+    if (selFazendaDestino) {
+      selFazendaDestino.innerHTML = '<option value="">Selecione a fazenda de destino</option>' +
+        fazendasDestino.map(f => `<option value="${escapeHtml(f._id)}">${escapeHtml(f.name || "—")}</option>`).join("");
+    }
+
+    const fazendaAtualObj = listFazendas.find(f => String(f._id) === fazendaAtualId) || fazendaAtual;
+    const lotesOrigem = Array.isArray(fazendaAtualObj?.list_lotes) ? fazendaAtualObj.list_lotes : [];
+    const pastosOrigem = Array.isArray(fazendaAtualObj?.list_pasto) ? fazendaAtualObj.list_pasto : [];
+
+    if (selLoteOrigemFazenda) {
+      selLoteOrigemFazenda.innerHTML = '<option value="">Selecione o lote de origem</option>' +
+        lotesOrigem.map(l => `<option value="${escapeHtml(l._id)}">${escapeHtml(l.nome_lote || "—")}</option>`).join("");
+    }
+    if (selPastoOrigemFazenda) {
+      selPastoOrigemFazenda.innerHTML = '<option value="">Selecione o pasto de origem</option>' +
+        pastosOrigem.map(p => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`).join("");
+    }
+  }
+
+  function updateToggleButtons(origem) {
+    if (origem) {
+      toggleLoteOrigem?.classList.toggle("movToggleBtnActive", origemTipo === "lote");
+      togglePastoOrigem?.classList.toggle("movToggleBtnActive", origemTipo === "pasto");
+      selLoteOrigemFazenda && (selLoteOrigemFazenda.style.display = origemTipo === "lote" ? "block" : "none");
+      selPastoOrigemFazenda && (selPastoOrigemFazenda.style.display = origemTipo === "pasto" ? "block" : "none");
+      if (origemTipo === "lote") {
+        selPastoOrigemFazenda && (selPastoOrigemFazenda.value = "");
+      } else {
+        selLoteOrigemFazenda && (selLoteOrigemFazenda.value = "");
+      }
+    } else {
+      const loteAtivo = toggleLoteDestino?.classList.contains("movToggleBtnActive");
+      const pastoAtivo = togglePastoDestino?.classList.contains("movToggleBtnActive");
+      selLoteDestinoFazenda && (selLoteDestinoFazenda.style.display = loteAtivo ? "block" : "none");
+      selPastoDestinoFazenda && (selPastoDestinoFazenda.style.display = pastoAtivo ? "block" : "none");
+    }
+    updateTransferirFazendasButton();
+  }
+
+  toggleLoteOrigem?.addEventListener("click", () => {
+    origemTipo = "lote";
+    selectedIdsFazendas.clear();
+    renderTableFazendas([]);
+    updateToggleButtons(true);
+  });
+
+  togglePastoOrigem?.addEventListener("click", () => {
+    origemTipo = "pasto";
+    selectedIdsFazendas.clear();
+    renderTableFazendas([]);
+    updateToggleButtons(true);
+  });
+
+  toggleLoteDestino?.addEventListener("click", () => {
+    toggleLoteDestino.classList.add("movToggleBtnActive");
+    togglePastoDestino?.classList.remove("movToggleBtnActive");
+    updateToggleButtons(false);
+  });
+
+  togglePastoDestino?.addEventListener("click", () => {
+    togglePastoDestino.classList.add("movToggleBtnActive");
+    toggleLoteDestino?.classList.remove("movToggleBtnActive");
+    updateToggleButtons(false);
+  });
+
+  async function loadAnimaisOrigem() {
+    const origemId = origemTipo === "lote" 
+      ? (selLoteOrigemFazenda?.value || "")
+      : (selPastoOrigemFazenda?.value || "");
+    
+    if (!origemId) {
+      renderTableFazendas([]);
+      return;
+    }
+
+    const all = (await idbGet("animais", "list")) || [];
+    let list = [];
+    
+    if (origemTipo === "lote") {
+      list = all.filter(a => {
+        if (a.deleted) return false;
+        if (String(a.fazenda || "") !== fazendaAtualId) return false;
+        const norm = normalizeAnimal(a);
+        const inLote = norm.list_lotes && norm.list_lotes.some(lid => String(lid) === String(origemId));
+        return inLote || String(a?.lote || "") === String(origemId);
+      }).map(normalizeAnimal);
+    } else {
+      list = all.filter(a => {
+        if (a.deleted) return false;
+        if (String(a.fazenda || "") !== fazendaAtualId) return false;
+        return String(a?.pasto || "") === String(origemId);
+      }).map(normalizeAnimal);
+    }
+    
+    renderTableFazendas(list);
+  }
+
+  selLoteOrigemFazenda?.addEventListener("change", loadAnimaisOrigem);
+  selPastoOrigemFazenda?.addEventListener("change", loadAnimaisOrigem);
+
+  selFazendaDestino?.addEventListener("change", async () => {
+    const fazendaDestinoId = selFazendaDestino?.value || "";
+    if (!fazendaDestinoId) {
+      selLoteDestinoFazenda && (selLoteDestinoFazenda.innerHTML = '<option value="">Selecione o lote de destino</option>');
+      selPastoDestinoFazenda && (selPastoDestinoFazenda.innerHTML = '<option value="">Selecione o pasto de destino</option>');
+      updateTransferirFazendasButton();
+      return;
+    }
+
+    const listFazendas = (await idbGet("fazenda", "list")) || [];
+    const fazendaDestino = listFazendas.find(f => String(f._id) === fazendaDestinoId);
+    
+    if (fazendaDestino) {
+      const lotesDestino = Array.isArray(fazendaDestino.list_lotes) ? fazendaDestino.list_lotes : [];
+      const pastosDestino = Array.isArray(fazendaDestino.list_pasto) ? fazendaDestino.list_pasto : [];
+      
+      if (selLoteDestinoFazenda) {
+        selLoteDestinoFazenda.innerHTML = '<option value="">Selecione o lote de destino</option>' +
+          lotesDestino.map(l => `<option value="${escapeHtml(l._id)}">${escapeHtml(l.nome_lote || "—")}</option>`).join("");
+      }
+      if (selPastoDestinoFazenda) {
+        selPastoDestinoFazenda.innerHTML = '<option value="">Selecione o pasto de destino</option>' +
+          pastosDestino.map(p => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`).join("");
+      }
+    }
+    updateTransferirFazendasButton();
+  });
+
+  selLoteDestinoFazenda?.addEventListener("change", updateTransferirFazendasButton);
+  selPastoDestinoFazenda?.addEventListener("change", updateTransferirFazendasButton);
+
+  function renderTableFazendas(animais) {
+    if (!tbodyFazendas) return;
+    animaisFazendas = animais;
+    tbodyFazendas.innerHTML = "";
+    if (animais.length === 0) {
+      tbodyFazendas.innerHTML = '<tr><td colspan="5" class="movTableEmpty">Nenhum animal encontrado.</td></tr>';
+      if (selectAllFazendas) selectAllFazendas.checked = false;
+      selectedIdsFazendas.clear();
+      updateTransferirFazendasButton();
+      return;
+    }
+    animais.forEach(a => {
+      const tr = document.createElement("tr");
+      tr.dataset.id = a._id || "";
+      const id = String(a._id || "");
+      const checked = selectedIdsFazendas.has(id);
+      tr.innerHTML = `
+        <td class="movTdCheck"><label class="movCheckWrap"><input type="checkbox" class="movRowCheck movRowCheckFazendas" data-id="${escapeHtml(id)}" ${checked ? "checked" : ""} /><span class="movCheckbox"></span></label></td>
+        <td>${escapeHtml(a?.brinco_padrao || "—")}</td>
+        <td>${escapeHtml(renderSex(a?.sexo))}</td>
+        <td>${escapeHtml(a?.raca || "—")}</td>
+        <td>${escapeHtml(fmtKg(a?.peso_atual_kg))}</td>
+      `;
+      const cb = tr.querySelector(".movRowCheck");
+      if (cb) {
+        cb.addEventListener("change", () => {
+          if (cb.checked) selectedIdsFazendas.add(id); else selectedIdsFazendas.delete(id);
+          if (selectAllFazendas) selectAllFazendas.checked = selectedIdsFazendas.size === animais.length;
+          updateTransferirFazendasButton();
+        });
+      }
+      tbodyFazendas.appendChild(tr);
+    });
+    if (selectAllFazendas) selectAllFazendas.checked = selectedIdsFazendas.size === animais.length;
+    updateTransferirFazendasButton();
+  }
+
+  selectAllFazendas?.addEventListener("change", () => {
+    if (selectAllFazendas.checked) animaisFazendas.forEach(a => selectedIdsFazendas.add(String(a._id)));
+    else selectedIdsFazendas.clear();
+    tbodyFazendas?.querySelectorAll(".movRowCheckFazendas").forEach(cb => { cb.checked = selectAllFazendas.checked; });
+    updateTransferirFazendasButton();
+  });
+
+  function updateTransferirFazendasButton() {
+    const fazendaDestinoId = selFazendaDestino?.value || "";
+    const loteDestinoId = selLoteDestinoFazenda?.value || "";
+    const pastoDestinoId = selPastoDestinoFazenda?.value || "";
+    const hasDestino = !!fazendaDestinoId && (!!loteDestinoId || !!pastoDestinoId);
+    const canTransfer = hasDestino && selectedIdsFazendas.size > 0;
+    if (btnTransferirFazendas) {
+      btnTransferirFazendas.classList.toggle("movBtnTransferir--disabled", !canTransfer);
+      btnTransferirFazendas.setAttribute("aria-disabled", canTransfer ? "false" : "true");
+    }
+  }
+  updateTransferirFazendasButton();
+
+  btnTransferirFazendas?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const fazendaDestinoId = selFazendaDestino?.value || "";
+    const loteDestinoId = selLoteDestinoFazenda?.value || "";
+    const pastoDestinoId = selPastoDestinoFazenda?.value || "";
+    const selected = animaisFazendas.filter(a => selectedIdsFazendas.has(String(a._id)));
+    
+    if (!fazendaDestinoId || selected.length === 0 || (!loteDestinoId && !pastoDestinoId)) {
+      toast("Selecione pelo menos um animal, a fazenda de destino e um lote ou pasto.");
+      return;
+    }
+
+    const listFazendas = (await idbGet("fazenda", "list")) || [];
+    const fazendaDestino = listFazendas.find(f => String(f._id) === fazendaDestinoId);
+    const origemNome = origemTipo === "lote" 
+      ? (lotes.find(l => String(l._id) === selLoteOrigemFazenda?.value)?.nome_lote || "—")
+      : (pastos.find(p => String(p._id) === selPastoOrigemFazenda?.value)?.nome || "—");
+    
+    let destinoNome = fazendaDestino?.name || "—";
+    if (loteDestinoId) {
+      const loteDestino = fazendaDestino?.list_lotes?.find(l => String(l._id) === loteDestinoId);
+      destinoNome += ` - ${loteDestino?.nome_lote || "Lote"}`;
+    }
+    if (pastoDestinoId) {
+      const pastoDestino = fazendaDestino?.list_pasto?.find(p => String(p._id) === pastoDestinoId);
+      destinoNome += ` - ${pastoDestino?.nome || "Pasto"}`;
+    }
+
+    const modalOrigem = container.querySelector("#movModalOrigem");
+    const modalDestino = container.querySelector("#movModalDestino");
+    const countEl = container.querySelector("#movModalAnimaisCount");
+    const listEl = container.querySelector("#movModalAnimais");
+    if (modalOrigem) modalOrigem.textContent = `${fazendaAtualNome} - ${origemNome}`;
+    if (modalDestino) modalDestino.textContent = destinoNome;
+    if (countEl) countEl.textContent = selected.length;
+    if (listEl) {
+      listEl.innerHTML = selected.map(a => {
+        const tag = escapeHtml(a?.brinco_padrao || "—");
+        const name = escapeHtml((a?.nome_completo || "").trim() || "—");
+        const raca = escapeHtml(a?.raca || "—");
+        const peso = escapeHtml(fmtKg(a?.peso_atual_kg));
+        const sexo = escapeHtml(renderSex(a?.sexo));
+        return `<div class="movModalAnimalRow">
+          <div class="movModalAnimalId">#${tag} ${name !== "—" ? name : ""}</div>
+          <span class="movModalAnimalRaca">${raca}</span>
+          <span class="movModalAnimalPeso">${peso}</span>
+          <span class="movModalAnimalSexo">${sexo}</span>
+        </div>`;
+      }).join("");
+    }
+    if (modalOverlay) {
+      modalOverlay.dataset.context = "fazendas";
+      modalOverlay.dataset.fazendaDestinoId = fazendaDestinoId;
+      modalOverlay.dataset.loteDestinoId = loteDestinoId || "";
+      modalOverlay.dataset.pastoDestinoId = pastoDestinoId || "";
+      modalOverlay.style.display = "flex";
+    }
+  });
+
+  modalConfirmar?.addEventListener("click", async () => {
+    const context = modalOverlay?.dataset.context;
+    if (context !== "fazendas") return;
+
+    const fazendaDestinoId = modalOverlay?.dataset.fazendaDestinoId || "";
+    const loteDestinoId = modalOverlay?.dataset.loteDestinoId || "";
+    const pastoDestinoId = modalOverlay?.dataset.pastoDestinoId || "";
+    const selected = animaisFazendas.filter(a => selectedIdsFazendas.has(String(a._id)));
+
+    if (!fazendaDestinoId || selected.length === 0) {
+      closeTransferModal();
+      if (modalOverlay) delete modalOverlay.dataset.context;
+      return;
+    }
+
+    const list = (await idbGet("animais", "list")) || [];
+    const ids = new Set(selected.map(a => String(a._id)));
+    const qKey = `queue:${fazendaDestinoId}:${state.ctx.ownerId || ""}:animal`;
+    const queue = (await idbGet("records", qKey)) || [];
+
+    for (let i = 0; i < list.length; i++) {
+      if (!ids.has(String(list[i]._id))) continue;
+      const prev = list[i];
+      const listLotesNovo = loteDestinoId ? [loteDestinoId] : [];
+      const pastoNovo = pastoDestinoId || "";
+      
+      const updated = normalizeAnimal({
+        ...prev,
+        fazenda: fazendaDestinoId,
+        list_lotes: listLotesNovo,
+        lote: loteDestinoId || "",
+        pasto: pastoNovo,
+        _local: prev._local || true,
+        _sync: "pending",
+        data_modificacao: prev.data_modificacao,
+      });
+      list[i] = updated;
+      queue.push({ op: "animal_update", at: Date.now(), payload: updated, targetId: prev._id });
+    }
+
+    await idbSet("animais", "list", list);
+    await idbSet("records", qKey, queue);
+
+    closeTransferModal();
+    if (modalOverlay) delete modalOverlay.dataset.context;
+    toast("Transferência entre fazendas registrada offline. " + selected.length + " animal(is) na fila para sincronizar.");
+
+    selectedIdsFazendas.clear();
+    await loadAnimaisOrigem();
+    updateTransferirFazendasButton();
+  });
+
+  await initMovimentacaoFazendas();
 }
 
 // ---------------- SW ----------------
@@ -2103,15 +3108,22 @@ async function renderDashboard() {
     }
   }
 
-  // --- CHART 3: PESO JMEDIO POR LOTE (Avg Weight) ---
-  // User Requested: Use data directly from 'lotes' table (nome_lote, peso_medio)
+  // --- CHART 3: PESO MÉDIO POR LOTE (KG) ---
+  // Calculado a partir dos animais: para cada lote, média do peso_atual_kg dos animais que pertencem ao lote (list_lotes ou lote)
   const lotesList = (await idbGet("lotes", "list")) || [];
 
   const loteAgg = lotesList
-    .map(l => ({
-      name: l.nome_lote || "Sem Nome",
-      avg: parseFloat(l.peso_medio) || 0
-    }))
+    .map(l => {
+      const loteId = String(l._id || "");
+      const noLote = activeAnimais.filter(a => {
+        const norm = normalizeAnimal(a);
+        const inList = norm.list_lotes && norm.list_lotes.some(lid => String(lid) === loteId);
+        return inList || String(a?.lote || "") === loteId;
+      });
+      const totalPeso = noLote.reduce((s, a) => s + toNumberOrZero(a.peso_atual_kg), 0);
+      const avg = noLote.length > 0 ? totalPeso / noLote.length : 0;
+      return { name: l.nome_lote || "Sem Nome", avg };
+    })
     .filter(i => i.avg > 0)
     .sort((a, b) => b.avg - a.avg);
 
@@ -2716,14 +3728,17 @@ async function processQueue() {
         return operacao;
       });
 
-      // Prepara o payload para envio (inclui qtd de itens enviados)
+      const pastosList = (await idbGet("pastos", "list")) || [];
+
+      // Prepara o payload para envio (inclui qtd de itens enviados e list_pasto)
       const syncPayload = {
         dados: {
           fazenda_id: fazendaId,
           user_id: userId,
           timestamp: Date.now(),
           qtd_itens: operacoes.length,
-          operacoes: operacoes
+          operacoes: operacoes,
+          list_pasto: Array.isArray(pastosList) ? pastosList : []
         }
       };
 

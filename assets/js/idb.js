@@ -1,15 +1,17 @@
 const DB_NAME = "offline_builder_db";
-const DB_VERSION = 2; // subiu versão para criar novas stores
+const DB_VERSION = 4; // v4: store organizacao (organizacao + list_fazendas)
 
 const STORES = [
     "meta",
     "drafts",
     "records",
     // "tabelas" de dados do Bubble:
+    "organizacao",
     "fazenda",
     "owner",
     "animais",
     "lotes",
+    "pastos",
     "vacinacao",
 ];
 

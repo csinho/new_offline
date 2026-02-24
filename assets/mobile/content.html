@@ -1,0 +1,446 @@
+<div class="app">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebarInner">
+                <div class="logoWrap">
+                    <img class="logo" src="https://e45a1d9b2fd81a177eaa3a70ba83bda4.cdn.bubble.io/f1771430285555x676420989400587900/Bovichain-logo.png" alt="BOVICHAIN" />
+                </div>
+
+                <nav class="nav" id="moduleNav"></nav>
+
+                <div class="sidebarFooter">
+                    <div class="sidebarUser">
+                        <div class="sidebarAvatar" id="sidebarAvatar">U</div>
+                        <div class="sidebarUserInfo">
+                            <span class="sidebarUserName" id="sidebarUserName">Usuário</span>
+                            <span class="sidebarUserEmail" id="sidebarFarmName">—</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main">
+            <section class="content">
+                <!-- ==========================================================
+                     CONTAINER P/ MÓDULO ANIMAIS (FIXO)
+                     Fica fora do #moduleView para não perder estado/eventos
+                =========================================================== -->
+                <div id="animalModuleContainer" hidden>
+
+
+                    <!-- LISTA -->
+                    <section class="moduleSection" id="modAnimaisList">
+                        <!-- Versão MOBILE (< 800px): cards -->
+                        <div class="animalListMobile">
+                            <div class="animalListHeader">
+                                <button class="animalBackBtn" id="animalBackBtn">← Voltar</button>
+                                <h1 class="animalListTitle">Animais</h1>
+                                <p class="animalListSub">Gerencie todos seus animais com facilidade</p>
+                                <div class="animalSearchWrap">
+                                    <input id="animalSearch" type="text" placeholder="Buscar por brinco ou nome..."
+                                        autocomplete="off" />
+                                    <button class="animalSearchBtn">🔍</button>
+                                </div>
+                            </div>
+                            <div class="animalCreateButtonWrap">
+                                <button class="btn primary animalCreateBtn" id="btnCreateAnimal">
+                                    ➕ Criar Novo Animal
+                                </button>
+                            </div>
+                            <div class="animalListContainer">
+                                <div id="animalCardsList" class="animalCardsList">
+                                    <!-- Cards inseridos via JS -->
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- FORMULÁRIO -->
+                    <section class="moduleSection" id="modAnimaisForm" hidden>
+
+                        <!-- Header específico do form: 3 divs (linha1: Voltar+BioID, linha2: título+subtítulo, linha3: toggle) -->
+                        <div class="pageHead">
+                            <div class="pageHeadRow1">
+                                <button class="animalFormBackBtn" id="btnVoltarTopo">← Voltar</button>
+                                <div class="pageHeadActions">
+                                    <button type="button" class="animalFormHeaderBtn" id="btnBioId">BioID</button>
+                                    <button type="button" class="animalFormHeaderBtn btnSaveAnimal" id="btnSaveHeader" disabled>Salvar Animal</button>
+                                </div>
+                            </div>
+                            <div class="pageHeadRow2">
+                                <h1 class="pageTitle" id="formTitle">Informações do animal</h1>
+                                <p class="pageSub" id="formSub">Cadastre ou atualize aqui</p>
+                            </div>
+                            <div class="pageHeadRow3">
+                                <div class="toggleRow">
+                                    <span>Cadastro avançado</span>
+                                    <label class="switch">
+                                        <input type="checkbox" id="toggleAdvanced" />
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="grid" style="align-items:start;">
+                                <!-- Fazenda selecionada -->
+                                <!-- Fazenda selecionada + Proprietário -->
+                                <div class="field" style="grid-column: span 12;">
+                                    <div class="dashedBox" style="margin-bottom:0;">
+                                        <div class="dashedLeft">
+                                            <div class="farmIcon">🏡</div>
+                                            <div class="dashedText">
+                                                <div class="k">Fazenda Selecionada</div>
+                                                <div class="v" id="fazendaSelecionadaNome">—</div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Proprietário (agora dentro do box, alinhado à direita pelo justify-content: space-between do box) -->
+                                        <div class="field" style="min-width: 260px;">
+                                            <div class="label">Proprietário <span class="req">*</span></div>
+                                            <select id="animalOwnerSelect"></select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Tipo de entrada -->
+                            <div class="field" style="margin-top:14px;">
+                                <div class="label">Selecione o tipo de entrada <span class="req">*</span></div>
+                                <div class="chips" id="tipoEntradaChips">
+                                    <div class="chip" data-value="Nascimento"><span class="box"></span>Nascimento</div>
+                                    <div class="chip active" data-value="Compra"><span class="box"></span>Compra</div>
+                                    <div class="chip" data-value="Doação"><span class="box"></span>Doação</div>
+                                    <div class="chip" data-value="Empréstimo"><span class="box"></span>Empréstimo</div>
+                                    <div class="chip" data-value="Ajuste inventário"><span class="box"></span>Ajuste
+                                        inventário</div>
+                                </div>
+                            </div>
+
+                            <!-- Linha principal -->
+                            <div class="grid" style="margin-top:6px;">
+                                <div class="field" style="grid-column: span 2;">
+                                    <div class="label">Tipo de animal <span class="req">*</span></div>
+                                    <select id="animalTipo">
+                                        <!-- Populado dinamicamente via config.js -->
+                                    </select>
+                                </div>
+
+                                <div class="field" style="grid-column: span 2;">
+                                    <div class="label">Brinco padrão <span class="req">*</span></div>
+                                    <input id="animalBrinco" placeholder="ID" />
+                                </div>
+
+                                <div class="field" style="grid-column: span 2;">
+                                    <div class="label">Sexo <span class="req">*</span></div>
+                                    <select id="animalSexo">
+                                        <!-- Populado dinamicamente via config.js -->
+                                    </select>
+                                </div>
+
+                                <div class="field" style="grid-column: span 2;">
+                                    <div class="label">Peso atual em kg</div>
+                                    <input id="animalPesoAtual" type="number" min="0" step="0.1" value="0" />
+                                </div>
+
+                                <div class="field" style="grid-column: span 2;">
+                                    <div class="label">Data de nascimento <span class="req">*</span></div>
+                                    <input id="animalNasc" type="date" />
+                                </div>
+
+                                <div class="field" style="grid-column: span 2;">
+                                    <div class="label">Idade <span class="req">*</span></div>
+                                    <div id="animalIdadeDisplay" class="animalIdadeDisplay" aria-readonly="true">—</div>
+                                </div>
+
+                                <div class="field" style="grid-column: span 2;">
+                                    <div class="label">Categoria <span class="req">*</span></div>
+                                    <select id="animalCategoria">
+                                        <!-- Populado dinamicamente via config.js -->
+                                    </select>
+                                </div>
+
+                                <div class="field" style="grid-column: span 12;">
+                                    <div class="label">Raça <span class="req">*</span></div>
+                                    <select id="animalRaca">
+                                        <!-- Populado dinamicamente via config.js -->
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- GRUPO AVANÇADO (escondido por padrão) -->
+                            <div id="advancedGroup" style="display:none;">
+                                <!-- Accordion Tabs Mobile -->
+                                <div class="accordionTabs" style="margin-top:14px;">
+                                    <!-- Accordion Item: Dados adicionais -->
+                                    <div class="accordionItem">
+                                        <div class="accordionHeader" data-accordion="dados">
+                                            <span>Dados adicionais</span>
+                                            <span class="accordionIcon">▼</span>
+                                        </div>
+                                        <div class="accordionPanel" id="tab-dados">
+                                            <div class="grid">
+                                                <div class="field" style="grid-column: span 4;">
+                                                    <div class="label">Nome completo</div>
+                                                    <input id="animalNome" placeholder="Brinco de manejo" />
+                                                </div>
+                                                <div class="field" style="grid-column: span 4;">
+                                                    <div class="label">Finalidade</div>
+                                                    <select id="animalFinalidade">
+                                                        <!-- Populado dinamicamente via config.js -->
+                                                    </select>
+                                                </div>
+                                                <div class="field" style="grid-column: span 4;">
+                                                    <div class="label">Peso no nascimento em kg</div>
+                                                    <input id="animalPesoNasc" type="number" min="0" step="0.1"
+                                                        value="0" />
+                                                </div>
+
+                                                <div class="field" style="grid-column: span 4;">
+                                                    <div class="label">SISBOV</div>
+                                                    <input id="animalSisbov" placeholder="SISBOV" />
+                                                </div>
+                                                <div class="field" style="grid-column: span 4;">
+                                                    <div class="label">Identificação eletrônica</div>
+                                                    <input id="animalEletronica"
+                                                        placeholder="Identificação eletrônica" />
+                                                </div>
+                                                <div class="field" style="grid-column: span 4;">
+                                                    <div class="label">RGD</div>
+                                                    <input id="animalRgd" placeholder="RGD" />
+                                                </div>
+
+                                                <div class="field" style="grid-column: span 4;">
+                                                    <div class="label">RGN</div>
+                                                    <input id="animalRgn" placeholder="RGN" />
+                                                </div>
+                                                <div class="field animalLoteMultiWrap" style="grid-column: span 4;">
+                                                    <div class="label">Lote</div>
+                                                    <select id="animalLoteAdd" class="animalLoteAdd">
+                                                        <option value="">Adicionar lote…</option>
+                                                    </select>
+                                                    <div id="animalLoteChips" class="animalLoteChips"></div>
+                                                </div>
+                                                <div class="field" style="grid-column: span 4;">
+                                                    <div class="label">Pasto</div>
+                                                    <select id="animalPasto">
+                                                        <option value="">Pasto</option>
+                                                    </select>
+                                                </div>
+
+                                                <div class="field" style="grid-column: span 12;">
+                                                    <div class="label">Observações</div>
+                                                    <textarea id="animalObs"
+                                                        placeholder="Digite aqui suas observações sobre o animal..."></textarea>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Accordion Item: Genealogia -->
+                                    <div class="accordionItem">
+                                        <div class="accordionHeader" data-accordion="genealogia">
+                                            <span>Genealogia</span>
+                                            <span class="accordionIcon">▼</span>
+                                        </div>
+                                        <div class="accordionPanel" id="tab-genealogia">
+                                            <div class="togglePills">
+                                                <div class="pill">
+                                                    <span>Mãe Cadastrada</span>
+                                                    <label class="switch">
+                                                        <input type="checkbox" id="maeCad" />
+                                                        <span class="slider"></span>
+                                                    </label>
+                                                </div>
+
+                                                <div class="pill">
+                                                    <span>Pai Cadastrado</span>
+                                                    <label class="switch">
+                                                        <input type="checkbox" id="paiCad" />
+                                                        <span class="slider"></span>
+                                                    </label>
+                                                </div>
+                                            </div>
+
+                                            <div class="grid">
+                                                <div class="field" style="grid-column: span 6;">
+                                                    <div class="label">Mãe (vinculado)</div>
+                                                    <input id="animalMae" placeholder="Digite o nome para pesquisar" />
+                                                </div>
+                                                <div class="field" style="grid-column: span 6;">
+                                                    <div class="label">Pai (vinculado)</div>
+                                                    <input id="animalPai" placeholder="Digite o nome para pesquisar" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Accordion Item: Aquisição -->
+                                    <div class="accordionItem">
+                                        <div class="accordionHeader" data-accordion="aquisicao">
+                                            <span>Aquisição</span>
+                                            <span class="accordionIcon">▼</span>
+                                        </div>
+                                        <div class="accordionPanel" id="tab-aquisicao">
+                                            <div class="grid">
+                                                <div class="field" style="grid-column: span 6;">
+                                                    <div class="label">Nº GTA</div>
+                                                    <input id="animalGta" placeholder="12345" />
+                                                </div>
+                                                <div class="field" style="grid-column: span 6;">
+                                                    <div class="label">Estado (UF)</div>
+                                                    <select id="animalUf">
+                                                        <!-- Populado dinamicamente via config.js -->
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- fim accordionTabs -->
+                            </div>
+                            <!-- fim advancedGroup -->
+
+                            <!-- Advanced Group End -->
+                        </div>
+
+                        <!-- Mobile Floating Save Button -->
+                        <div class="footerSave">
+                            <button class="btn primary btnSaveAnimal" id="btnSaveBottom"
+                                style="width:100%; height:56px; font-size:15px;" disabled>
+                                Salvar Animal
+                            </button>
+                        </div>
+
+                    </section>
+
+                </div>
+
+                <!-- Container GENÉRICO para outros módulos -->
+                <div id="moduleView"></div>
+
+                <!-- DASHBOARD Mobile: visível apenas abaixo de 800px -->
+                <section class="moduleSection dashMobile" id="modDashboard" aria-hidden="false">
+                    <!-- Header Personalizado -->
+                    <!-- Header Personalizado -->
+                    <div class="dashHeader">
+                        <img src="https://e45a1d9b2fd81a177eaa3a70ba83bda4.cdn.bubble.io/f1771430285555x676420989400587900/Bovichain-logo.png"
+                            class="dashLogo" alt="Logo">
+                        <br>
+                        <div class="dashProfile">
+                            <div class="dashAvatar" id="dashAvatar">U</div>
+                            <div class="dashWelcome">
+                                <div class="dashSub">Bem-vindo de volta 👋</div>
+                                <div class="dashName" id="dashName">Usuário</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Banner de status da sincronização (acima de Módulos) -->
+                    <div id="syncStatusBanner" class="syncStatusBanner"
+                        style="display:none; text-align:center; padding:12px 16px; margin:0 0 16px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">
+                        <span id="syncStatusText">Sincronização em andamento...</span>
+                    </div>
+
+                    <!-- Módulos (apenas mobile) -->
+                    <div class="dashSectionTitle">Módulos</div>
+                    <div class="dashModules" id="dashModules">
+                        <!-- Cards injetados via JS -->
+                    </div>
+
+                    <!-- Charts Section -->
+                    <!-- Charts Section -->
+                    <div class="dashSectionTitle">Sexo dos Animais</div>
+                    <div class="dashContainer">
+                        <div class="dashChartCard row-based">
+                            <!-- Donut Chart Sexo -->
+                            <div class="donutWrapper">
+                                <svg viewBox="0 0 36 36" class="circular-chart dual">
+                                    <path class="circle-bg"
+                                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                    <path class="circle" id="chartPathSexM" stroke-dasharray="0, 100"
+                                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                </svg>
+                                <div class="donutCenter" id="chartTotalSex">0<br><span
+                                        style="font-size:10px;font-weight:400;color:#c0cfec">Total</span></div>
+                            </div>
+                            <div class="chartLegend">
+                                <div><span class="dot blue"></span> Macho <b id="lblM">0</b></div>
+                                <div><span class="dot pink"></span> Fêmea <b id="lblF">0</b></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashSectionTitle">Total por Categoria</div>
+                    <div class="dashContainer">
+                        <div class="dashChartCard column-based" id="chartListCat">
+                            <!-- Injected rows -->
+                            <div style="text-align:center; color:#9ca3af; padding:20px;">Carregando...</div>
+                        </div>
+                    </div>
+
+                    <div class="dashSectionTitle">Peso Médio por Lote (KG)</div>
+                    <div class="dashContainer">
+                        <div class="dashChartCard column-based" id="chartListLote">
+                            <!-- Injected rows -->
+                            <div style="text-align:center; color:#9ca3af; padding:20px;">Carregando...</div>
+                        </div>
+                    </div>
+
+                    <div style="height: 40px;"></div>
+                </section>
+
+            </section> <!-- .content end -->
+
+            <!-- Placeholder GENÉRICO para módulos ainda não implementados -->
+            <section id="moduleView" class="moduleSection" hidden></section>
+
+            <!-- FAB Sync Button -->
+            <div id="fabSync" class="fabSync" hidden>
+                <div class="fabIcon">
+                    <svg width="30px" height="30px" viewBox="-0.1 -0.1 1.8 1.8" fill="none"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <path width="30" height="30" fill="white" fill-opacity="0.01" d="M0 0H1.8V1.8H0V0z" />
+                        <path
+                            d="M1.65 1.162c0 0.207 -0.168 0.375 -0.375 0.375 -0.067 0 -0.13 -0.018 -0.185 -0.049A0.375 0.375 0 0 1 0.9 1.162c0 -0.096 0.036 -0.184 0.096 -0.251A0.374 0.374 0 0 1 1.275 0.787c0.207 0 0.375 0.168 0.375 0.375"
+                            fill="#2F88FF" stroke="#111827" stroke-width="0.10" stroke-linecap="round"
+                            stroke-linejoin="round" />
+                        <path
+                            d="M1.275 0.45v0.337a0.374 0.374 0 0 0 -0.279 0.124A0.373 0.373 0 0 0 0.9 1.162q0 0.033 0.005 0.064a0.375 0.375 0 0 0 0.185 0.263C0.99 1.519 0.858 1.537 0.713 1.537c-0.311 0 -0.563 -0.084 -0.563 -0.188V0.45"
+                            stroke="#111827" stroke-width="0.10" stroke-linecap="round" stroke-linejoin="round" />
+                        <path
+                            d="M1.275 0.45c0 0.104 -0.252 0.188 -0.563 0.188S0.15 0.554 0.15 0.45s0.252 -0.188 0.563 -0.188 0.563 0.084 0.563 0.188"
+                            fill="#2F88FF" stroke="#111827" stroke-width="0.10" stroke-linecap="round"
+                            stroke-linejoin="round" />
+                        <path d="M0.15 1.05c0 0.104 0.252 0.188 0.563 0.188 0.068 0 0.133 -0.004 0.193 -0.011"
+                            stroke="#111827" stroke-width="0.10" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M0.15 0.75c0 0.104 0.252 0.188 0.563 0.188 0.103 0 0.2 -0.009 0.283 -0.026"
+                            stroke="#111827" stroke-width="0.10" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M1.425 1.162a0.15 0.15 0 0 1 -0.15 0.15" stroke="white" stroke-width="0.10"
+                            stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M1.125 1.162a0.15 0.15 0 0 1 0.15 -0.15" stroke="white" stroke-width="0.10"
+                            stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- LOADING OVERLAY -->
+    <div id="bootOverlay" style="display:none;">
+        <div class="bootCard">
+            <div style="text-align: center; margin-bottom: 12px;">
+                <img src="https://e45a1d9b2fd81a177eaa3a70ba83bda4.cdn.bubble.io/f1750077006501x159873402843107020/bovichain-icon.svg"
+                    alt="Icon" style="width: 48px; height: 48px; border-radius: 12px;" />
+            </div>
+            <div class="bootTitle">Sincronizando dados…</div>
+            <div class="bootSub" id="bootSub">Aguarde, estamos preparando o modo offline.</div>
+            <div class="bootBar">
+                <div class="bootBarFill"></div>
+            </div>
+            <div class="bootHint" id="bootHint"></div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
