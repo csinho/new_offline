@@ -27,6 +27,37 @@ const state = {
   // NOVO: controle de view do módulo animais
   animalView: "list", // "list" | "form"
   animalEditingId: null, // _id do animal em edição (ou null = criando)
+  // Chart.js: instâncias do gráfico Sexo dos Animais (doughnut) para destruir ao atualizar
+  chartSex: null,
+  chartSexDesktop: null,
+  // Gráfico de barras Peso médio por lote (KG)
+  chartPesoLote: null,
+  chartPesoLoteDesktop: null,
+};
+
+/** Plugin Chart.js: desenha Total no centro do doughnut. Opções em chart.options.plugins.centerText: valueFontSize, labelFontSize */
+const chartCenterTextPlugin = {
+  id: "centerText",
+  afterDraw(chart) {
+    const { ctx } = chart;
+    const meta = chart.getDatasetMeta(0);
+    if (!meta || !meta.data || !meta.data[0]) return;
+    const opts = chart.options?.plugins?.centerText || {};
+    const valueFontSize = opts.valueFontSize ?? 26;
+    const labelFontSize = opts.labelFontSize ?? 12;
+    const total = (chart.data.datasets[0].data || []).reduce((a, b) => a + b, 0);
+    const { x, y } = meta.data[0];
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#111827";
+    ctx.font = `700 ${valueFontSize}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+    ctx.fillText(String(total), x, y - 6);
+    ctx.fillStyle = "#6b7280";
+    ctx.font = `500 ${labelFontSize}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+    ctx.fillText("Total", x, y + (valueFontSize * 0.4));
+    ctx.restore();
+  }
 };
 
 /** Timer do polling de status da sincronização (id_response). */
@@ -3375,21 +3406,49 @@ async function renderDashboard() {
   const machos = activeAnimais.filter(a => a.sexo === "M").length;
   const femeas = activeAnimais.filter(a => a.sexo === "F").length;
 
-  // Update Text
+  // Update Text (centro + legenda)
   const elTotalSex = $("#chartTotalSex");
   if (elTotalSex) elTotalSex.innerHTML = `${total}<br><span style="font-size:10px;font-weight:400;color:#6b7280">Total</span>`;
 
   const lblM = $("#lblM"); if (lblM) lblM.textContent = machos;
   const lblF = $("#lblF"); if (lblF) lblF.textContent = femeas;
 
-  // Update Visual Path
-  const pctM = total > 0 ? (machos / total) * 100 : 0;
-  const pathSexM = document.querySelector("#chartPathSexM");
-  if (pathSexM) {
-    pathSexM.style.strokeDasharray = `${pctM}, 100`;
-    pathSexM.style.animation = 'none';
-    pathSexM.offsetHeight;
-    pathSexM.style.animation = 'progress 1s ease-out forwards';
+  // Chart.js doughnut (visual igual ao teste.html / print: centro, cores, bordas, legenda)
+  if (typeof Chart !== "undefined") {
+    const canvasMobile = document.getElementById("chartSexCanvas");
+    if (canvasMobile) {
+      if (state.chartSex) {
+        state.chartSex.destroy();
+        state.chartSex = null;
+      }
+      const centerDivMobile = canvasMobile.closest(".donutChartWrap")?.querySelector(".donutCenter");
+      if (centerDivMobile) centerDivMobile.style.display = "none";
+      // Mobile: legenda lateral (HTML chartLegendSex) — não esconder; Chart.js legend fica desligada
+      state.chartSex = new Chart(canvasMobile, {
+        type: "doughnut",
+        data: {
+          labels: ["Macho", "Fêmea"],
+          datasets: [{
+            data: [machos, femeas],
+            backgroundColor: ["#2196f3", "#e91e63"],
+            borderWidth: 0,
+            borderRadius: 12,
+            spacing: 8,
+            hoverOffset: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: "68%",
+          plugins: {
+            legend: { display: false },
+            centerText: { valueFontSize: 18, labelFontSize: 10 }
+          }
+        },
+        plugins: [chartCenterTextPlugin]
+      });
+    }
   }
 
   // --- CHART 2: CATEGORIA (Count) ---
@@ -3431,7 +3490,7 @@ async function renderDashboard() {
   const lotesListRaw = (await idbGet("lotes", "list")) || [];
   const lotesList = filterByCurrentFazenda(lotesListRaw);
 
-  const loteAgg = lotesList
+  const loteAggAll = lotesList
     .map(l => {
       const loteId = String(l._id || "");
       const noLote = activeAnimais.filter(a => {
@@ -3443,31 +3502,76 @@ async function renderDashboard() {
       const avg = noLote.length > 0 ? totalPeso / noLote.length : 0;
       return { name: l.nome_lote || "Sem Nome", avg };
     })
-    .filter(i => i.avg > 0)
     .sort((a, b) => b.avg - a.avg);
 
-  const elListLote = $("#chartListLote");
-  if (elListLote) {
-    if (loteAgg.length === 0) {
-      elListLote.innerHTML = `<div style="text-align:center; color:#9ca3af; padding:20px;">Nenhum dado de peso</div>`;
+  // --- CHART: Peso médio por lote (KG) — barra vertical, estilo do print ---
+  const wrapPesoLote = $("#chartListLote")?.querySelector(".chartPesoLoteWrap");
+  const emptyPesoLote = $("#chartListLoteEmpty");
+  if (wrapPesoLote && emptyPesoLote) {
+    if (loteAggAll.length === 0) {
+      wrapPesoLote.style.display = "none";
+      emptyPesoLote.style.display = "block";
     } else {
-      elListLote.innerHTML = "";
-      const maxAvg = loteAgg[0].avg;
-      loteAgg.slice(0, 5).forEach(item => { // Top 5
-        const visualPct = (item.avg / maxAvg) * 100;
-
-        const row = document.createElement("div");
-        row.innerHTML = `
-                <div class="statRow">
-                    <span class="statLabel">${escapeHtml(item.name)}</span>
-                    <span class="statVal">${item.avg.toFixed(1)} kg</span>
-                </div>
-                <div class="statBarBg">
-                    <div class="statBarFill" style="width: ${visualPct}%"></div>
-                </div>
-              `;
-        elListLote.appendChild(row);
-      });
+      wrapPesoLote.style.display = "block";
+      emptyPesoLote.style.display = "none";
+      if (typeof Chart !== "undefined") {
+        const canvasPeso = document.getElementById("chartPesoLoteCanvas");
+        if (canvasPeso) {
+          if (state.chartPesoLote) {
+            state.chartPesoLote.destroy();
+            state.chartPesoLote = null;
+          }
+          state.chartPesoLote = new Chart(canvasPeso, {
+            type: "bar",
+            data: {
+              labels: loteAggAll.map(i => i.name),
+              datasets: [{
+                label: "Peso médio por lote (KG)",
+                data: loteAggAll.map(i => i.avg),
+                backgroundColor: "#4b5563",
+                borderColor: "#4b5563",
+                borderWidth: 0,
+                borderRadius: { topLeft: 6, topRight: 6 },
+                borderSkipped: false
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              indexAxis: "x",
+              scales: {
+                y: {
+                  beginAtZero: true,
+                  grid: { color: "rgba(0,0,0,0.06)" },
+                  ticks: {
+                    callback(value) {
+                      return Number(value).toLocaleString("pt-BR");
+                    }
+                  }
+                },
+                x: {
+                  grid: { display: false },
+                  ticks: { maxRotation: 45, minRotation: 45 }
+                }
+              },
+              plugins: {
+                legend: {
+                  display: true,
+                  position: "bottom",
+                  labels: {
+                    usePointStyle: true,
+                    pointStyle: "circle",
+                    boxWidth: 8,
+                    boxHeight: 8,
+                    color: "#374151",
+                    font: { size: 12, weight: "500" }
+                  }
+                }
+              }
+            }
+          });
+        }
+      }
     }
   }
 
@@ -3488,12 +3592,61 @@ async function renderDashboard() {
   if (elTotalSexD) elTotalSexD.innerHTML = `${total}<br><span style="font-size:10px;font-weight:400;color:#6b7280">Total</span>`;
   const lblMD = $("#lblMDesktop"); if (lblMD) lblMD.textContent = machos;
   const lblFD = $("#lblFDesktop"); if (lblFD) lblFD.textContent = femeas;
-  const pathSexMD = document.querySelector("#chartPathSexMDesktop");
-  if (pathSexMD) {
-    pathSexMD.style.strokeDasharray = `${pctM}, 100`;
-    pathSexMD.style.animation = "none";
-    pathSexMD.offsetHeight;
-    pathSexMD.style.animation = "progress 1s ease-out forwards";
+
+  if (typeof Chart !== "undefined") {
+    const canvasDesktop = document.getElementById("chartSexCanvasDesktop");
+    if (canvasDesktop) {
+      if (state.chartSexDesktop) {
+        state.chartSexDesktop.destroy();
+        state.chartSexDesktop = null;
+      }
+      const centerDivDesktop = canvasDesktop.closest(".donutChartWrap")?.querySelector(".donutCenter");
+      if (centerDivDesktop) centerDivDesktop.style.display = "none";
+      const legendWrapDesktop = $("#chartLegendSexDesktop");
+      if (legendWrapDesktop) legendWrapDesktop.style.display = "none";
+      state.chartSexDesktop = new Chart(canvasDesktop, {
+        type: "doughnut",
+        data: {
+          labels: ["Macho", "Fêmea"],
+          datasets: [{
+            data: [machos, femeas],
+            backgroundColor: ["#2196f3", "#e91e63"],
+            borderWidth: 0,
+            borderRadius: 12,
+            spacing: 8,
+            hoverOffset: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: "68%",
+          plugins: {
+            legend: {
+              position: "bottom",
+              labels: {
+                usePointStyle: true,
+                pointStyle: "circle",
+                boxWidth: 8,
+                boxHeight: 8,
+                padding: 12,
+                color: "#374151",
+                font: { size: 12, weight: "500" },
+                generateLabels: (chart) => {
+                  const ds = chart.data.datasets[0];
+                  return (chart.data.labels || []).map((label, i) => ({
+                    text: `${label} ${ds.data[i] ?? 0}`,
+                    fillStyle: ds.backgroundColor[i],
+                    index: i
+                  }));
+                }
+              }
+            }
+          }
+        },
+        plugins: [chartCenterTextPlugin]
+      });
+    }
   }
 
   const elListCatD = $("#chartListCatDesktop");
@@ -3512,19 +3665,73 @@ async function renderDashboard() {
     }
   }
 
-  const elListLoteD = $("#chartListLoteDesktop");
-  if (elListLoteD) {
-    if (loteAgg.length === 0) {
-      elListLoteD.innerHTML = `<div style="text-align:center; color:#9ca3af; padding:20px;">Nenhum dado de peso</div>`;
+  const wrapPesoLoteD = $("#chartListLoteDesktop")?.querySelector(".chartPesoLoteWrap");
+  const emptyPesoLoteD = $("#chartListLoteDesktopEmpty");
+  if (wrapPesoLoteD && emptyPesoLoteD) {
+    if (loteAggAll.length === 0) {
+      wrapPesoLoteD.style.display = "none";
+      emptyPesoLoteD.style.display = "block";
     } else {
-      elListLoteD.innerHTML = "";
-      const maxAvg = loteAgg[0].avg;
-      loteAgg.slice(0, 5).forEach(item => {
-        const visualPct = (item.avg / maxAvg) * 100;
-        const row = document.createElement("div");
-        row.innerHTML = `<div class="statRow"><span class="statLabel">${escapeHtml(item.name)}</span><span class="statVal">${item.avg.toFixed(1)} kg</span></div><div class="statBarBg"><div class="statBarFill" style="width: ${visualPct}%"></div></div>`;
-        elListLoteD.appendChild(row);
-      });
+      wrapPesoLoteD.style.display = "block";
+      emptyPesoLoteD.style.display = "none";
+      if (typeof Chart !== "undefined") {
+        const canvasPesoD = document.getElementById("chartPesoLoteCanvasDesktop");
+        if (canvasPesoD) {
+          if (state.chartPesoLoteDesktop) {
+            state.chartPesoLoteDesktop.destroy();
+            state.chartPesoLoteDesktop = null;
+          }
+          state.chartPesoLoteDesktop = new Chart(canvasPesoD, {
+            type: "bar",
+            data: {
+              labels: loteAggAll.map(i => i.name),
+              datasets: [{
+                label: "Peso médio por lote (KG)",
+                data: loteAggAll.map(i => i.avg),
+                backgroundColor: "#4b5563",
+                borderColor: "#4b5563",
+                borderWidth: 0,
+                borderRadius: { topLeft: 6, topRight: 6 },
+                borderSkipped: false
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              indexAxis: "x",
+              scales: {
+                y: {
+                  beginAtZero: true,
+                  grid: { color: "rgba(0,0,0,0.06)" },
+                  ticks: {
+                    callback(value) {
+                      return Number(value).toLocaleString("pt-BR");
+                    }
+                  }
+                },
+                x: {
+                  grid: { display: false },
+                  ticks: { maxRotation: 45, minRotation: 45 }
+                }
+              },
+              plugins: {
+                legend: {
+                  display: true,
+                  position: "bottom",
+                  labels: {
+                    usePointStyle: true,
+                    pointStyle: "circle",
+                    boxWidth: 8,
+                    boxHeight: 8,
+                    color: "#374151",
+                    font: { size: 12, weight: "500" }
+                  }
+                }
+              }
+            }
+          });
+        }
+      }
     }
   }
 }

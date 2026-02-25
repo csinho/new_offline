@@ -1,4 +1,4 @@
-const CACHE = "bovichain-offline-v7";
+const CACHE = "bovichain-offline-v8";
 const SHELL = [
     "./",
     "./index.html",
@@ -7,6 +7,7 @@ const SHELL = [
     "./assets/js/app.js",
     "./assets/js/idb.js",
     "./assets/js/config.js",
+    "./assets/vendor/chart.umd.min.js",
     "./assets/mobile/content.html",
     "./assets/desktop/content.html"
 ];
@@ -17,6 +18,7 @@ function isShellRequest(url) {
         path.endsWith("manifest.json") ||
         path.endsWith("style.css") ||
         path.endsWith("app.js") || path.endsWith("idb.js") || path.endsWith("config.js") ||
+        path.endsWith("chart.umd.min.js") ||
         path.endsWith("mobile/content.html") || path.endsWith("desktop/content.html");
 }
 

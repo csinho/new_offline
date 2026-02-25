@@ -371,14 +371,11 @@
                         <div class="dashDesktopChartBlock">
                             <div class="dashSectionTitle">Sexo dos Animais</div>
                             <div class="dashChartCard row-based">
-                                <div class="donutWrapper">
-                                    <svg viewBox="0 0 36 36" class="circular-chart dual">
-                                        <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                                        <path class="circle" id="chartPathSexMDesktop" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                                    </svg>
+                                <div class="donutWrapper donutChartWrap">
+                                    <canvas id="chartSexCanvasDesktop" aria-label="Gráfico sexo dos animais"></canvas>
                                     <div class="donutCenter" id="chartTotalSexDesktop">0<br><span style="font-size:10px;font-weight:400;color:#6b7280">Total</span></div>
                                 </div>
-                                <div class="chartLegend">
+                                <div class="chartLegend" id="chartLegendSexDesktop">
                                     <div><span class="dot blue"></span> Macho <b id="lblMDesktop">0</b></div>
                                     <div><span class="dot pink"></span> Fêmea <b id="lblFDesktop">0</b></div>
                                 </div>
@@ -389,8 +386,13 @@
                             <div class="dashChartCard column-based" id="chartListCatDesktop"></div>
                         </div>
                         <div class="dashDesktopChartBlock">
-                            <div class="dashSectionTitle">Peso Médio por Lote (KG)</div>
-                            <div class="dashChartCard column-based" id="chartListLoteDesktop"></div>
+                            <div class="dashSectionTitle">Peso médio por lote (KG)</div>
+                            <div class="dashChartCard column-based" id="chartListLoteDesktop">
+                                <div class="chartPesoLoteWrap">
+                                    <canvas id="chartPesoLoteCanvasDesktop" aria-label="Peso médio por lote"></canvas>
+                                </div>
+                                <div id="chartListLoteDesktopEmpty" class="chartLoteEmptyMsg" style="display:none;">Nenhum dado de peso</div>
+                            </div>
                         </div>
                     </div>
                 </section>

@@ -1700,8 +1700,8 @@
         }
         /* Chart Sexo dos Animais: maior no desktop */
         .dashDesktopCharts .dashDesktopChartBlock:first-child .donutWrapper {
-            width: 180px;
-            height: 180px;
+            width: 220px;
+            height: 220px;
         }
         .dashDesktopCharts .dashDesktopChartBlock:first-child .donutCenter {
             font-size: 16px;
@@ -2108,11 +2108,33 @@
             gap: 10px;
         }
 
+        .chartPesoLoteWrap {
+            position: relative;
+            height: 280px;
+            width: 100%;
+        }
+
+        .chartPesoLoteWrap canvas {
+            max-height: 280px;
+        }
+
+        .chartLoteEmptyMsg {
+            text-align: center;
+            color: #9ca3af;
+            padding: 20px;
+        }
+
         /* Donut Chart */
         .donutWrapper {
-            width: 100px;
-            height: 100px;
+            width: 170px;
+            height: 170px;
             position: relative;
+        }
+
+        .donutChartWrap canvas {
+            width: 100% !important;
+            height: 100% !important;
+            display: block;
         }
 
         .donutCenter {
@@ -2168,11 +2190,11 @@
         }
 
         .dot.blue {
-            background: #3b82f6;
+            background: #2196f3;
         }
 
         .dot.pink {
-            background: #ec4899;
+            background: #e91e63;
         }
 
         /* List Items (Cat, Lote) */
