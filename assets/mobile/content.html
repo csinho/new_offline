@@ -343,6 +343,13 @@
                         <span id="syncStatusText">Sincronização em andamento...</span>
                     </div>
 
+                    <!-- Card: Dados pendentes de sincronização (mobile) -->
+                    <div id="dashPendingSyncWrap" class="dashPendingSyncCard" style="display:none; margin-bottom:16px;">
+                        <div class="dashPendingSyncTitle">Dados pendentes de sincronização</div>
+                        <div id="dashPendingSyncList" class="dashPendingSyncList"></div>
+                        <div id="dashPendingSyncPagination" class="dashPendingSyncPaginationWrap"></div>
+                    </div>
+
                     <!-- Módulos (apenas mobile) -->
                     <div class="dashSectionTitle">Módulos</div>
                     <div class="dashModules" id="dashModules">
@@ -427,20 +434,6 @@
         </main>
     </div>
 
-    <!-- LOADING OVERLAY -->
-    <div id="bootOverlay" style="display:none;">
-        <div class="bootCard">
-            <div style="text-align: center; margin-bottom: 12px;">
-                <img src="https://e45a1d9b2fd81a177eaa3a70ba83bda4.cdn.bubble.io/f1750077006501x159873402843107020/bovichain-icon.svg"
-                    alt="Icon" style="width: 48px; height: 48px; border-radius: 12px;" />
-            </div>
-            <div class="bootTitle">Sincronizando dados…</div>
-            <div class="bootSub" id="bootSub">Aguarde, estamos preparando o modo offline.</div>
-            <div class="bootBar">
-                <div class="bootBarFill"></div>
-            </div>
-            <div class="bootHint" id="bootHint"></div>
-        </div>
-    </div>
+    <!-- Overlay de loading fica no index.html (não duplicar aqui) -->
 
     <div class="toast" id="toast"></div>

@@ -211,6 +211,29 @@ export const ENTRY_TYPE_LIST = [
 ];
 
 // ========================================================
+// MÓDULOS DO APP (nomes para usar no Bubble ao criar módulos)
+// ========================================================
+/**
+ * Lista de módulos do sistema. Usar estes mesmos nomes no Bubble ao configurar
+ * módulos acessíveis (ex.: get_modulos deve retornar estes keys).
+ * frontend: "pronto" = tela implementada no PWA; "pendente" = ainda não.
+ */
+export const MODULES = [
+  { key: "animal", label: "Animais", frontend: "pronto" },
+  { key: "movimentacao", label: "Movimentações", frontend: "pronto" },
+  { key: "saida_animais", label: "Saída de Animais", frontend: "pronto" },
+  { key: "vacinacao", label: "Vacinação", frontend: "pendente" },
+  { key: "manejo", label: "Manejo", frontend: "pendente" },
+  { key: "organizacao", label: "Organização", frontend: "pendente" },
+  { key: "fazenda", label: "Fazenda", frontend: "pendente" },
+  { key: "colaboradores", label: "Colaboradores", frontend: "pendente" },
+  { key: "sanidade", label: "Sanidade", frontend: "pendente" },
+  { key: "reproducao", label: "Reprodução", frontend: "pendente" },
+  { key: "nutricao", label: "Nutrição", frontend: "pendente" },
+  { key: "financeiro", label: "Financeiro", frontend: "pendente" },
+];
+
+// ========================================================
 // CONFIGURAÇÕES DE SINCRONIZAÇÃO
 // ========================================================
 

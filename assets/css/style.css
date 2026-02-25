@@ -66,7 +66,7 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            padding: 16px 12px;
+            padding: 28px 12px 16px;
             min-height: 0;
         }
 
@@ -95,12 +95,34 @@
             overflow-y: auto;
         }
 
+        /* Timeline: só os módulos (Dashboard fica fora) — espaço entre Dashboard e a timeline */
+        .navTimeline {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 1;
+            min-height: 0;
+            position: relative;
+            padding-left: 28px;
+            margin-top: 24px;
+        }
+        .navTimeline::before {
+            content: "";
+            position: absolute;
+            left: 10px;
+            top: 18px;
+            bottom: 18px;
+            width: 2px;
+            background: #e5e7eb;
+            border-radius: 1px;
+        }
+
         .navItem {
             display: flex;
             align-items: center;
             gap: 12px;
-            padding: 12px 14px;
-            border-radius: 999px;
+            padding: 10px 12px 10px 14px;
+            border-radius: 10px;
             cursor: pointer;
             user-select: none;
             color: var(--text);
@@ -117,9 +139,35 @@
             background: var(--btn);
             color: var(--btnText);
             box-shadow: 0 2px 8px rgba(237, 255, 119, .35);
-            border: #1118279c;
-            border-width: 1px;
-            border-style: solid;
+            border: 1px solid rgba(17, 24, 39, .6);
+        }
+
+        .navItem {
+            position: relative;
+        }
+
+        /* Círculo da timeline (número do passo) — alinhado à linha */
+        .navTimelineDot {
+            position: absolute;
+            left: -28px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #c6e012;
+            color: #111827;
+            font-size: 11px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            z-index: 1;
+        }
+        .navItem.active .navTimelineDot {
+            background: #111827;
+            color: var(--btn);
         }
 
         .navIcon {
@@ -136,6 +184,11 @@
 
         .navItem.active .navIcon {
             background: rgba(18, 24, 38, .12);
+        }
+
+        .navLabel {
+            flex: 1;
+            min-width: 0;
         }
 
         /* Rodapé do sidebar: usuário + logout */
@@ -783,6 +836,18 @@
                 gap: 16px;
                 flex-wrap: nowrap;
                 /* Não quebra linha */
+            }
+
+            .navTimeline::before {
+                display: none;
+            }
+            .navTimeline {
+                padding-left: 20px;
+            }
+            .navTimelineDot {
+                position: static;
+                transform: none;
+                margin-right: 2px;
             }
 
             .navItem {
@@ -1754,6 +1819,224 @@
         /* First title adjustment */
         .dashSectionTitle:first-of-type {
             margin-top: 0;
+        }
+
+        /* Card: dados pendentes de sincronização (mobile + desktop) */
+        .dashPendingSyncCard {
+            background: #fff;
+            border-radius: 12px;
+            padding: 14px 16px;
+            border: 1px solid rgba(17, 24, 39, 0.08);
+            box-shadow: 0 4px 12px rgba(17, 24, 39, 0.06);
+        }
+        .dashPendingSyncTitle {
+            font-size: 12px;
+            font-weight: 800;
+            color: #111827;
+            margin-bottom: 10px;
+        }
+        .dashPendingSyncList {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 160px;
+            overflow-y: auto;
+        }
+        .dashPendingSyncItem {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12px;
+            padding: 6px 8px;
+            background: #f9fafb;
+            border-radius: 8px;
+        }
+        .dashPendingSyncGroupRow {
+            cursor: pointer;
+        }
+        .dashPendingSyncGroupRow:hover {
+            background: #eff6ff;
+        }
+        .dashPendingSyncGroupRow:active {
+            background: #dbeafe;
+        }
+        /* Modal de detalhes – pendências de sincronização */
+        .dashPendingSyncModalOverlay {
+            display: flex;
+            position: fixed;
+            inset: 0;
+            z-index: 999999;
+            background: rgba(17, 24, 39, 0.35);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .dashPendingSyncModalCard {
+            background: #fff;
+            border-radius: 20px;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.18), 0 0 1px rgba(0, 0, 0, 0.08);
+            max-width: 420px;
+            width: 100%;
+            max-height: 85vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            animation: dashPendingSyncModalIn 0.25s ease;
+        }
+        @keyframes dashPendingSyncModalIn {
+            from { opacity: 0; transform: scale(0.94) translateY(-8px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .dashPendingSyncModalHeader {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 20px 20px 16px;
+            background: linear-gradient(135deg, #f8faf0 0%, #fbffe3 100%);
+            border-bottom: 1px solid rgba(17, 24, 39, 0.08);
+        }
+        .dashPendingSyncModalIcon {
+            font-size: 22px;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+        .dashPendingSyncModalTitle {
+            margin: 0;
+            font-size: 15px;
+            font-weight: 800;
+            color: #111827;
+            letter-spacing: -0.02em;
+            flex: 1;
+            min-width: 0;
+        }
+        .dashPendingSyncModalClose {
+            width: 36px;
+            height: 36px;
+            border: none;
+            border-radius: 12px;
+            background: rgba(17, 24, 39, 0.06);
+            color: #6b7280;
+            font-size: 22px;
+            line-height: 1;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            flex-shrink: 0;
+            transition: background 0.2s, color 0.2s;
+        }
+        .dashPendingSyncModalClose:hover {
+            background: rgba(17, 24, 39, 0.1);
+            color: #111827;
+        }
+        .dashPendingSyncModalBody {
+            padding: 16px 20px 20px;
+            overflow-y: auto;
+            flex: 1;
+            min-height: 0;
+        }
+        .dashPendingSyncModalItem {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: #f9fafb;
+            margin-bottom: 8px;
+            font-size: 14px;
+            border: 1px solid transparent;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .dashPendingSyncModalItem:last-child {
+            margin-bottom: 0;
+        }
+        .dashPendingSyncModalItem:hover {
+            background: #f3f4f6;
+        }
+        .dashPendingSyncModalItemNum {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: var(--btn, #edff77);
+            color: #111827;
+            font-weight: 800;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            box-shadow: 0 2px 8px rgba(237, 255, 119, 0.4);
+        }
+        .dashPendingSyncModalItemText {
+            color: #374151;
+            font-weight: 600;
+            flex: 1;
+            min-width: 0;
+        }
+        .dashPendingSyncPaginationWrap {
+            margin-top: 12px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(17, 24, 39, 0.08);
+        }
+        .dashPendingSyncPagination {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+        .dashPendingSyncPageBtn {
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 700;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+            background: #fff;
+            color: #374151;
+            cursor: pointer;
+        }
+        .dashPendingSyncPageBtn:hover:not(:disabled) {
+            background: #edff77;
+            border-color: rgba(17, 24, 39, 0.15);
+        }
+        .dashPendingSyncPageBtn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .dashPendingSyncPageInfo {
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+        }
+        .dashPendingSyncOrder {
+            flex: 0 0 22px;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: #edff77;
+            color: #111827;
+            font-weight: 800;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .dashPendingSyncLabel {
+            flex: 0 0 auto;
+            font-weight: 700;
+            color: #374151;
+        }
+        .dashPendingSyncDetail {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: #6b7280;
         }
 
         .dashModules {
@@ -2764,23 +3047,31 @@
 
 /* ==========================================================
    MÓDULO MOVIMENTAÇÕES (Lotes / Pastos / Fazendas)
+   Mesmo layout de abas do módulo Saída de Animais (card branco, sombra, underline ativo)
    ========================================================== */
 .movPage {
-  max-width: 1220px;
+  max-width: 100%;
   margin: 0 auto;
-  padding: 0 16px 24px;
+  padding: 20px;
   width: 100%;
+  background: var(--bg-page);
+  min-height: 100%;
+  box-sizing: border-box;
 }
 
 .movTabs {
   display: flex;
   gap: 0;
-  border-bottom: 1px solid var(--border, #e5e7eb);
-  margin-bottom: 20px;
+  border: 1px solid var(--border, #e5e7eb);
+  margin-bottom: 24px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 0 8px 0 0;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 }
 
 .movTab {
-  padding: 10px 20px;
+  padding: 12px 20px;
   font-size: 14px;
   font-weight: 500;
   color: var(--muted, #6b7280);
@@ -2798,10 +3089,15 @@
 .movTab.active {
   color: var(--text, #111827);
   border-bottom-color: var(--btn, #c6e012);
+  font-weight: 600;
 }
 
 .movContent {
-  padding-top: 8px;
+  padding: 32px 24px 24px 24px;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 }
 
 .movHead {
@@ -2810,6 +3106,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  margin-top: 24px;
   margin-bottom: 24px;
 }
 
@@ -3335,4 +3632,225 @@
 
 .movModalBtnConfirmIcon {
   font-size: 16px;
+}
+
+/* ==========================================================
+   MÓDULO SAÍDA DE ANIMAIS (Venda, Morte, Empréstimo, Ajuste, Doação)
+   ========================================================== */
+.saPage {
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 20px;
+  width: 100%;
+  background: var(--bg-page);
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+.saTabs {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border, #e5e7eb);
+  margin-bottom: 24px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 0 8px 0 0;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.saTab {
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted, #6b7280);
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.saTab:hover {
+  color: var(--text, #111827);
+}
+
+.saTab.active {
+  color: var(--text, #111827);
+  border-bottom-color: var(--btn, #c6e012);
+  font-weight: 600;
+}
+
+.saContent {
+  padding: 32px 24px 24px 24px;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.saTitle {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text, #111827);
+  margin: 24px 0 6px 0;
+}
+
+.saSub {
+  font-size: 14px;
+  color: var(--muted, #6b7280);
+  margin: 0 0 20px 0;
+}
+
+.saActionBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+/* Mesmo tamanho e forma do search da listagem de animais (pill, 36px altura, ícone lupa) */
+.saSearchWrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: var(--radius, 16px);
+  padding: 6px 12px;
+  height: 36px;
+  min-height: 36px;
+  flex: 1;
+  min-width: 0;
+}
+
+.saSearchIcon {
+  font-size: 12px;
+  color: var(--muted, #6b7280);
+  flex-shrink: 0;
+}
+
+.saSearchWrap .saSearch {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 12px;
+  color: var(--text, #111827);
+}
+
+.saSearchWrap .saSearch::placeholder {
+  color: var(--muted, #9ca3af);
+}
+
+.saSearchWrap .saSearch:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.saSearchWrap:focus-within {
+  box-shadow: none;
+  border-color: var(--border, #e5e7eb);
+}
+
+.saBtnNew {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--btn, #edff77);
+  color: #111827;
+  border: none;
+  border-radius: var(--radius, 16px);
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+
+.saBtnNew:hover {
+  background: #d4eb5c;
+}
+
+.saBtnNewIcon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.saFilterBtn {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: var(--radius, 16px);
+  background: var(--card, #fff);
+  cursor: pointer;
+  color: var(--muted, #6b7280);
+  flex-shrink: 0;
+}
+
+.saFilterBtn:hover {
+  background: #f9fafb;
+  color: var(--text, #111827);
+}
+
+.saFilterIcon {
+  width: 20px;
+  height: 20px;
+}
+
+.saCard {
+  background: #fff;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  padding: 32px 24px;
+}
+
+.saEmptyState {
+  text-align: center;
+  padding: 48px 24px;
+}
+
+.saEmptyIcon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.8;
+}
+
+.saEmptyTitle {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text, #111827);
+  margin: 0 0 8px 0;
+}
+
+.saEmptySub {
+  font-size: 14px;
+  color: var(--muted, #6b7280);
+  margin: 0 0 24px 0;
+  max-width: 360px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.saBtnNewCenter {
+  margin: 0 auto;
+}
+
+/* Barra de progresso da sincronização em modo indeterminado (durante polling) */
+#syncProgressBar.syncProgressBarIndeterminate {
+  width: 30% !important;
+  animation: syncProgressIndeterminate 1.5s ease-in-out infinite;
+}
+@keyframes syncProgressIndeterminate {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(233%); }
 }

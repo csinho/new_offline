@@ -1,4 +1,4 @@
-import { idbGet, idbSet, idbClear, idbDel } from "./idb.js";
+import { idbGet, idbSet, idbClear, idbDel, idbGetAllKeys } from "./idb.js";
 import { 
   API_CONFIG, 
   UF_MAP, 
@@ -8,7 +8,7 @@ import {
   CATEGORIA_LIST,
   SEXO_LIST,
   TIPO_ANIMAL_LIST,
-  SYNC_CONFIG 
+  SYNC_CONFIG,
 } from "./config.js";
 
 const $ = (sel) => document.querySelector(sel);
@@ -126,10 +126,19 @@ function showBoot(msg, hint = "") {
   if (h) h.textContent = hint || "";
 }
 
+const BOOT_MIN_SHOW_MS = 600;
+
 function hideBoot() {
   const o = $("#bootOverlay");
   if (!o) return;
-  o.style.display = "none";
+  const start = typeof window.__bootStart === "number" ? window.__bootStart : Date.now();
+  const elapsed = Date.now() - start;
+  const delay = Math.max(0, BOOT_MIN_SHOW_MS - elapsed);
+  if (delay > 0) {
+    setTimeout(() => { o.style.display = "none"; }, delay);
+  } else {
+    o.style.display = "none";
+  }
 }
 
 function escapeHtml(s) {
@@ -171,13 +180,13 @@ function setPageHeadTexts(title, sub) {
 // ---------------- URL / modules ------------
 
 const MODULE_CATALOG = {
-  animal_create: {
-    key: "animal_create",
+  animal: {
+    key: "animal",
     label: "Animais",
-    icon: "🐮", // Added icon
+    icon: "🐮",
     pageTitle: "Animais",
     pageSub: "Gerencie todos os seus animais com facilidade",
-    storageKey: "animais", // store do IDB
+    storageKey: "animais",
   },
   vaccine: {
     key: "vaccine",
@@ -187,13 +196,21 @@ const MODULE_CATALOG = {
     pageSub: "Registre vacinas offline",
     storageKey: "vacinacao",
   },
-  lotes: {
-    key: "lotes",
-    label: "Lotes",
+  movimentacao: {
+    key: "movimentacao",
+    label: "Movimentações",
     icon: "📦",
-    pageTitle: "Gerenciar Lotes",
-    pageSub: "Organize seus animais em lotes",
+    pageTitle: "Movimentações",
+    pageSub: "Entre lotes, pastos e fazendas",
     storageKey: "lotes",
+  },
+  saida_animais: {
+    key: "saida_animais",
+    label: "Saída de Animais",
+    icon: "🚪",
+    pageTitle: "Saída de Animais",
+    pageSub: "Venda, morte, empréstimo, ajuste e doação",
+    storageKey: "saida_animais",
   },
   manejo: {
     key: "manejo",
@@ -290,7 +307,7 @@ async function parseFromURL() {
       const fazendaId = String(data?.fazenda || "").trim();
       const ownerId = String(data?.user || data?.owner || "").trim();
       const modulesArray = Array.isArray(data?.modules) ? data.modules : [];
-      const modules = modulesArray.length > 0 ? modulesArray : ["animal_create"];
+      const modules = modulesArray.length > 0 ? modulesArray : ["animal"];
       
       return {
         modules,
@@ -305,7 +322,7 @@ async function parseFromURL() {
       );
       // Retorna valores vazios para não prosseguir sem dados válidos
       return {
-        modules: ["animal_create"],
+        modules: ["animal"],
         fazendaId: "",
         ownerId: "",
       };
@@ -320,7 +337,7 @@ async function parseFromURL() {
   const ownerId = (u.searchParams.get("user") || u.searchParams.get("owner") || "").trim();
 
   return {
-    modules: modules.length ? modules : ["animal_create"],
+    modules: modules.length ? modules : ["animal"],
     fazendaId,
     ownerId,
   };
@@ -337,6 +354,18 @@ function buildModules(keys) {
 }
 
 // ---------------- Bootstrap Bubble data ----------------
+/** Fazenda atual do usuário (management_fazenda). Exibição de dados deve ser sempre relativa a ela. */
+function getCurrentFazendaId() {
+  return String(state.ctx?.fazendaId || "").trim();
+}
+
+/** Filtra lista (animais, lotes, pastos, etc.) pela fazenda atual do usuário. */
+function filterByCurrentFazenda(list, fazendaKey = "fazenda") {
+  const id = getCurrentFazendaId();
+  if (!id || !Array.isArray(list)) return list || [];
+  return list.filter((item) => String(item?.[fazendaKey] || "") === id);
+}
+
 function getEndpointUrl({ fazendaId, ownerId }) {
   return API_CONFIG.getBootstrapUrl(fazendaId, ownerId);
 }
@@ -459,7 +488,7 @@ async function bootstrapData() {
   if (!state.ctx.fazendaId || !state.ctx.ownerId) {
     showBoot(
       "Faltam parâmetros na URL",
-      "Use: ?id=<id> ou ?modules=animal_create&fazenda=<id>&user=<id>"
+      "Use: ?id=<id> ou ?modules=animal&fazenda=<id>&user=<id>"
     );
     state.bootstrapReady = false;
     return;
@@ -675,11 +704,11 @@ function renderSidebar() {
   if (!nav) return;
   nav.innerHTML = "";
 
-  // Início (Dashboard)
+  // Dashboard — fora da timeline (separado)
   const inicioItem = document.createElement("div");
   const isDashboard = state.view === "dashboard";
   inicioItem.className = "navItem" + (isDashboard ? " active" : "");
-  inicioItem.innerHTML = `<span class="navIcon">🏠</span><span>Dashboard</span>`;
+  inicioItem.innerHTML = `<span class="navIcon">🏠</span><span class="navLabel">Dashboard</span>`;
   inicioItem.onclick = async () => {
     state.view = "dashboard";
     state.activeKey = null;
@@ -688,18 +717,23 @@ function renderSidebar() {
   };
   nav.appendChild(inicioItem);
 
-  // Módulos (Fazenda, Animais, Lotes, Colaboradores, etc.) — usa openModule para esconder dashboard (mobile e desktop)
+  // Timeline: só os módulos (1, 2, 3...) — ordem da requisição = ordem da esteira
+  const timelineWrap = document.createElement("div");
+  timelineWrap.className = "navTimeline";
+  let step = 1;
   for (const m of state.modules) {
     const mDef = MODULE_CATALOG[m.key] || m;
     const icon = mDef.icon || "📦";
     const item = document.createElement("div");
     item.className = "navItem" + (state.view === "module" && m.key === state.activeKey ? " active" : "");
-    item.innerHTML = `<span class="navIcon">${icon}</span><span>${escapeHtml(m.label)}</span>`;
+    item.innerHTML = `<span class="navTimelineDot" aria-hidden="true">${step}</span><span class="navIcon">${icon}</span><span class="navLabel">${escapeHtml(m.label)}</span>`;
     item.onclick = async () => {
       await openModule(m.key);
     };
-    nav.appendChild(item);
+    timelineWrap.appendChild(item);
+    step++;
   }
+  nav.appendChild(timelineWrap);
 
   renderSidebarUser();
 }
@@ -913,8 +947,10 @@ async function renderAnimalList() {
   const farmLabel = $("#farmCurrent");
   if (farmLabel) farmLabel.textContent = farmName;
 
-  const all = (await idbGet("animais", "list")) || [];
-  const pastos = (await idbGet("pastos", "list")) || [];
+  const allRaw = (await idbGet("animais", "list")) || [];
+  const all = filterByCurrentFazenda(allRaw);
+  const pastosRaw = (await idbGet("pastos", "list")) || [];
+  const pastos = filterByCurrentFazenda(pastosRaw);
   const pastoById = Object.fromEntries((pastos || []).map(p => [String(p._id || ""), p.nome || "—"]));
   const searchEl = $("#animalSearch");
   const searchElDesktop = $("#animalSearchDesktop");
@@ -1370,7 +1406,8 @@ function getAnimalLoteIdsFromChips() {
 async function renderAnimalLoteChips(ids = []) {
   const wrap = document.getElementById("animalLoteChips");
   if (!wrap) return;
-  const lotes = (await idbGet("lotes", "list")) || [];
+  const lotesRaw = (await idbGet("lotes", "list")) || [];
+  const lotes = filterByCurrentFazenda(lotesRaw);
   const idSet = new Set(ids.map(id => String(id)).filter(Boolean));
   wrap.innerHTML = "";
   idSet.forEach(id => {
@@ -1388,8 +1425,10 @@ async function renderAnimalLoteChips(ids = []) {
 
 async function fillOwnersAndLotesInForm() {
   const proprietarios = (await idbGet("fazenda", "list_proprietarios")) || [];
-  const lotes = (await idbGet("lotes", "list")) || [];
-  const pastos = (await idbGet("pastos", "list")) || [];
+  const lotesRaw = (await idbGet("lotes", "list")) || [];
+  const lotes = filterByCurrentFazenda(lotesRaw);
+  const pastosRaw = (await idbGet("pastos", "list")) || [];
+  const pastos = filterByCurrentFazenda(pastosRaw);
 
   const selOwner = $("#animalOwnerSelect");
   const selLoteAdd = $("#animalLoteAdd");
@@ -1566,7 +1605,7 @@ function bindAnimalFormUIOnce() {
   if (tgl) {
     tgl.onchange = async (e) => {
       state.advanced = !!e.target.checked;
-      await idbSet("meta", "animal_create_advanced", state.advanced ? "1" : "0");
+      await idbSet("meta", "animal_advanced", state.advanced ? "1" : "0");
       applyAdvancedVisibility();
     };
   }
@@ -1584,7 +1623,7 @@ async function openAnimalList() {
   state.animalEditingId = null;
 
   // atualiza “módulo” com layout da lista
-  const m = MODULE_CATALOG["animal_create"];
+  const m = MODULE_CATALOG["animal"];
   setPageHeadTexts(m.pageTitle, m.pageSub);
   setPageHeadVisible(false);
 
@@ -1598,7 +1637,7 @@ async function openAnimalList() {
   
   await renderAnimalList();
 
-  // Esconde FAB Sync no módulo animal_create
+  // Esconde FAB Sync no módulo animal
   const fabSync = document.getElementById("fabSync");
   if (fabSync) {
     fabSync.hidden = true;
@@ -1619,7 +1658,7 @@ async function openAnimalFormForCreate() {
   }
 
   state.view = "module";
-  state.activeKey = "animal_create";
+  state.activeKey = "animal";
   state.animalView = "form";
   state.animalEditingId = null;
 
@@ -1716,7 +1755,7 @@ async function openAnimalFormForEdit(animalId) {
   }
 
   state.view = "module";
-  state.activeKey = "animal_create";
+  state.activeKey = "animal";
   state.animalView = "form";
   state.animalEditingId = String(animalId);
 
@@ -1983,7 +2022,7 @@ async function renderActiveModule() {
   const animalContainer = $("#animalModuleContainer");
   const moduleView = $("#moduleView");
 
-  if (m.key === "animal_create") {
+  if (m.key === "animal") {
     // Exibe container fixo de animais
     if (animalContainer) animalContainer.hidden = false;
     if (moduleView) moduleView.hidden = true;
@@ -2007,10 +2046,18 @@ async function renderActiveModule() {
 
   setPageHeadVisible(true);
 
-  // Módulo Lotes = Movimentações (Entre lotes, Entre pastos, Entre fazendas)
-  if (m.key === "lotes") {
+  // Módulo Movimentações (Entre lotes, Entre pastos, Entre fazendas)
+  if (m.key === "movimentacao") {
     setPageHeadVisible(false);
     await renderMovimentacoesModule(moduleView);
+    updateFabSyncVisibility();
+    return;
+  }
+
+  // Módulo Saída de Animais (Venda, Morte, Empréstimo, Ajuste inventário, Doação)
+  if (m.key === "saida_animais") {
+    setPageHeadVisible(false);
+    await renderSaidaAnimaisModule(moduleView);
     return;
   }
 
@@ -2270,8 +2317,10 @@ async function renderMovimentacoesModule(container) {
   tabPastos && (tabPastos.onclick = () => setActiveTab("pastos"));
   tabFazendas && (tabFazendas.onclick = () => setActiveTab("fazendas"));
 
-  const lotes = (await idbGet("lotes", "list")) || [];
-  const pastos = (await idbGet("pastos", "list")) || [];
+  const lotesRaw = (await idbGet("lotes", "list")) || [];
+  const pastosRaw = (await idbGet("pastos", "list")) || [];
+  const lotes = filterByCurrentFazenda(lotesRaw);
+  const pastos = filterByCurrentFazenda(pastosRaw);
   const selOrigem = container.querySelector("#movLoteOrigem");
   const selDestino = container.querySelector("#movLoteDestino");
   const tbody = container.querySelector("#movTableBody");
@@ -2419,7 +2468,8 @@ async function renderMovimentacoesModule(container) {
     selPastoOrigem.addEventListener("change", async () => {
       const originId = selPastoOrigem.value;
       selectedIdsPastos.clear();
-      const all = (await idbGet("animais", "list")) || [];
+      const allRaw = (await idbGet("animais", "list")) || [];
+      const all = filterByCurrentFazenda(allRaw);
       const list = all.filter(a => !a.deleted && String(a?.pasto || "") === String(originId)).map(normalizeAnimal);
       renderTablePastos(list);
 
@@ -2437,7 +2487,8 @@ async function renderMovimentacoesModule(container) {
   selOrigem.addEventListener("change", async () => {
     const originId = selOrigem.value;
     selectedIds.clear();
-    const all = (await idbGet("animais", "list")) || [];
+    const allRaw = (await idbGet("animais", "list")) || [];
+    const all = filterByCurrentFazenda(allRaw);
     const list = all.filter(a => {
       const norm = normalizeAnimal(a);
       const inLote = norm.list_lotes && norm.list_lotes.some(lid => String(lid) === String(originId));
@@ -2590,7 +2641,8 @@ async function renderMovimentacoesModule(container) {
 
       selectedIdsPastos.clear();
       const originPastoId = selPastoOrigem && selPastoOrigem.value;
-      const all = (await idbGet("animais", "list")) || [];
+      const allRaw = (await idbGet("animais", "list")) || [];
+      const all = filterByCurrentFazenda(allRaw);
       const refreshedPastos = all.filter(a => !a.deleted && String(a?.pasto || "") === String(originPastoId)).map(normalizeAnimal);
       renderTablePastos(refreshedPastos);
       updateTransferirPastosButton();
@@ -2631,7 +2683,8 @@ async function renderMovimentacoesModule(container) {
 
     selectedIds.clear();
     const originId = selOrigem.value;
-    const all = (await idbGet("animais", "list")) || [];
+    const allRaw = (await idbGet("animais", "list")) || [];
+    const all = filterByCurrentFazenda(allRaw);
     const refreshed = all.filter(a => {
       const norm = normalizeAnimal(a);
       const inLote = norm.list_lotes && norm.list_lotes.some(lid => String(lid) === String(originId));
@@ -2978,9 +3031,86 @@ async function renderMovimentacoesModule(container) {
     selectedIdsFazendas.clear();
     await loadAnimaisOrigem();
     updateTransferirFazendasButton();
+    updateFabSyncVisibility();
   });
 
   await initMovimentacaoFazendas();
+}
+
+// ---------------- Saída de Animais (módulo) ----------------
+const SAIDA_ANIMAIS_TABS = [
+  { id: "venda", label: "Venda", title: "Saída por venda de animais", sub: "Crie e gerencie as vendas de animais da sua fazenda", btnNew: "Nova venda" },
+  { id: "morte", label: "Morte", title: "Saída por morte de animais", sub: "Registre óbitos dos animais da sua fazenda", btnNew: "Nova morte" },
+  { id: "emprestimo", label: "Empréstimo", title: "Saída por empréstimo", sub: "Registre empréstimos de animais da sua fazenda", btnNew: "Novo empréstimo" },
+  { id: "ajuste", label: "Ajuste inventário", title: "Ajuste de inventário", sub: "Ajustes de inventário de animais", btnNew: "Novo ajuste" },
+  { id: "doacao", label: "Doação", title: "Saída por doação", sub: "Registre doações de animais da sua fazenda", btnNew: "Nova doação" }
+];
+
+async function renderSaidaAnimaisModule(container) {
+  if (!container) return;
+
+  container.hidden = false;
+  const tabsHtml = SAIDA_ANIMAIS_TABS.map((tab, i) =>
+    `<button type="button" class="saTab ${i === 0 ? "active" : ""}" data-tab="${tab.id}" role="tab">${escapeHtml(tab.label)}</button>`
+  ).join("");
+  const contentsHtml = SAIDA_ANIMAIS_TABS.map((tab, i) => `
+    <div class="saContent saTabContent" id="saContent${tab.id}" ${i > 0 ? "hidden" : ""}>
+      <h2 class="saTitle">${escapeHtml(tab.title)}</h2>
+      <p class="saSub">${escapeHtml(tab.sub)}</p>
+      <div class="saActionBar">
+        <div class="saSearchWrap">
+          <span class="saSearchIcon" aria-hidden="true">&#128269;</span>
+          <input type="text" class="saSearch" placeholder="Buscar" aria-label="Buscar" />
+        </div>
+        <button type="button" class="btn primary saBtnNew" data-tab="${tab.id}" aria-label="${escapeHtml(tab.btnNew)}">
+          <span class="saBtnNewIcon" aria-hidden="true">+</span> ${escapeHtml(tab.btnNew)}
+        </button>
+        <button type="button" class="saFilterBtn" aria-label="Filtros" title="Filtros">
+          <svg class="saFilterIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h7"/></svg>
+        </button>
+      </div>
+      <div class="saCard saEmptyState">
+        <div class="saEmptyIcon" aria-hidden="true">🔍</div>
+        <p class="saEmptyTitle">Nenhum resultado encontrado</p>
+        <p class="saEmptySub">Sua busca não encontrou nenhum resultado. Tente novamente ou adicione um novo item.</p>
+        <button type="button" class="btn primary saBtnNew saBtnNewCenter" data-tab="${tab.id}">
+          <span class="saBtnNewIcon" aria-hidden="true">+</span> ${escapeHtml(tab.btnNew)}
+        </button>
+      </div>
+    </div>
+  `).join("");
+
+  container.innerHTML = `
+    <div class="saPage">
+      <div class="saTabs" role="tablist">
+        ${tabsHtml}
+      </div>
+      ${contentsHtml}
+    </div>
+  `;
+
+  const saTabs = container.querySelectorAll(".saTab");
+  const saContents = container.querySelectorAll(".saContent");
+
+  container.querySelectorAll(".saTab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tabId = btn.dataset.tab;
+      saTabs.forEach((t) => t.classList.remove("active"));
+      btn.classList.add("active");
+      saContents.forEach((c) => {
+        const isTarget = c.id === "saContent" + tabId;
+        c.hidden = !isTarget;
+      });
+    });
+  });
+
+  container.querySelectorAll(".saBtnNew, .saBtnNewCenter").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tabId = btn.dataset.tab;
+      const tab = SAIDA_ANIMAIS_TABS.find((t) => t.id === tabId);
+      if (tab) toast(`Em breve: ${tab.btnNew}`);
+    });
+  });
 }
 
 // ---------------- SW ----------------
@@ -2993,6 +3123,170 @@ async function registerSW() {
 // ========================================================
 // DASHBOARD LOGIC
 // ========================================================
+
+/** Retorna lista de itens pendentes de sincronização, na ordem da fila (para exibir no dashboard). */
+async function getPendingSyncList() {
+  const keys = await idbGetAllKeys("records");
+  const queueKeys = (keys || []).filter(k => String(k).startsWith("queue:")).sort();
+  const animaisList = (await idbGet("animais", "list")) || [];
+  const items = [];
+  let globalIndex = 0;
+  const currentFazendaId = getCurrentFazendaId();
+  for (const qKey of queueKeys) {
+    const queue = await idbGet("records", qKey);
+    if (!Array.isArray(queue) || queue.length === 0) continue;
+    const parts = qKey.split(":");
+    const fazendaId = parts[1] || "";
+    const isTransfer = String(fazendaId) !== String(currentFazendaId);
+    for (let i = 0; i < queue.length; i++) {
+      const op = queue[i];
+      const opType = op?.op || "animal_update";
+      let label = opType === "animal_create" ? "Novo animal" : "Atualização de animal";
+      if (opType === "animal_update" && isTransfer) label = "Transferência entre fazendas";
+      const payload = op?.payload || {};
+      let oldAnimal = null;
+      if (opType === "animal_update" && (op.targetId || payload._id)) {
+        const animalId = op.targetId || payload._id;
+        oldAnimal = animaisList.find(a => String(a?._id) === String(animalId));
+      }
+      const nome = String(payload.nome_completo || (oldAnimal && oldAnimal.nome_completo) || "").trim();
+      const brinco = String(payload.brinco || payload.brinco_padrao || (oldAnimal && (oldAnimal.brinco || oldAnimal.brinco_padrao)) || "").trim();
+      const detail = nome || brinco || "—";
+      items.push({
+        queueOrder: globalIndex++,
+        queueKey: qKey,
+        queueIndex: i,
+        op: opType,
+        label,
+        detail
+      });
+    }
+  }
+  return items;
+}
+
+const PENDING_SYNC_PAGE_SIZE = 10;
+
+/** Agrupa itens por label (tipo), preservando ordem da primeira aparição. */
+function groupPendingSyncByLabel(list) {
+  const byLabel = {};
+  const order = [];
+  for (const item of list) {
+    if (!byLabel[item.label]) {
+      byLabel[item.label] = [];
+      order.push(item.label);
+    }
+    byLabel[item.label].push(item);
+  }
+  return order.map(label => ({ label, items: byLabel[label] }));
+}
+
+/** Cria ou retorna o modal de detalhes do grupo de pendências. */
+function getPendingSyncModal() {
+  let el = document.getElementById("dashPendingSyncModal");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "dashPendingSyncModal";
+    el.className = "dashPendingSyncModalOverlay";
+    el.style.cssText = "display:none;";
+    el.innerHTML = `
+      <div class="dashPendingSyncModalCard">
+        <div class="dashPendingSyncModalHeader">
+          <span class="dashPendingSyncModalIcon" aria-hidden="true">📋</span>
+          <h3 id="dashPendingSyncModalTitle" class="dashPendingSyncModalTitle"></h3>
+          <button type="button" id="dashPendingSyncModalClose" class="dashPendingSyncModalClose" aria-label="Fechar">×</button>
+        </div>
+        <div id="dashPendingSyncModalBody" class="dashPendingSyncModalBody"></div>
+      </div>`;
+    el.addEventListener("click", (e) => { if (e.target === el) openPendingSyncModal(null); });
+    const closeBtn = el.querySelector("#dashPendingSyncModalClose");
+    if (closeBtn) closeBtn.addEventListener("click", () => openPendingSyncModal(null));
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function openPendingSyncModal(group) {
+  const overlay = getPendingSyncModal();
+  if (!group) {
+    overlay.style.display = "none";
+    return;
+  }
+  const title = document.getElementById("dashPendingSyncModalTitle");
+  const body = document.getElementById("dashPendingSyncModalBody");
+  if (title) title.textContent = `${group.label} (${group.items.length})`;
+  if (body) {
+    body.innerHTML = group.items.map((item, i) =>
+      `<div class="dashPendingSyncModalItem"><span class="dashPendingSyncModalItemNum">${i + 1}</span><span class="dashPendingSyncModalItemText">${escapeHtml(item.detail)}</span></div>`
+    ).join("");
+  }
+  overlay.style.display = "flex";
+}
+
+/** Renderiza apenas o card de pendências (lista agrupada + paginação), usado ao trocar de página. */
+function renderPendingSyncCard() {
+  const list = state.pendingSyncListForCard || [];
+  const groups = groupPendingSyncByLabel(list);
+  state.pendingSyncGroupsForCard = groups;
+
+  const page = Math.max(0, state.pendingSyncPage || 0);
+  const totalPages = Math.max(1, Math.ceil(groups.length / PENDING_SYNC_PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages - 1);
+  state.pendingSyncPage = currentPage;
+  const start = currentPage * PENDING_SYNC_PAGE_SIZE;
+  const pageGroups = groups.slice(start, start + PENDING_SYNC_PAGE_SIZE);
+
+  const wrapMobile = document.getElementById("dashPendingSyncWrap");
+  const listMobile = document.getElementById("dashPendingSyncList");
+  const wrapDesktop = document.getElementById("dashPendingSyncWrapDesktop");
+  const listDesktop = document.getElementById("dashPendingSyncListDesktop");
+  const paginationMobile = document.getElementById("dashPendingSyncPagination");
+  const paginationDesktop = document.getElementById("dashPendingSyncPaginationDesktop");
+
+  const buildGroupRowHtml = (group, groupIndex, displayIndex) =>
+    `<div class="dashPendingSyncItem dashPendingSyncGroupRow" data-group-index="${groupIndex}" role="button" tabindex="0"><span class="dashPendingSyncOrder">${displayIndex}</span><span class="dashPendingSyncLabel">${escapeHtml(group.label)}</span><span class="dashPendingSyncDetail">${group.items.length} item(ns)</span></div>`;
+
+  const listHtml = pageGroups.map((g, i) => buildGroupRowHtml(g, start + i, start + i + 1)).join("");
+
+  const paginationHtml = totalPages <= 1 ? "" : `
+    <div class="dashPendingSyncPagination">
+      <button type="button" class="dashPendingSyncPageBtn" data-dir="prev" ${currentPage === 0 ? "disabled" : ""}>Anterior</button>
+      <span class="dashPendingSyncPageInfo">Página ${currentPage + 1} de ${totalPages}</span>
+      <button type="button" class="dashPendingSyncPageBtn" data-dir="next" ${currentPage >= totalPages - 1 ? "disabled" : ""}>Próxima</button>
+    </div>`;
+
+  if (listMobile) listMobile.innerHTML = listHtml;
+  if (listDesktop) listDesktop.innerHTML = listHtml;
+  if (paginationMobile) paginationMobile.innerHTML = paginationHtml;
+  if (paginationDesktop) paginationDesktop.innerHTML = paginationHtml;
+
+  const handleGroupRowClick = (e) => {
+    const row = e.target.closest(".dashPendingSyncGroupRow");
+    if (!row) return;
+    const idx = parseInt(row.getAttribute("data-group-index"), 10);
+    if (Number.isNaN(idx)) return;
+    const groups = state.pendingSyncGroupsForCard || [];
+    if (groups[idx]) openPendingSyncModal(groups[idx]);
+  };
+  if (wrapMobile) {
+    wrapMobile.onclick = handleGroupRowClick;
+  }
+  if (wrapDesktop) {
+    wrapDesktop.onclick = handleGroupRowClick;
+  }
+
+  [paginationMobile, paginationDesktop].forEach(container => {
+    if (!container) return;
+    container.querySelectorAll(".dashPendingSyncPageBtn").forEach(btn => {
+      btn.onclick = () => {
+        const dir = btn.getAttribute("data-dir");
+        if (dir === "prev") state.pendingSyncPage = Math.max(0, (state.pendingSyncPage || 0) - 1);
+        else if (dir === "next") state.pendingSyncPage = Math.min(totalPages - 1, (state.pendingSyncPage || 0) + 1);
+        renderPendingSyncCard();
+      };
+    });
+  });
+}
 
 async function renderDashboard() {
   // 1. Owner Info
@@ -3013,8 +3307,9 @@ async function renderDashboard() {
   const elName = $("#dashName");
   const elAvatar = $("#dashAvatar");
 
-  // Check for pending sync items to show indicator in header
-  const allAnimais = (await idbGet("animais", "list")) || [];
+  // Check for pending sync items to show indicator in header (apenas fazenda atual)
+  const allAnimaisRaw = (await idbGet("animais", "list")) || [];
+  const allAnimais = filterByCurrentFazenda(allAnimaisRaw);
   const hasPending = allAnimais.some(a => a._sync === "pending");
 
   if (elName) {
@@ -3048,8 +3343,31 @@ async function renderDashboard() {
     });
   }
 
-  // Charts Stats
-  const animais = (await idbGet("animais", "list")) || [];
+  // Card: lista de dados pendentes de sincronização (mobile + desktop), máx 10 itens com paginação
+  const pendingList = await getPendingSyncList();
+  state.pendingSyncListForCard = pendingList;
+  if (pendingList.length > 0 && (state.pendingSyncPage === undefined || state.pendingSyncPage < 0)) {
+    state.pendingSyncPage = 0;
+  }
+  const wrapMobile = document.getElementById("dashPendingSyncWrap");
+  const wrapDesktop = document.getElementById("dashPendingSyncWrapDesktop");
+  if (pendingList.length > 0) {
+    if (wrapMobile) wrapMobile.style.display = "block";
+    if (wrapDesktop) wrapDesktop.style.display = "block";
+    renderPendingSyncCard();
+  } else {
+    state.pendingSyncPage = 0;
+    if (wrapMobile) { wrapMobile.style.display = "none"; document.getElementById("dashPendingSyncList") && (document.getElementById("dashPendingSyncList").innerHTML = ""); }
+    if (wrapDesktop) { wrapDesktop.style.display = "none"; document.getElementById("dashPendingSyncListDesktop") && (document.getElementById("dashPendingSyncListDesktop").innerHTML = ""); }
+    const paginationMobile = document.getElementById("dashPendingSyncPagination");
+    const paginationDesktop = document.getElementById("dashPendingSyncPaginationDesktop");
+    if (paginationMobile) paginationMobile.innerHTML = "";
+    if (paginationDesktop) paginationDesktop.innerHTML = "";
+  }
+
+  // Charts Stats (apenas fazenda atual / management_fazenda)
+  const animaisRaw = (await idbGet("animais", "list")) || [];
+  const animais = filterByCurrentFazenda(animaisRaw);
   const activeAnimais = animais.filter(a => !a.deleted);
   const total = activeAnimais.length;
 
@@ -3110,7 +3428,8 @@ async function renderDashboard() {
 
   // --- CHART 3: PESO MÉDIO POR LOTE (KG) ---
   // Calculado a partir dos animais: para cada lote, média do peso_atual_kg dos animais que pertencem ao lote (list_lotes ou lote)
-  const lotesList = (await idbGet("lotes", "list")) || [];
+  const lotesListRaw = (await idbGet("lotes", "list")) || [];
+  const lotesList = filterByCurrentFazenda(lotesListRaw);
 
   const loteAgg = lotesList
     .map(l => {
@@ -3256,7 +3575,7 @@ async function openDashboard() {
 async function openModule(moduleKey) {
   state.activeKey = moduleKey;
   state.view = "module";
-  if (moduleKey === "animal_create") {
+  if (moduleKey === "animal") {
     state.animalView = "list";
     state.animalEditingId = null;
   }
@@ -3275,43 +3594,26 @@ async function openModule(moduleKey) {
   await saveNavigationState();
 }
 
-// ---------------- Sync Logic ----------------
-// Helper function to get all keys from a store (inline implementation)
-async function getAllKeysFromStore(store) {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open("offline_builder_db", 2);
-    req.onsuccess = () => {
-      const db = req.result;
-      const tx = db.transaction(store, "readonly");
-      const st = tx.objectStore(store);
-      const keysReq = st.getAllKeys();
-      keysReq.onsuccess = () => resolve(keysReq.result);
-      keysReq.onerror = () => reject(keysReq.error);
-    };
-    req.onerror = () => reject(req.error);
-  });
-}
-
 // Controla visibilidade do FAB Sync baseado na página atual
 function updateFabSyncVisibility() {
   const btn = document.getElementById("fabSync");
   if (!btn) return;
 
-  // Só mostra o FAB Sync no dashboard
-  // NÃO mostra no módulo animal_create (nem na listagem, nem nos formulários)
+  // Mostra o FAB Sync no dashboard e no módulo Movimentações (entre lotes/pastos/fazendas)
+  // NÃO mostra no módulo animal (nem na listagem, nem nos formulários)
   const isDashboard = state.view === "dashboard";
-  const isAnimalModule = state.activeKey === "animal_create" || (state.view === "module" && state.activeKey === "animal_create");
-  
-  // Se não estiver no dashboard OU estiver no módulo animal_create, esconde
-  if (!isDashboard || isAnimalModule) {
+  const isLotesModule = state.view === "module" && state.activeKey === "movimentacao";
+  const isAnimalModule = state.activeKey === "animal" || (state.view === "module" && state.activeKey === "animal");
+  const canShowFab = (isDashboard || isLotesModule) && !isAnimalModule;
+
+  if (!canShowFab) {
     btn.hidden = true;
-    btn.style.display = "none"; // Força esconder também via CSS
-    btn.style.visibility = "hidden"; // Força esconder também via visibility
+    btn.style.display = "none";
+    btn.style.visibility = "hidden";
     return;
   }
 
-  // Se estiver no dashboard, chama checkSyncStatus para verificar pendências
-  // checkSyncStatus vai verificar se está online e se há registros pendentes
+  // Verifica pendências e mostra/esconde o botão
   checkSyncStatus();
 }
 
@@ -3319,11 +3621,13 @@ async function checkSyncStatus() {
   const btn = document.getElementById("fabSync");
   if (!btn) return;
 
-  // Só mostra no dashboard - esconde em qualquer outro lugar (incluindo módulo animal_create)
+  // Mostra no dashboard ou no módulo Movimentações. Esconde no módulo animal.
   const isDashboard = state.view === "dashboard";
-  const isAnimalModule = state.activeKey === "animal_create" || (state.view === "module" && state.activeKey === "animal_create");
-  
-  if (!isDashboard || isAnimalModule) {
+  const isLotesModule = state.view === "module" && state.activeKey === "movimentacao";
+  const isAnimalModule = state.activeKey === "animal" || (state.view === "module" && state.activeKey === "animal");
+  const canShowFab = (isDashboard || isLotesModule) && !isAnimalModule;
+
+  if (!canShowFab) {
     btn.hidden = true;
     btn.style.display = "none";
     btn.style.visibility = "hidden";
@@ -3338,12 +3642,10 @@ async function checkSyncStatus() {
     return;
   }
 
-  // Check if there are pending records
-  // We scan all keys starting with "queue:" in "records" store
+  // Check if there are pending records (todas as filas: fazenda atual e transferências entre fazendas)
   try {
-    // Use inline function to avoid module loading issues
-    const keys = await getAllKeysFromStore("records");
-    const queueKeys = keys.filter(k => k.startsWith("queue:"));
+    const keys = await idbGetAllKeys("records");
+    const queueKeys = (keys || []).filter(k => String(k).startsWith("queue:"));
 
     let hasPending = false;
     for (const k of queueKeys) {
@@ -3354,14 +3656,16 @@ async function checkSyncStatus() {
       }
     }
 
-    // Só mostra se estiver no dashboard E tiver pendências
+    // Mostra se tiver pendências (em qualquer fila, inclusive transferência entre fazendas)
     if (hasPending) {
       btn.hidden = false;
       btn.style.display = "flex";
       btn.style.visibility = "visible";
       btn.style.opacity = "1";
       btn.style.pointerEvents = "auto";
+      playSyncAvailableSound();
     } else {
+      resetSyncNotifySound();
       btn.hidden = true;
       btn.style.display = "none";
       btn.style.visibility = "hidden";
@@ -3376,6 +3680,89 @@ async function checkSyncStatus() {
 }
 
 // URLs e configurações agora vêm de config.js
+
+/** Toca um beep curto quando há sincronização pendente (apenas uma vez até a fila esvaziar ou o usuário sincronizar). */
+function playSyncAvailableSound() {
+  if (window.__syncNotifySoundPlayed) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 880;
+    osc.type = "sine";
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.15);
+    window.__syncNotifySoundPlayed = true;
+  } catch (_) {}
+}
+
+/** Reseta o flag do som para tocar de novo na próxima vez que houver pendência. */
+function resetSyncNotifySound() {
+  window.__syncNotifySoundPlayed = false;
+}
+
+/** Overlay de progresso da sincronização (0–100%). Criado dinamicamente para desktop e mobile. */
+function getSyncProgressOverlay() {
+  let el = document.getElementById("syncProgressOverlay");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "syncProgressOverlay";
+    el.style.cssText = "position:fixed;inset:0;z-index:999999;background:rgba(248,248,248,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;";
+    el.innerHTML = `
+      <div class="syncProgressCard" style="background:#fff;border-radius:20px;box-shadow:0 20px 60px rgba(17,24,39,.16);padding:24px;min-width:280px;max-width:90%;text-align:center;">
+        <div style="font-weight:800;font-size:14px;margin-bottom:8px;color:#111827;">Sincronizando</div>
+        <div id="syncProgressLabel" style="font-size:12px;color:#6b7280;margin-bottom:16px;">Enviando dados...</div>
+        <div style="height:12px;border-radius:999px;background:rgba(17,24,39,.08);overflow:hidden;">
+          <div id="syncProgressBar" style="height:100%;width:0%;border-radius:999px;background:#edff77;transition:width .3s ease;"></div>
+        </div>
+        <div id="syncProgressPct" style="font-weight:800;font-size:14px;margin-top:8px;color:#111827;">0%</div>
+      </div>`;
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function showSyncProgress(percent, label = "Enviando dados...") {
+  const el = getSyncProgressOverlay();
+  el.style.display = "flex";
+  const bar = document.getElementById("syncProgressBar");
+  const pct = document.getElementById("syncProgressPct");
+  const lbl = document.getElementById("syncProgressLabel");
+  if (bar) {
+    bar.classList.remove("syncProgressBarIndeterminate");
+    bar.style.width = Math.min(100, Math.max(0, percent)) + "%";
+    bar.style.transform = "";
+  }
+  if (pct) pct.textContent = Math.round(percent) + "%";
+  if (lbl) lbl.textContent = label;
+}
+
+/** Exibe o overlay de progresso em modo indeterminado (barra animada), ex.: durante polling "Sincronização em andamento". */
+function showSyncProgressIndeterminate(label = "Aguardando conclusão no servidor...") {
+  const el = getSyncProgressOverlay();
+  el.style.display = "flex";
+  const bar = document.getElementById("syncProgressBar");
+  const pct = document.getElementById("syncProgressPct");
+  const lbl = document.getElementById("syncProgressLabel");
+  if (bar) {
+    bar.classList.add("syncProgressBarIndeterminate");
+    bar.style.width = "30%";
+    bar.style.transform = "translateX(0)";
+  }
+  if (pct) pct.textContent = "";
+  if (lbl) lbl.textContent = label;
+}
+
+function hideSyncProgress() {
+  const el = document.getElementById("syncProgressOverlay");
+  if (el) el.style.display = "none";
+  const bar = document.getElementById("syncProgressBar");
+  if (bar) bar.classList.remove("syncProgressBarIndeterminate");
+}
 
 function showSyncStatusBanner(text, isError = false) {
   const ids = [
@@ -3404,7 +3791,8 @@ function hideSyncStatusBanner() {
 /** Aplica resultado da sincronização (resultados) aos animais locais e atualiza UI. */
 async function applySyncResult(result, qKey) {
   if (!result || !Array.isArray(result.resultados)) return;
-  const animaisList = (await idbGet("animais", "list")) || [];
+  let animaisList = (await idbGet("animais", "list")) || [];
+
   for (const resultado of result.resultados) {
     if (resultado.op === "animal_create" && resultado.local_id && resultado.server_id) {
       const animalIndex = animaisList.findIndex(a => String(a?._id) === String(resultado.local_id));
@@ -3416,26 +3804,54 @@ async function applySyncResult(result, qKey) {
         animaisList[animalIndex] = animal;
       }
     } else if (resultado.op === "animal_update" && resultado.status === "updated") {
-      let animalIndex = animaisList.findIndex(a => String(a?._id) === String(resultado.targetId));
-      if (animalIndex === -1 && resultado.id_local) {
-        animalIndex = animaisList.findIndex(a => String(a?._id) === String(resultado.id_local));
-      }
-      if (animalIndex !== -1) {
-        const animal = animaisList[animalIndex];
+      const targetId = resultado.targetId || resultado.id_local;
+      animaisList.forEach((a, i) => {
+        const match = String(a?._id) === String(targetId) || String(a?._id) === String(resultado.id_local);
+        if (!match) return;
+        const animal = { ...animaisList[i] };
         if (resultado.targetId && String(animal._id) !== String(resultado.targetId)) {
           animal._id = resultado.targetId;
         }
         delete animal._local;
         delete animal._sync;
-        animaisList[animalIndex] = animal;
-      }
+        animaisList[i] = animal;
+      });
     }
   }
+
+  // Remove duplicatas por _id: pode existir a mesma animal duas vezes (cópia servidor + cópia local pendente). Fica só uma, preferindo a já sincronizada.
+  const byId = new Map();
+  for (const a of animaisList) {
+    const id = String(a?._id || "");
+    if (!id) continue;
+    const existing = byId.get(id);
+    const isPending = String(a?._sync || "").toLowerCase() === "pending";
+    if (!existing) {
+      byId.set(id, a);
+    } else {
+      const existingPending = String(existing._sync || "").toLowerCase() === "pending";
+      if (isPending && !existingPending) continue;
+      byId.set(id, a);
+    }
+  }
+  animaisList = Array.from(byId.values());
+
   await idbSet("animais", "list", animaisList);
-  await idbDel("records", qKey);
+  const pendingQKeysJson = await idbGet("meta", "sync_pending_qKeys");
+  if (pendingQKeysJson) {
+    try {
+      const keysToDelete = JSON.parse(pendingQKeysJson);
+      if (Array.isArray(keysToDelete)) {
+        for (const k of keysToDelete) await idbDel("records", k);
+      }
+    } catch (_) {}
+    await idbDel("meta", "sync_pending_qKeys");
+  } else {
+    await idbDel("records", qKey);
+  }
   await idbDel("meta", "sync_pending_id");
   await idbDel("meta", "sync_pending_qKey");
-  // Garante que volta para o dashboard após sincronização
+  resetSyncNotifySound();
   await openDashboard();
 }
 
@@ -3469,15 +3885,24 @@ function restoreFabSyncIcon() {
   updateFabSyncVisibility();
 }
 
-/** Polling do status da sincronização a cada 20s até receber o status. */
-async function startPollSyncStatus(idResponse, qKey) {
-  if (syncPollTimerId) {
-    clearInterval(syncPollTimerId);
-    syncPollTimerId = null;
-  }
-  syncPollDone = false;
+/** Polling do status da sincronização a cada 20s até receber o status. Retorna Promise que resolve quando concluir (sucesso ou erro). */
+function startPollSyncStatus(idResponse, qKey) {
+  return new Promise((resolvePoll) => {
+    if (syncPollTimerId) {
+      clearInterval(syncPollTimerId);
+      syncPollTimerId = null;
+    }
+    syncPollDone = false;
 
-  const check = async () => {
+    const done = () => {
+      if (syncPollTimerId) {
+        clearInterval(syncPollTimerId);
+        syncPollTimerId = null;
+      }
+      resolvePoll();
+    };
+
+    const check = async () => {
     if (syncPollDone) return;
     try {
       const url = `${API_CONFIG.getUrl(API_CONFIG.ENDPOINTS.STATUS_OFFLINE)}?id_response=${encodeURIComponent(idResponse)}`;
@@ -3486,7 +3911,15 @@ async function startPollSyncStatus(idResponse, qKey) {
         console.warn("[SYNC] Status check HTTP:", res.status);
         return;
       }
-      const data = await res.json();
+      const rawText = await res.text();
+      let data;
+      try {
+        data = JSON.parse(rawText);
+      } catch (parseErr) {
+        console.error("[SYNC] Erro ao consultar status: resposta do servidor não é JSON válido.", parseErr);
+        console.error("[SYNC] Resposta bruta (primeiros 500 chars):", rawText.slice(0, 500));
+        return;
+      }
 
       // Novo formato: { dados: [...], qtd: "1" } — finalizado quando dados.length === qtd
       const dados = Array.isArray(data.dados) ? data.dados : [];
@@ -3520,11 +3953,13 @@ async function startPollSyncStatus(idResponse, qKey) {
           return item;
         });
         await applySyncResult({ resultados }, qKey);
+        hideSyncProgress();
         hideSyncStatusBanner();
         showSyncStatusBanner("Sincronização concluída com sucesso.", false);
         toast("Sincronização concluída! ✅");
         setTimeout(hideSyncStatusBanner, 3000);
         restoreFabSyncIcon();
+        done();
         return;
       }
 
@@ -3541,11 +3976,13 @@ async function startPollSyncStatus(idResponse, qKey) {
         const resultados = data.resultados || data.result?.resultados;
         const result = { ...data, resultados };
         await applySyncResult(result, qKey);
+        hideSyncProgress();
         hideSyncStatusBanner();
         showSyncStatusBanner("Sincronização concluída com sucesso.", false);
         toast("Sincronização concluída! ✅");
         setTimeout(hideSyncStatusBanner, 3000);
         restoreFabSyncIcon();
+        done();
         return;
       }
 
@@ -3556,6 +3993,7 @@ async function startPollSyncStatus(idResponse, qKey) {
           clearInterval(syncPollTimerId);
           syncPollTimerId = null;
         }
+        hideSyncProgress();
         hideSyncStatusBanner();
         const msg = data.message || data.error || "Sincronização falhou.";
         showSyncStatusBanner(msg, true);
@@ -3563,7 +4001,9 @@ async function startPollSyncStatus(idResponse, qKey) {
         setTimeout(hideSyncStatusBanner, 5000);
         await idbDel("meta", "sync_pending_id");
         await idbDel("meta", "sync_pending_qKey");
+        await idbDel("meta", "sync_pending_qKeys");
         restoreFabSyncIcon();
+        done();
         return;
       }
     } catch (e) {
@@ -3572,11 +4012,14 @@ async function startPollSyncStatus(idResponse, qKey) {
   };
 
   // Espera 10 segundos antes da primeira verificação
-  await new Promise(resolve => setTimeout(resolve, 10000));
-  await check();
-  if (!syncPollDone) {
-    syncPollTimerId = setInterval(check, SYNC_CONFIG.POLL_INTERVAL_MS);
-  }
+  (async () => {
+    await new Promise(resolve => setTimeout(resolve, 10000));
+    await check();
+    if (!syncPollDone) {
+      syncPollTimerId = setInterval(check, SYNC_CONFIG.POLL_INTERVAL_MS);
+    }
+  })();
+  });
 }
 
 /** Retorna true se há sincronização em andamento (polling ativo). */
@@ -3585,45 +4028,28 @@ async function isSyncInProgress() {
   return !!pendingId;
 }
 
-async function processQueue() {
-  if (!navigator.onLine) return;
-
-  const btn = document.getElementById("fabSync");
-  if (btn) {
-    btn.style.animation = "spin 1s infinite linear"; // Change to spin
-    btn.innerHTML = `<div class="fabIcon">⏳</div>`;
+const dateToTimestampSync = (dateValue) => {
+  if (!dateValue || String(dateValue).toLowerCase() === "nan" || String(dateValue).trim() === "") return null;
+  const dateStr = String(dateValue).trim();
+  if (!isNaN(Number(dateStr)) && dateStr.length > 10 && !dateStr.includes("-")) {
+    const num = Number(dateStr);
+    if (num > 0) return num;
   }
+  if (/^\d{4}-\d{2}-\d{2}T/.test(dateStr)) {
+    const date = new Date(dateStr);
+    if (!Number.isNaN(date.getTime()) && date.getTime() > 0) return date.getTime();
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const date = new Date(dateStr + "T00:00:00.000Z");
+    if (!Number.isNaN(date.getTime()) && date.getTime() > 0) return date.getTime();
+  }
+  const parsed = new Date(dateStr);
+  return !Number.isNaN(parsed.getTime()) && parsed.getTime() > 0 ? parsed.getTime() : null;
+};
 
-  let startedPolling = false;
-
-  try {
-    // Use inline function to avoid module loading issues
-    const keys = await getAllKeysFromStore("records");
-    const queueKeys = keys.filter(k => k.startsWith("queue:"));
-
-    if (queueKeys.length === 0) {
-      toast("Nenhum dado pendente para sincronizar.");
-      return;
-    }
-
-    // Processa cada fila de sincronização
-    for (const qKey of queueKeys) {
-      const queue = await idbGet("records", qKey);
-      if (!Array.isArray(queue) || queue.length === 0) {
-        await idbDel("records", qKey);
-        continue;
-      }
-
-      // Extrai fazenda_id e user_id da chave da fila
-      // Formato: queue:{fazenda_id}:{user_id}:animal
-      const parts = qKey.split(":");
-      const fazendaId = parts[1] || state.ctx.fazendaId;
-      const userId = parts[2] || state.ctx.ownerId;
-
-      // Mapeamento de siglas UF para nomes completos (vem de config.js)
-
-      // Formata os dados conforme o formato esperado pelo Bubble
-      const operacoes = queue.map(op => {
+/** Constrói array de operacoes para envio a partir de uma fila (queue). */
+function buildOperacoesFromQueue(queue, dadosOp) {
+  return queue.map(op => {
         // Clona o payload e garante que proprietario está presente
         const payload = { ...op.payload };
         
@@ -3652,48 +4078,9 @@ async function processQueue() {
           }
         }
         
-        // Converte campos de data para timestamp (número)
-        // Função auxiliar para converter string de data ISO para timestamp
-        const dateToTimestamp = (dateValue) => {
-          if (!dateValue || String(dateValue).toLowerCase() === "nan" || String(dateValue).trim() === "") {
-            return null;
-          }
-          const dateStr = String(dateValue).trim();
-          
-          // Se já for número (timestamp), retorna como está
-          if (!isNaN(Number(dateStr)) && dateStr.length > 10 && !dateStr.includes("-")) {
-            const num = Number(dateStr);
-            if (num > 0) return num;
-          }
-          
-          // Se for formato ISO completo (YYYY-MM-DDTHH:mm:ss.sssZ)
-          if (/^\d{4}-\d{2}-\d{2}T/.test(dateStr)) {
-            const date = new Date(dateStr);
-            if (!Number.isNaN(date.getTime()) && date.getTime() > 0) {
-              return date.getTime();
-            }
-          }
-          
-          // Se for formato ISO apenas data (YYYY-MM-DD)
-          if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-            const date = new Date(dateStr + "T00:00:00.000Z");
-            if (!Number.isNaN(date.getTime()) && date.getTime() > 0) {
-              return date.getTime();
-            }
-          }
-          
-          // Tenta parsear como Date genérico
-          const parsed = new Date(dateStr);
-          if (!Number.isNaN(parsed.getTime()) && parsed.getTime() > 0) {
-            return parsed.getTime();
-          }
-          
-          return null;
-        };
-        
         // Converte data_nascimento para timestamp (apenas se válida)
         if (payload.data_nascimento && String(payload.data_nascimento).toLowerCase() !== "nan") {
-          const timestamp = dateToTimestamp(payload.data_nascimento);
+          const timestamp = dateToTimestampSync(payload.data_nascimento);
           if (timestamp !== null && timestamp > 0) {
             payload.data_nascimento = timestamp;
           } else {
@@ -3708,6 +4095,13 @@ async function processQueue() {
         // Garante que list_lotes seja um array
         if (!Array.isArray(payload.list_lotes)) {
           payload.list_lotes = payload.lote ? [payload.lote] : [];
+        }
+
+        // update_fazenda_new: list_lotes e pasto devem ser apenas os novos valores da nova fazenda (nada da fazenda antiga)
+        if (dadosOp === "update_fazenda_new") {
+          payload.list_lotes = Array.isArray(payload.list_lotes) ? payload.list_lotes : [];
+          payload.pasto = String(payload.pasto || "").trim();
+          payload.lote = payload.list_lotes.length > 0 ? payload.list_lotes[0] : "";
         }
         
         // Remove apenas campos de sincronização local; preserva data_modificacao para o servidor comparar
@@ -3726,108 +4120,192 @@ async function processQueue() {
         }
         
         return operacao;
-      });
+  });
+}
 
-      const pastosList = (await idbGet("pastos", "list")) || [];
+/** Envia um payload de sincronização e trata resposta (síncrona ou assíncrona). Retorna true se iniciou polling. */
+async function sendSyncPayload(syncPayload, qKey, qKeysToDeleteForApply = null) {
+  const response = await fetch(API_CONFIG.getUrl(API_CONFIG.ENDPOINTS.SYNC_DADOS), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(syncPayload)
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`HTTP ${response.status}: ${errorText}`);
+  }
+  const result = await response.json();
+  const idResponse = result.id_response || result.response?.id_response;
+  if (idResponse) {
+    await idbSet("meta", "sync_pending_id", idResponse);
+    await idbSet("meta", "sync_pending_qKey", qKey);
+    if (qKeysToDeleteForApply && qKeysToDeleteForApply.length > 0) {
+      await idbSet("meta", "sync_pending_qKeys", JSON.stringify(qKeysToDeleteForApply));
+    }
+    showSyncProgressIndeterminate("Aguardando conclusão no servidor...");
+    showSyncStatusBanner("Sincronização em andamento...");
+    return true;
+  }
+  if (result.success && Array.isArray(result.resultados)) {
+    if (qKeysToDeleteForApply && qKeysToDeleteForApply.length > 0) {
+      await idbSet("meta", "sync_pending_qKeys", JSON.stringify(qKeysToDeleteForApply));
+    }
+    await applySyncResult(result, qKey);
+  }
+  if (result.erros && Array.isArray(result.erros) && result.erros.length > 0) {
+    for (const erro of result.erros) {
+      toast(`Erro ao sincronizar ${erro.local_id}: ${erro.erro || erro.message}`);
+    }
+  }
+  if (result.success && !idResponse) {
+    resetSyncNotifySound();
+  } else if (!idResponse && !result.success) {
+    throw new Error(result.message || "Erro ao processar sincronização");
+  }
+  return false;
+}
 
-      // Prepara o payload para envio (inclui qtd de itens enviados e list_pasto)
-      const syncPayload = {
-        dados: {
-          fazenda_id: fazendaId,
-          user_id: userId,
-          timestamp: Date.now(),
-          qtd_itens: operacoes.length,
-          operacoes: operacoes,
-          list_pasto: Array.isArray(pastosList) ? pastosList : []
+async function processQueue() {
+  if (!navigator.onLine) return;
+
+  const btn = document.getElementById("fabSync");
+  if (btn) {
+    btn.style.animation = "spin 1s infinite linear";
+    btn.innerHTML = `<div class="fabIcon">⏳</div>`;
+  }
+
+  showSyncProgress(0, "Preparando...");
+
+  try {
+    const keys = await idbGetAllKeys("records");
+    const queueKeys = (keys || []).filter(k => String(k).startsWith("queue:"));
+    if (queueKeys.length === 0) {
+      hideSyncProgress();
+      toast("Nenhum dado pendente para sincronizar.");
+      return;
+    }
+
+    // Fazenda atual = management_fazenda da organização (não da URL), para classificar corretamente
+    // "Fazenda atual" = alterações dentro da mesma fazenda; "transferência" = fila com fazenda_id diferente
+    const org = await idbGet("organizacao", "current");
+    const managementFazendaId = (org?.user?.management_fazenda && String(org.user.management_fazenda).trim()) || "";
+    const currentFazendaId = managementFazendaId || getCurrentFazendaId();
+
+    const currentFarmKeys = queueKeys.filter(k => {
+      const parts = k.split(":");
+      const keyFazendaId = String(parts[1] || "").trim();
+      return keyFazendaId === String(currentFazendaId).trim();
+    });
+    const transferKeys = queueKeys.filter(k => {
+      const parts = k.split(":");
+      const keyFazendaId = String(parts[1] || "").trim();
+      return keyFazendaId !== String(currentFazendaId).trim();
+    });
+
+    const pastosListRaw = (await idbGet("pastos", "list")) || [];
+    const userId = state.ctx.ownerId || "";
+
+    // ---------- Fase 1: tudo da fazenda atual em um único disparo ----------
+    if (currentFarmKeys.length > 0) {
+      showSyncProgress(15, "Carregando alterações da fazenda atual...");
+      const allOperacoes = [];
+      const keysWithData = [];
+      for (const qKey of currentFarmKeys) {
+        const queue = await idbGet("records", qKey);
+        if (!Array.isArray(queue) || queue.length === 0) {
+          await idbDel("records", qKey);
+          continue;
         }
-      };
-
-      // Envia para o endpoint do Bubble
-      const response = await fetch(API_CONFIG.getUrl(API_CONFIG.ENDPOINTS.SYNC_DADOS), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(syncPayload)
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
+        const operacoes = buildOperacoesFromQueue(queue, "update_fazenda_old");
+        allOperacoes.push(...operacoes);
+        keysWithData.push(qKey);
       }
-
-      const result = await response.json();
-
-      // Resposta assíncrona: servidor devolve id_response para consultar status depois
-      const idResponse = result.id_response || result.response?.id_response;
-      if (idResponse) {
-        await idbSet("meta", "sync_pending_id", idResponse);
-        await idbSet("meta", "sync_pending_qKey", qKey);
-        showSyncStatusBanner("Sincronização em andamento...");
-        startedPolling = true;
-        startPollSyncStatus(idResponse, qKey);
-        return;
-      }
-
-      // Resposta síncrona (legado): processa resultado na hora
-      if (result.success && Array.isArray(result.resultados)) {
-        const animaisList = (await idbGet("animais", "list")) || [];
-        for (const resultado of result.resultados) {
-          if (resultado.op === "animal_create" && resultado.local_id && resultado.server_id) {
-            const animalIndex = animaisList.findIndex(a => String(a?._id) === String(resultado.local_id));
-            if (animalIndex !== -1) {
-              const animal = animaisList[animalIndex];
-              animal._id = resultado.server_id;
-              delete animal._local;
-              delete animal._sync;
-              animaisList[animalIndex] = animal;
-            }
-          } else if (resultado.op === "animal_update" && resultado.status === "updated") {
-            const animalIndex = animaisList.findIndex(a => String(a?._id) === String(resultado.targetId));
-            if (animalIndex !== -1) {
-              const animal = animaisList[animalIndex];
-              delete animal._local;
-              delete animal._sync;
-              animaisList[animalIndex] = animal;
-            }
+      if (allOperacoes.length > 0) {
+        const pastosDaFazenda = Array.isArray(pastosListRaw)
+          ? pastosListRaw.filter((p) => String(p?.fazenda || "") === String(currentFazendaId))
+          : [];
+        const syncPayload = {
+          dados: {
+            op: "update_fazenda_old",
+            fazenda_id: currentFazendaId,
+            user_id: userId,
+            timestamp: Date.now(),
+            qtd_itens: allOperacoes.length,
+            operacoes: allOperacoes,
+            list_pasto: pastosDaFazenda
           }
+        };
+        showSyncProgress(40, "Enviando alterações da fazenda atual...");
+        const startedPolling = await sendSyncPayload(syncPayload, keysWithData[0], keysWithData);
+        if (startedPolling) {
+          await startPollSyncStatus(await idbGet("meta", "sync_pending_id"), keysWithData[0]);
+          if (btn) restoreFabSyncIcon();
+          // Se ainda há transferências pendentes, continua para a Fase 2; senão encerra
+          if (transferKeys.length === 0) {
+            showSyncProgress(100, "Concluído!");
+            setTimeout(hideSyncProgress, 500);
+            resetSyncNotifySound();
+            toast("Sincronização concluída! ✅");
+            return;
+          }
+          showSyncProgress(45, "Fazenda atual sincronizada. Enviando transferências...");
         }
-        await idbSet("animais", "list", animaisList);
-        // Garante que volta para o dashboard após sincronização
-        await openDashboard();
-      }
-
-      if (result.erros && Array.isArray(result.erros) && result.erros.length > 0) {
-        console.warn("[SYNC] Algumas operações falharam:", result.erros);
-        for (const erro of result.erros) {
-          toast(`Erro ao sincronizar ${erro.local_id}: ${erro.erro || erro.message}`);
-        }
-      }
-
-      if (result.success) {
-        await idbDel("records", qKey);
-      } else {
-        throw new Error(result.message || "Erro ao processar sincronização");
+        // Chaves já removidas por applySyncResult quando resposta síncrona
       }
     }
 
-    if (startedPolling) return;
-    toast("Sincronização concluída! ✅");
-    // Reload data to reflect server state if needed
-    // await bootstrapData(); 
+    // ---------- Fase 2: cada transferência entre fazendas em disparo separado (espera um terminar para enviar o próximo) ----------
+    for (let i = 0; i < transferKeys.length; i++) {
+      const qKey = transferKeys[i];
+      showSyncProgress(50 + (i / Math.max(1, transferKeys.length)) * 25, `Processando transferência ${i + 1}/${transferKeys.length}...`);
+      const queue = await idbGet("records", qKey);
+      if (!Array.isArray(queue) || queue.length === 0) {
+        await idbDel("records", qKey);
+        continue;
+      }
+      const parts = qKey.split(":");
+      const fazendaId = parts[1] || state.ctx.fazendaId;
+      const userIdFazenda = parts[2] || state.ctx.ownerId || "";
+      const operacoes = buildOperacoesFromQueue(queue, "update_fazenda_new");
+      const pastosDaFazenda = Array.isArray(pastosListRaw)
+        ? pastosListRaw.filter((p) => String(p?.fazenda || "") === String(fazendaId))
+        : [];
+      const syncPayload = {
+        dados: {
+          op: "update_fazenda_new",
+          fazenda_id: fazendaId,
+          user_id: userIdFazenda,
+          timestamp: Date.now(),
+          qtd_itens: operacoes.length,
+          operacoes,
+          list_pasto: pastosDaFazenda
+        }
+      };
+      showSyncProgress(75, "Enviando transferência entre fazendas...");
+      const startedPolling = await sendSyncPayload(syncPayload, qKey, null);
+      if (startedPolling) {
+        await startPollSyncStatus(await idbGet("meta", "sync_pending_id"), qKey);
+      }
+    }
 
+    showSyncProgress(100, "Concluído!");
+    setTimeout(hideSyncProgress, 500);
+    resetSyncNotifySound();
+    toast("Sincronização concluída! ✅");
   } catch (e) {
     console.error("Sync error:", e);
     toast("Erro ao sincronizar. Tente novamente.");
+    showSyncProgress(0, "Erro.");
+    setTimeout(hideSyncProgress, 800);
   } finally {
-    if (btn && !startedPolling) {
-      restoreFabSyncIcon();
-    }
+    if (btn) restoreFabSyncIcon();
+    hideSyncProgress();
   }
 }
 
 // Adjusted init to load Dashboard first
 async function init() {
+  showBoot("Carregando…", "Preparando o modo offline.");
   setNetBadge();
   window.addEventListener("online", () => { setNetBadge(); updateFabSyncVisibility(); });
   window.addEventListener("offline", () => { setNetBadge(); updateFabSyncVisibility(); });
@@ -3852,7 +4330,7 @@ async function init() {
       state.modules = buildModules(saved.modules);
     } else {
       state.ctx = { fazendaId: "", ownerId: "" };
-      state.modules = buildModules(["animal_create"]);
+      state.modules = buildModules(["animal"]);
     }
   }
 
@@ -3862,7 +4340,7 @@ async function init() {
   const dashDesktopCta = document.getElementById("dashDesktopCta");
   if (dashDesktopCta) {
     dashDesktopCta.onclick = async () => {
-      await openModule("animal_create");
+      await openModule("animal");
       state.animalView = "form";
       state.animalEditingId = null;
       await renderActiveModule();
@@ -3910,7 +4388,7 @@ async function init() {
       await renderActiveModule();
       
       // Se for módulo de animais e estava em form, restaura
-      if (state.activeKey === "animal_create" && state.animalView === "form") {
+      if (state.activeKey === "animal" && state.animalView === "form") {
         if (state.animalEditingId) {
           await openAnimalFormForEdit(state.animalEditingId);
         } else {
@@ -3931,6 +4409,7 @@ async function init() {
   const pendingId = await idbGet("meta", "sync_pending_id");
   const pendingQKey = await idbGet("meta", "sync_pending_qKey");
   if (pendingId && pendingQKey) {
+    showSyncProgressIndeterminate("Aguardando conclusão no servidor...");
     showSyncStatusBanner("Sincronização em andamento...");
     startPollSyncStatus(pendingId, pendingQKey);
   }

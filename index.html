@@ -19,7 +19,22 @@
 </head>
 
 <body>
+    <!-- Overlay de loading: no index para aparecer desde o primeiro paint (antes do fetch do content) -->
+    <div id="bootOverlay" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:99999;background:rgba(248,248,248,.9);">
+        <div class="bootCard" style="width:min(520px,calc(100% - 28px));background:#fff;border-radius:20px;box-shadow:0 20px 60px rgba(17,24,39,.16);padding:18px;text-align:center;">
+            <div style="margin-bottom:12px;">
+                <img src="https://e45a1d9b2fd81a177eaa3a70ba83bda4.cdn.bubble.io/f1750077006501x159873402843107020/bovichain-icon.svg" alt="" style="width:48px;height:48px;border-radius:12px;" />
+            </div>
+            <div class="bootTitle" style="font-weight:900;font-size:14px;margin-bottom:6px;">Carregando…</div>
+            <div id="bootSub" style="color:#6b7280;font-weight:700;font-size:12px;">Preparando o modo offline.</div>
+            <div class="bootBar" style="height:10px;border-radius:999px;background:rgba(17,24,39,.08);overflow:hidden;margin:12px 0;">
+                <div class="bootBarFill" style="height:100%;width:55%;border-radius:999px;background:#edff77;animation:bootMove 1.1s ease-in-out infinite alternate;"></div>
+            </div>
+            <div id="bootHint" style="font-size:12px;color:#111827;opacity:.75;"></div>
+        </div>
+    </div>
     <div id="app-root"></div>
+    <script>window.__bootStart = Date.now();</script>
     <script>
         (function () {
             var isDesktop = window.matchMedia('(min-width: 800px)').matches;

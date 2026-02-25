@@ -351,6 +351,12 @@
                     <div id="syncStatusBannerDesktop" class="syncStatusBanner" style="display:none; text-align:center; padding:12px 16px; margin:0 0 16px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">
                         <span id="syncStatusTextDesktop">Sincronização em andamento...</span>
                     </div>
+                    <!-- Card: Dados pendentes de sincronização (desktop) -->
+                    <div id="dashPendingSyncWrapDesktop" class="dashPendingSyncCard" style="display:none; margin-bottom:16px;">
+                        <div class="dashPendingSyncTitle">Dados pendentes de sincronização</div>
+                        <div id="dashPendingSyncListDesktop" class="dashPendingSyncList"></div>
+                        <div id="dashPendingSyncPaginationDesktop" class="dashPendingSyncPaginationWrap"></div>
+                    </div>
                     <div class="dashDesktopCards">
                         <div class="dashDesktopCard">
                             <span class="dashDesktopCardLabel">Total de Animais</span>
@@ -425,20 +431,6 @@
         </main>
     </div>
 
-    <!-- LOADING OVERLAY -->
-    <div id="bootOverlay" style="display:none;">
-        <div class="bootCard">
-            <div style="text-align: center; margin-bottom: 12px;">
-                <img src="https://e45a1d9b2fd81a177eaa3a70ba83bda4.cdn.bubble.io/f1750077006501x159873402843107020/bovichain-icon.svg"
-                    alt="Icon" style="width: 48px; height: 48px; border-radius: 12px;" />
-            </div>
-            <div class="bootTitle">Sincronizando dados…</div>
-            <div class="bootSub" id="bootSub">Aguarde, estamos preparando o modo offline.</div>
-            <div class="bootBar">
-                <div class="bootBarFill"></div>
-            </div>
-            <div class="bootHint" id="bootHint"></div>
-        </div>
-    </div>
+    <!-- Overlay de loading fica no index.html (não duplicar aqui) -->
 
     <div class="toast" id="toast"></div>
