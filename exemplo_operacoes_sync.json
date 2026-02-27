@@ -1,0 +1,88 @@
+{
+  "dados": {
+    "op": "update_fazenda_old",
+    "fazenda_id": "1770833844472x419477654861438700",
+    "user_id": "1770833659131x474365249714733700",
+    "timestamp": 1772145065278,
+    "qtd_itens": 4,
+    "operacoes": [
+      {
+        "op": "animal_create",
+        "data_hora": 1771513538032,
+        "targetId": "1778833844472x123456789012345678",
+        "payload": {
+          "_id": "local:0c3cb953-98f7-4f8a-b2e7-03045f16c433",
+          "fazenda": "1770833844472x419477654861438700",
+          "organizacao": "1770833766324x392726348053437500",
+          "deleted": false,
+          "ativo": true,
+          "morto": false,
+          "data_modificacao": 1771514943115,
+          "brinco_padrao": "987654",
+          "nome_completo": "Mimoso",
+          "sexo": "M",
+          "raca": "Nelore",
+          "categoria": "Novilho",
+          "peso_atual_kg": 450.5,
+          "peso_nascimento": 35,
+          "data_nascimento": 1705276800000,
+          "entry_type": "Compra",
+          "animal_type": "Físico",
+          "finalidade": "Reprodução",
+          "sisbov": "",
+          "identificacao_eletronica": "",
+          "rgd": "",
+          "rgn": "",
+          "lote": "1778833659131x474365249714733700",
+          "pasto": "Pasto 1",
+          "etiquetas": "",
+          "observacoes": "Animal criado offline",
+          "mae_cadastrada": "0",
+          "pai_cadastrado": "0",
+          "mae_vinculo": "",
+          "pai_vinculo": "",
+          "gta": "",
+          "uf": "Bahia",
+          "proprietario": "1770833659131x474365249714733700",
+          "list_lotes": ["1778833659131x474365249714733700", "1778833659131x474365249714733701"],
+          "animais": ["1771551882091x261570275730187440"],
+          "animal": "1771551882091x261570275730187440",
+          "animal_peso": {
+            "_id": "local:0c3cb953-98f7-4f8a-b2e7-03045f16c433",
+            "animal": "1771551882091x261570275730187440",
+            "data_pesagem": "2026-02-26T22:29:45.796Z",
+            "peso_atual_kg": 40,
+            "tipo_equipamento": "Manual",
+            "momento_pesagem": "Pesagem regular",
+            "user": "1770833659131x474365249714733700"
+          },
+          "proprietario_destino": null,
+          "fazenda_destino": null,
+          "peso_saida": 100,
+          "nota_fiscal": "",
+          "data_aquisicao": null,
+          "valor": null,
+          "condicao_pagamento": "",
+          "numero_gta": "",
+          "serie_gta": "",
+          "data_emissao_gta": null,
+          "data_validade_gta": null,
+          "uf_gta": "",
+          "fazenda_origem": null,
+          "user_atual": "1770833659131x474365249714733700",
+          "valor_saida": null
+        }
+      }
+    ]
+  }
+}
+
+
+
+
+
+
+
+PAREI NO WORKFLOW DO BACKEND DO BUBBLE PARA CRIAÇÃO DE SAÍDA DE ANIMAIS, PRECISO 
+FAZER O MERGE ENTRE STAGING => OFFLINE => STAGING E TBM TRAZER O SAIDA DE ANIMAIS 
+PARA O STAGING E DAÍ CRIAR UM NOVA BRANCH PARA CONTINUAR COM O PROCESSO.

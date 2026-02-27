@@ -1,5 +1,5 @@
 const DB_NAME = "offline_builder_db";
-const DB_VERSION = 4; // v4: store organizacao (organizacao + list_fazendas)
+const DB_VERSION = 5; // v5: list_fazendas no topo; colaboradores; organizacao sem list_fazendas
 
 const STORES = [
     "meta",
@@ -9,6 +9,7 @@ const STORES = [
     "organizacao",
     "fazenda",
     "owner",
+    "colaboradores",
     "animais",
     "lotes",
     "pastos",

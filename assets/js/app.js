@@ -8,6 +8,7 @@ import {
   CATEGORIA_LIST,
   SEXO_LIST,
   TIPO_ANIMAL_LIST,
+  CONDICAO_PAGAMENTO_LIST,
   SYNC_CONFIG,
 } from "./config.js";
 
@@ -460,13 +461,17 @@ function normalizeAnimal(a = {}) {
   // números
   out.peso_atual_kg = toNumberOrZero(out.peso_atual_kg);
   out.peso_nascimento = toNumberOrZero(out.peso_nascimento);
+  out.valor_animal = toNumberOrZero(out.valor_animal);
 
-  // listas
-  if (!Array.isArray(out.list_lotes)) out.list_lotes = out.lote ? [String(out.lote)] : [];
-  out.list_lotes = out.list_lotes.map(id => String(id)).filter(Boolean);
-  out.lote = out.list_lotes.length > 0 ? out.list_lotes[0] : (out.lote ? String(out.lote) : "");
+  // listas (list_lotes pode vir com IDs ou objetos { _id } do servidor)
+  if (!Array.isArray(out.list_lotes)) out.list_lotes = out.lote ? [out.lote] : [];
+  const toLoteId = (id) => (id && typeof id === "object" && id._id != null) ? String(id._id) : String(id || "");
+  out.list_lotes = out.list_lotes.map(toLoteId).filter(Boolean);
+  out.lote = out.list_lotes.length > 0 ? out.list_lotes[0] : (out.lote ? toLoteId(out.lote) : "");
   // animal 1:1 pasto (id único)
   out.pasto = String(out.pasto || "");
+  // Preserva animal_peso (objeto de pesagem: animal, data_pesagem, peso_atual_kg, tipo_equipamento, momento_pesagem, user)
+  if (a.animal_peso !== undefined && a.animal_peso !== null) out.animal_peso = a.animal_peso;
   return out;
 }
 
@@ -563,15 +568,26 @@ async function bootstrapData() {
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-    // JSON parse separado pra identificar o erro corretamente
+    // Lê como texto e faz parse para poder exibir trecho em caso de JSON inválido (erro vem do servidor)
+    const rawText = await res.text();
     try {
-      data = await res.json();
+      data = JSON.parse(rawText);
     } catch (e) {
-      throw new Error(`Falha ao ler JSON: ${e?.message || e}`);
+      const msg = e?.message || String(e);
+      const posMatch = msg.match(/position\s+(\d+)/i);
+      let detail = msg;
+      if (posMatch && rawText.length > 0) {
+        const pos = Math.min(Number(posMatch[1]), rawText.length);
+        const start = Math.max(0, pos - 60);
+        const end = Math.min(rawText.length, pos + 60);
+        const snippet = rawText.slice(start, end).replace(/\n/g, " ").replace(/\r/g, "");
+        detail = `${msg} Trecho próximo ao erro: "...${snippet}..."`;
+      }
+      throw new Error(`Falha ao ler JSON: ${detail}`);
     }
 
-    // Novo formato: organizacao { _id, user, list_fazendas: [ { fazenda: {...} }, ... ] }
-    // Antigo: data.fazenda + data.user|data.owner (uma fazenda só)
+    // Formato v5: organizacao { _id, user { management_fazenda } }; colaboradores []; list_fazendas [ { fazenda: {...} } ] no topo
+    // Fazenda atual = organizacao.user.management_fazenda; list_fazendas é array no raiz do data
     let organizacaoRaw = null;
     let listFazendaObjects = [];
     let fazendaCurrentRaw = null;
@@ -580,17 +596,17 @@ async function bootstrapData() {
     if (data?.organizacao) {
       organizacaoRaw = data.organizacao;
       ownerRaw = data.organizacao.user ?? null;
-      if (ownerRaw?.management_fazenda && !state.ctx.fazendaId) {
-        state.ctx = { ...state.ctx, fazendaId: String(ownerRaw.management_fazenda).trim() };
+      if (ownerRaw?.management_fazenda) {
+        const mgmtId = String(ownerRaw.management_fazenda).trim();
+        if (!state.ctx.fazendaId) state.ctx = { ...state.ctx, fazendaId: mgmtId };
       }
-      const listFazendas = Array.isArray(data.organizacao.list_fazendas) ? data.organizacao.list_fazendas : [];
+      const listFazendas = Array.isArray(data.list_fazendas) ? data.list_fazendas : [];
       listFazendaObjects = listFazendas.map((item) => item?.fazenda).filter(Boolean);
       const fazendaIdCtx = String(state.ctx.fazendaId || "").trim();
       const userMgmtFazenda = ownerRaw && String(ownerRaw.management_fazenda || "").trim();
-      const entry = listFazendas.find(
-        (item) => String(item?.fazenda?._id || "") === fazendaIdCtx || String(item?.fazenda?._id || "") === userMgmtFazenda
-      );
-      fazendaCurrentRaw = entry?.fazenda ?? listFazendaObjects[0] ?? null;
+      fazendaCurrentRaw = listFazendaObjects.find(
+        (f) => String(f?._id || "") === fazendaIdCtx || String(f?._id || "") === userMgmtFazenda
+      ) ?? listFazendaObjects[0] ?? null;
     } else {
       fazendaCurrentRaw = data?.fazenda || null;
       ownerRaw = data?.user ?? data?.owner ?? null;
@@ -603,10 +619,21 @@ async function bootstrapData() {
     const allPastosRaw = listFazendaObjects.reduce((acc, f) => acc.concat(Array.isArray(f?.list_pasto) ? f.list_pasto : []), []);
     const allVacinacaoRaw = listFazendaObjects.reduce((acc, f) => acc.concat(Array.isArray(f?.list_vacinacao) ? f.list_vacinacao : []), []);
 
+    // Fazenda leve: não persiste listas duplicadas (animais/lotes/pastos/vacinacao já estão em tabelas próprias com atributo fazenda)
+    function fazendaSemListas(f) {
+      if (!f || typeof f !== "object") return f;
+      const out = { ...f };
+      delete out.list_animais;
+      delete out.list_lotes;
+      delete out.list_pasto;
+      delete out.list_vacinacao;
+      return out;
+    }
     const owner = toCloneable(ownerRaw);
-    const fazendaCurrent = toCloneable(fazendaCurrentRaw);
+    const fazendaCurrent = toCloneable(fazendaSemListas(fazendaCurrentRaw));
     const organizacao = organizacaoRaw ? toCloneable(organizacaoRaw) : null;
-    const listFazendasClone = listFazendaObjects.map((f) => toCloneable(f));
+    const listFazendasClone = listFazendaObjects.map((f) => toCloneable(fazendaSemListas(f)));
+    const colaboradores = toCloneable(Array.isArray(data?.colaboradores) ? data.colaboradores : []);
 
     const animaisServidor = toCloneable(allAnimaisRaw.map(normalizeAnimal));
     
@@ -674,6 +701,7 @@ async function bootstrapData() {
     // ✅ Gravação com debug por etapa (pra não “sumir” o erro)
     try {
       if (organizacao) await idbSet("organizacao", "current", organizacao);
+      await idbSet("colaboradores", "list", colaboradores);
       await idbSet("fazenda", "list", listFazendasClone);
       await idbSet("fazenda", "current", fazendaCurrent);
       await idbSet("owner", "current", owner);
@@ -2768,9 +2796,10 @@ async function renderMovimentacoesModule(container) {
         fazendasDestino.map(f => `<option value="${escapeHtml(f._id)}">${escapeHtml(f.name || "—")}</option>`).join("");
     }
 
-    const fazendaAtualObj = listFazendas.find(f => String(f._id) === fazendaAtualId) || fazendaAtual;
-    const lotesOrigem = Array.isArray(fazendaAtualObj?.list_lotes) ? fazendaAtualObj.list_lotes : [];
-    const pastosOrigem = Array.isArray(fazendaAtualObj?.list_pasto) ? fazendaAtualObj.list_pasto : [];
+    const lotesList = (await idbGet("lotes", "list")) || [];
+    const pastosList = (await idbGet("pastos", "list")) || [];
+    const lotesOrigem = lotesList.filter(l => String(l?.fazenda || "") === String(fazendaAtualId));
+    const pastosOrigem = pastosList.filter(p => String(p?.fazenda || "") === String(fazendaAtualId));
 
     if (selLoteOrigemFazenda) {
       selLoteOrigemFazenda.innerHTML = '<option value="">Selecione o lote de origem</option>' +
@@ -2874,19 +2903,22 @@ async function renderMovimentacoesModule(container) {
 
     const listFazendas = (await idbGet("fazenda", "list")) || [];
     const fazendaDestino = listFazendas.find(f => String(f._id) === fazendaDestinoId);
-    
-    if (fazendaDestino) {
-      const lotesDestino = Array.isArray(fazendaDestino.list_lotes) ? fazendaDestino.list_lotes : [];
-      const pastosDestino = Array.isArray(fazendaDestino.list_pasto) ? fazendaDestino.list_pasto : [];
-      
-      if (selLoteDestinoFazenda) {
-        selLoteDestinoFazenda.innerHTML = '<option value="">Selecione o lote de destino</option>' +
-          lotesDestino.map(l => `<option value="${escapeHtml(l._id)}">${escapeHtml(l.nome_lote || "—")}</option>`).join("");
-      }
-      if (selPastoDestinoFazenda) {
-        selPastoDestinoFazenda.innerHTML = '<option value="">Selecione o pasto de destino</option>' +
-          pastosDestino.map(p => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`).join("");
-      }
+    if (!fazendaDestino) {
+      updateTransferirFazendasButton();
+      return;
+    }
+    const lotesListDest = (await idbGet("lotes", "list")) || [];
+    const pastosListDest = (await idbGet("pastos", "list")) || [];
+    const lotesDestino = lotesListDest.filter(l => String(l?.fazenda || "") === String(fazendaDestinoId));
+    const pastosDestino = pastosListDest.filter(p => String(p?.fazenda || "") === String(fazendaDestinoId));
+
+    if (selLoteDestinoFazenda) {
+      selLoteDestinoFazenda.innerHTML = '<option value="">Selecione o lote de destino</option>' +
+        lotesDestino.map(l => `<option value="${escapeHtml(l._id)}">${escapeHtml(l.nome_lote || "—")}</option>`).join("");
+    }
+    if (selPastoDestinoFazenda) {
+      selPastoDestinoFazenda.innerHTML = '<option value="">Selecione o pasto de destino</option>' +
+        pastosDestino.map(p => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`).join("");
     }
     updateTransferirFazendasButton();
   });
@@ -2967,17 +2999,19 @@ async function renderMovimentacoesModule(container) {
 
     const listFazendas = (await idbGet("fazenda", "list")) || [];
     const fazendaDestino = listFazendas.find(f => String(f._id) === fazendaDestinoId);
-    const origemNome = origemTipo === "lote" 
-      ? (lotes.find(l => String(l._id) === selLoteOrigemFazenda?.value)?.nome_lote || "—")
-      : (pastos.find(p => String(p._id) === selPastoOrigemFazenda?.value)?.nome || "—");
-    
+    const lotesAll = (await idbGet("lotes", "list")) || [];
+    const pastosAll = (await idbGet("pastos", "list")) || [];
+    const origemNome = origemTipo === "lote"
+      ? (lotesAll.find(l => String(l._id) === selLoteOrigemFazenda?.value)?.nome_lote || "—")
+      : (pastosAll.find(p => String(p._id) === selPastoOrigemFazenda?.value)?.nome || "—");
+
     let destinoNome = fazendaDestino?.name || "—";
     if (loteDestinoId) {
-      const loteDestino = fazendaDestino?.list_lotes?.find(l => String(l._id) === loteDestinoId);
+      const loteDestino = lotesAll.find(l => String(l._id) === loteDestinoId && String(l?.fazenda) === String(fazendaDestinoId));
       destinoNome += ` - ${loteDestino?.nome_lote || "Lote"}`;
     }
     if (pastoDestinoId) {
-      const pastoDestino = fazendaDestino?.list_pasto?.find(p => String(p._id) === pastoDestinoId);
+      const pastoDestino = pastosAll.find(p => String(p._id) === pastoDestinoId && String(p?.fazenda) === String(fazendaDestinoId));
       destinoNome += ` - ${pastoDestino?.nome || "Pasto"}`;
     }
 
@@ -3136,12 +3170,698 @@ async function renderSaidaAnimaisModule(container) {
   });
 
   container.querySelectorAll(".saBtnNew, .saBtnNewCenter").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const tabId = btn.dataset.tab;
+      if (tabId === "venda") {
+        await renderSaidaAnimaisVendaForm(container);
+        return;
+      }
       const tab = SAIDA_ANIMAIS_TABS.find((t) => t.id === tabId);
       if (tab) toast(`Em breve: ${tab.btnNew}`);
     });
   });
+}
+
+/** Tela "Informações sobre a venda" (saída individual — apenas formulário, sem listagem). */
+async function renderSaidaAnimaisVendaForm(container) {
+  if (!container) return;
+
+  const condicaoOptions = CONDICAO_PAGAMENTO_LIST.map(
+    (c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`
+  ).join("");
+  const ufOptions = UF_LIST.map(
+    (u) => `<option value="${escapeHtml(u.value)}">${escapeHtml(u.label)}</option>`
+  ).join("");
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  container.innerHTML = `
+    <div class="saVendaForm" id="saVendaForm">
+      <div class="pageHead">
+        <div class="pageHeadRow1">
+          <button type="button" class="animalFormBackBtn" id="saVendaBack" aria-label="Voltar">← Voltar</button>
+          <div class="pageHeadActions">
+            <button type="button" class="animalFormHeaderBtn btnSaveAnimal" id="saVendaBtnRealizar">Realizar saída de animais</button>
+          </div>
+        </div>
+        <div class="pageHeadRow2">
+          <h1 class="pageTitle">Informações sobre a venda</h1>
+          <p class="pageSub">Registre a saída individual do animal</p>
+        </div>
+      </div>
+      <div class="saVendaFormBody saVendaFormOnly">
+        <div class="saVendaFormCard">
+          <div class="saVendaFormGrid">
+            <div class="saVendaField saVendaFieldAnimal">
+              <label for="vendaAnimalBrinco">Animal <span class="saVendaRequired">*</span></label>
+              <div class="saVendaAnimalSearchWrap">
+                <span class="saVendaAnimalSearchIcon" aria-hidden="true">&#128269;</span>
+                <input type="text" id="vendaAnimalBrinco" class="saVendaAnimalSearchInput" placeholder="Digite o nº do Brinco" required aria-label="Buscar animal pelo brinco" autocomplete="off" />
+              </div>
+              <div id="vendaAnimalResults" class="saVendaAnimalResults" role="listbox" aria-label="Resultados da busca" hidden></div>
+            </div>
+            <div class="saVendaField saVendaFieldProprietarioDestino">
+              <label for="vendaProprietarioDestino">Proprietário de destino <span class="saVendaRequired">*</span></label>
+              <div class="saVendaAnimalSearchWrap">
+                <span class="saVendaAnimalSearchIcon" aria-hidden="true">&#128269;</span>
+                <input type="text" id="vendaProprietarioDestino" class="saVendaAnimalSearchInput" placeholder="Digite o nome do proprietário" aria-label="Buscar proprietário de destino" autocomplete="off" />
+              </div>
+              <div id="vendaProprietarioDestinoResults" class="saVendaAnimalResults" role="listbox" aria-label="Resultados da busca" hidden></div>
+            </div>
+            <div class="saVendaField saVendaFieldFazendaDestino" id="saVendaFazendaDestinoWrap" hidden>
+              <label for="vendaFazendaDestino">Fazenda de destino</label>
+              <select id="vendaFazendaDestino" class="saVendaSelect"><option value="">Selecione a fazenda de destino</option></select>
+            </div>
+            <div class="saVendaField">
+              <label for="vendaValor">Valor</label>
+              <div class="saVendaCurrencyWrap">
+                <span class="saVendaCurrencyPrefix" aria-hidden="true">R$</span>
+                <input type="text" id="vendaValor" class="saVendaInput saVendaInputCurrency" placeholder="0,00" inputmode="decimal" data-raw="" />
+              </div>
+            </div>
+            <div class="saVendaField">
+              <label for="vendaPeso">Peso</label>
+              <input type="number" id="vendaPeso" class="saVendaInput" placeholder="kg" min="0" step="0.01" inputmode="decimal" />
+            </div>
+            <div class="saVendaField">
+              <label for="vendaCondicaoPagamento">Condição de Pagamento</label>
+              <select id="vendaCondicaoPagamento" class="saVendaSelect"><option value="">Selecione a condição de pagamento</option>${condicaoOptions}</select>
+            </div>
+            <div class="saVendaField">
+              <label for="vendaData">Data</label>
+              <input type="date" id="vendaData" class="saVendaInput" value="${today}" />
+            </div>
+            <div class="saVendaField">
+              <label for="vendaNotaFiscal">Número da nota fiscal</label>
+              <input type="text" id="vendaNotaFiscal" class="saVendaInput" placeholder="Nota fiscal" />
+            </div>
+            <div class="saVendaField">
+              <label for="vendaNumeroGTA">N° GTA</label>
+              <input type="text" id="vendaNumeroGTA" class="saVendaInput" placeholder="Número GTA" />
+            </div>
+            <div class="saVendaField">
+              <label for="vendaDataEmissaoGTA">Data emissão GTA <span class="saVendaRequired">*</span></label>
+              <input type="date" id="vendaDataEmissaoGTA" class="saVendaInput" value="${today}" required />
+            </div>
+            <div class="saVendaField">
+              <label for="vendaDataValidadeGTA">Data validade GTA <span class="saVendaRequired">*</span></label>
+              <input type="date" id="vendaDataValidadeGTA" class="saVendaInput" value="${today}" required />
+            </div>
+            <div class="saVendaField">
+              <label for="vendaSerie">Série</label>
+              <input type="text" id="vendaSerie" class="saVendaInput" placeholder="Série da GTA" />
+            </div>
+            <div class="saVendaField">
+              <label for="vendaUF">UF</label>
+              <select id="vendaUF" class="saVendaSelect"><option value="">Selecione</option>${ufOptions}</select>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Modal Confirmar venda de animais -->
+      <div id="saVendaModalConfirm" class="saVendaModalOverlay" hidden aria-modal="true" role="dialog" aria-labelledby="saVendaModalTitle">
+        <div class="saVendaModal">
+          <div class="saVendaModalHeader">
+            <h2 id="saVendaModalTitle" class="saVendaModalTitle">Confirmar venda de animais</h2>
+            <p class="saVendaModalSub">Revise os detalhes antes de confirmar a saída dos animais.</p>
+            <button type="button" class="saVendaModalClose" id="saVendaModalClose" aria-label="Fechar">&times;</button>
+          </div>
+          <div class="saVendaModalBody">
+            <div class="saVendaModalOrigemDestino">
+              <div class="saVendaModalCard saVendaModalOrigem">
+                <span class="saVendaModalCardIcon" aria-hidden="true">&#128970;</span>
+                <span class="saVendaModalCardLabel">Origem</span>
+                <span id="saVendaModalOrigemNome" class="saVendaModalCardValue">—</span>
+              </div>
+              <span class="saVendaModalArrow" aria-hidden="true">→</span>
+              <div class="saVendaModalCard saVendaModalDestino">
+                <span class="saVendaModalCardIcon" aria-hidden="true">&#128205;</span>
+                <span class="saVendaModalCardLabel">Destino</span>
+                <span id="saVendaModalDestinoNome" class="saVendaModalCardValue">—</span>
+              </div>
+            </div>
+            <div class="saVendaModalQtd">
+              <span class="saVendaModalQtdIcon" aria-hidden="true">&#128046;</span>
+              <span id="saVendaModalQtdText">Quantidade de animais: 1</span>
+            </div>
+            <div class="saVendaModalDetalhes">
+              <div class="saVendaModalCol">
+                <p class="saVendaModalDetalhe"><span class="saVendaModalDetalheLabel">Data de aquisição:</span> <span id="saVendaModalDataAquisicao">—</span></p>
+                <p class="saVendaModalDetalhe"><span class="saVendaModalDetalheLabel">Número da nota fiscal:</span> <span id="saVendaModalNotaFiscal">—</span></p>
+                <p class="saVendaModalDetalhe"><span class="saVendaModalDetalheLabel">Valor da aquisição:</span> <span id="saVendaModalValorAquisicao">—</span></p>
+              </div>
+              <div class="saVendaModalCol">
+                <p class="saVendaModalDetalhe"><span class="saVendaModalDetalheLabel">Número GTA:</span> <span id="saVendaModalNumeroGTA">—</span></p>
+                <p class="saVendaModalDetalhe"><span class="saVendaModalDetalheLabel">Data emissão GTA:</span> <span id="saVendaModalDataEmissaoGTA">—</span></p>
+                <p class="saVendaModalDetalhe"><span class="saVendaModalDetalheLabel">Série GTA:</span> <span id="saVendaModalSerieGTA">—</span></p>
+                <p class="saVendaModalDetalhe"><span class="saVendaModalDetalheLabel">Estado:</span> <span id="saVendaModalEstado">—</span></p>
+                <p class="saVendaModalDetalhe"><span class="saVendaModalDetalheLabel">Data validade GTA:</span> <span id="saVendaModalDataValidadeGTA">—</span></p>
+              </div>
+            </div>
+            <div class="saVendaModalAviso">
+              <span class="saVendaModalAvisoIcon" aria-hidden="true">&#9888;</span>
+              <span>Por favor, confira se as informações estão corretas. Essa ação não poderá ser desfeita!</span>
+            </div>
+          </div>
+          <div class="saVendaModalFooter">
+            <button type="button" class="saVendaModalBtn saVendaModalBtnCancel" id="saVendaModalCancel">Cancelar</button>
+            <button type="button" class="saVendaModalBtn saVendaModalBtnConfirm" id="saVendaModalConfirmBtn">Confirmar saída de animais</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const backBtn = container.querySelector("#saVendaBack");
+  if (backBtn) {
+    backBtn.addEventListener("click", () => renderSaidaAnimaisModule(container));
+  }
+
+  /** Formata string de dígitos em moeda BR (ex.: "120000" -> "1.200,00"). Usado no campo Valor e ao pré-preencher. */
+  function formatBrCurrencyFromDigits(digits) {
+    const d = String(digits).replace(/\D/g, "") || "0";
+    if (d === "0" || d === "") return "";
+    const len = d.length;
+    const intPart = len <= 2 ? "0" : d.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    const decPart = len >= 2 ? d.slice(-2) : d.padStart(2, "0");
+    return intPart + "," + decPart;
+  }
+
+  /** Formata data YYYY-MM-DD para DD/MM/YYYY para exibição no modal. */
+  function formatBrDate(isoDate) {
+    if (!isoDate || !String(isoDate).trim()) return "—";
+    const s = String(isoDate).trim().slice(0, 10);
+    if (s.length < 10) return s || "—";
+    const [y, m, d] = s.split("-");
+    return `${d}/${m}/${y}`;
+  }
+
+  const modalOverlay = container.querySelector("#saVendaModalConfirm");
+  const modalCloseBtn = container.querySelector("#saVendaModalClose");
+  const modalCancelBtn = container.querySelector("#saVendaModalCancel");
+  const modalConfirmBtn = container.querySelector("#saVendaModalConfirmBtn");
+
+  function closeVendaModal() {
+    if (modalOverlay) modalOverlay.hidden = true;
+  }
+
+  function openVendaModal(data) {
+    if (!modalOverlay) return;
+    const set = (id, text) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text ?? "—";
+    };
+    set("saVendaModalOrigemNome", data.origemNome);
+    set("saVendaModalDestinoNome", data.destinoNome);
+    set("saVendaModalQtdText", `Quantidade de animais: ${data.quantidade ?? 1}`);
+    set("saVendaModalDataAquisicao", data.dataAquisicao);
+    set("saVendaModalNotaFiscal", data.notaFiscal);
+    set("saVendaModalValorAquisicao", data.valorAquisicao);
+    set("saVendaModalNumeroGTA", data.numeroGTA);
+    set("saVendaModalDataEmissaoGTA", data.dataEmissaoGTA);
+    set("saVendaModalSerieGTA", data.serieGTA);
+    set("saVendaModalEstado", data.estado);
+    set("saVendaModalDataValidadeGTA", data.dataValidadeGTA);
+    modalOverlay.hidden = false;
+  }
+
+  if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeVendaModal);
+  if (modalCancelBtn) modalCancelBtn.addEventListener("click", closeVendaModal);
+  if (modalOverlay) {
+    modalOverlay.addEventListener("click", (e) => {
+      if (e.target === modalOverlay) closeVendaModal();
+    });
+  }
+
+  const btnRealizar = container.querySelector("#saVendaBtnRealizar");
+  if (btnRealizar) {
+    btnRealizar.addEventListener("click", async () => {
+      const animalBrinco = container.querySelector("#vendaAnimalBrinco");
+      const proprietarioDestino = container.querySelector("#vendaProprietarioDestino");
+      const fazendaDestinoWrap = container.querySelector("#saVendaFazendaDestinoWrap");
+      const fazendaDestinoSelect = container.querySelector("#vendaFazendaDestino");
+      const dataEmissao = container.querySelector("#vendaDataEmissaoGTA");
+      const dataValidade = container.querySelector("#vendaDataValidadeGTA");
+      if (!animalBrinco?.value?.trim()) {
+        toast("Informe o animal (digite o nº do Brinco).");
+        return;
+      }
+      if (!proprietarioDestino?.value?.trim() || !proprietarioDestino.getAttribute("data-selected-id")) {
+        toast("Selecione o Proprietário de destino (busque e escolha na lista).");
+        return;
+      }
+      if (fazendaDestinoWrap && !fazendaDestinoWrap.hidden && fazendaDestinoSelect && !fazendaDestinoSelect.value?.trim()) {
+        toast("Selecione a Fazenda de destino.");
+        return;
+      }
+      if (!dataEmissao?.value || !dataValidade?.value) {
+        toast("Preencha Data emissão GTA e Data validade GTA.");
+        return;
+      }
+      const fazenda = await idbGet("fazenda", "current");
+      const origemNome = fazenda?.name || fazenda?.nome || "—";
+      const destinoNome = proprietarioDestino.value.trim() || "—";
+      const vendaData = container.querySelector("#vendaData")?.value;
+      const vendaNotaFiscal = container.querySelector("#vendaNotaFiscal")?.value?.trim();
+      const vendaValor = container.querySelector("#vendaValor");
+      const valorRaw = vendaValor?.dataset?.raw ?? vendaValor?.value;
+      const valorAquisicao = (valorRaw !== undefined && valorRaw !== "") ? (formatBrCurrencyFromDigits(String(Math.round(parseFloat(valorRaw) * 100))) || "—") : "—";
+      const numeroGTA = container.querySelector("#vendaNumeroGTA")?.value?.trim();
+      const serieGTA = container.querySelector("#vendaSerie")?.value?.trim();
+      const ufSelect = container.querySelector("#vendaUF");
+      const estadoOpt = ufSelect?.options?.[ufSelect.selectedIndex];
+      const estado = estadoOpt?.text?.trim() && estadoOpt?.value ? estadoOpt.text.trim() : "—";
+      openVendaModal({
+        origemNome,
+        destinoNome,
+        quantidade: 1,
+        dataAquisicao: formatBrDate(vendaData),
+        notaFiscal: vendaNotaFiscal || "—",
+        valorAquisicao,
+        numeroGTA: numeroGTA || "—",
+        dataEmissaoGTA: formatBrDate(dataEmissao?.value),
+        serieGTA: serieGTA || "—",
+        estado,
+        dataValidadeGTA: formatBrDate(dataValidade?.value),
+      });
+    });
+  }
+
+  if (modalConfirmBtn) {
+    modalConfirmBtn.addEventListener("click", async () => {
+      const animalBrinco = container.querySelector("#vendaAnimalBrinco");
+      const proprietarioDestino = container.querySelector("#vendaProprietarioDestino");
+      const fazendaDestinoWrap = container.querySelector("#saVendaFazendaDestinoWrap");
+      const fazendaDestinoSelect = container.querySelector("#vendaFazendaDestino");
+      const animalId = animalBrinco?.getAttribute("data-selected-id")?.trim();
+      const proprietarioId = proprietarioDestino?.getAttribute("data-selected-id")?.trim();
+      if (!animalId || !proprietarioId) {
+        toast("Dados do animal ou proprietário não encontrados. Feche e preencha novamente.");
+        return;
+      }
+      const fazenda = await idbGet("fazenda", "current");
+      const owner = await idbGet("owner", "current");
+      const fazendaOrigemId = String(state.ctx.fazendaId || fazenda?._id || "").trim();
+      const userAtualId = String(state.ctx.ownerId || owner?._id || "").trim();
+      const fazendaDestinoId = (fazendaDestinoWrap && !fazendaDestinoWrap.hidden && fazendaDestinoSelect?.value) ? String(fazendaDestinoSelect.value).trim() : "";
+      const vendaData = container.querySelector("#vendaData")?.value;
+      const vendaPeso = container.querySelector("#vendaPeso");
+      const pesoSaida = Number(vendaPeso?.value) || 0;
+      const notaFiscal = container.querySelector("#vendaNotaFiscal")?.value?.trim() || "";
+      const vendaValor = container.querySelector("#vendaValor");
+      const valorNum = parseFloat(vendaValor?.dataset?.raw ?? vendaValor?.value ?? 0) || 0;
+      const condicaoPagamento = container.querySelector("#vendaCondicaoPagamento")?.value?.trim() || "";
+      const numeroGTA = container.querySelector("#vendaNumeroGTA")?.value?.trim() || "";
+      const serieGTA = container.querySelector("#vendaSerie")?.value?.trim() || "";
+      const dataEmissaoGTA = container.querySelector("#vendaDataEmissaoGTA")?.value;
+      const dataValidadeGTA = container.querySelector("#vendaDataValidadeGTA")?.value;
+      const ufGTA = container.querySelector("#vendaUF")?.value?.trim() || "";
+      const dataAquisicaoTs = vendaData ? dateToTimestampSync(vendaData) : null;
+      const dataEmissaoTs = dataEmissaoGTA ? dateToTimestampSync(dataEmissaoGTA) : null;
+      const dataValidadeTs = dataValidadeGTA ? dateToTimestampSync(dataValidadeGTA) : null;
+      const qKey = `queue:${state.ctx.fazendaId || ""}:${state.ctx.ownerId || ""}:animal`;
+      const queueBefore = (await idbGet("records", qKey)) || [];
+      const pesoCreateItem = queueBefore.find((item) => item.op === "animal_create_peso" && String(item.payload?.animal) === String(animalId));
+      const animaisList = (await idbGet("animais", "list")) || [];
+      const animalRecord = animaisList.find((a) => String(a?._id) === String(animalId));
+      const existingPeso = animalRecord?.animal_peso && typeof animalRecord.animal_peso === "object" ? animalRecord.animal_peso : null;
+      const animalPesoId = pesoCreateItem?._id || `local:${uuid()}`;
+      const animalPeso = {
+        _id: animalPesoId,
+        animal: animalId,
+        data_pesagem: (existingPeso?.data_pesagem || pesoCreateItem?.payload?.data_pesagem) || new Date().toISOString(),
+        peso_atual_kg: (existingPeso?.peso_atual_kg ?? pesoCreateItem?.payload?.peso_atual_kg) ?? pesoSaida,
+        tipo_equipamento: (existingPeso?.tipo_equipamento || pesoCreateItem?.payload?.tipo_equipamento) || "Manual",
+        momento_pesagem: (existingPeso?.momento_pesagem || pesoCreateItem?.payload?.momento_pesagem) || "Pesagem regular",
+        user: (existingPeso?.user || pesoCreateItem?.payload?.user) || userAtualId,
+      };
+      const payload = {
+        animais: [animalId],
+        animal: animalId,
+        animal_peso: animalPeso,
+        proprietario_destino: proprietarioId || null,
+        fazenda_destino: fazendaDestinoId || null,
+        peso_saida: pesoSaida,
+        nota_fiscal: notaFiscal != null && String(notaFiscal).trim() !== "" ? String(notaFiscal).trim() : "",
+        data_aquisicao: dataAquisicaoTs != null ? dataAquisicaoTs : null,
+        valor: valorNum,
+        condicao_pagamento: condicaoPagamento != null && String(condicaoPagamento).trim() !== "" ? String(condicaoPagamento).trim() : "",
+        numero_gta: numeroGTA != null && String(numeroGTA).trim() !== "" ? String(numeroGTA).trim() : "",
+        serie_gta: serieGTA != null && String(serieGTA).trim() !== "" ? String(serieGTA).trim() : "",
+        data_emissao_gta: dataEmissaoTs != null ? dataEmissaoTs : null,
+        data_validade_gta: dataValidadeTs != null ? dataValidadeTs : null,
+        uf_gta: ufGTA != null && String(ufGTA).trim() !== "" ? String(ufGTA).trim() : "",
+        fazenda_origem: fazendaOrigemId || null,
+        user_atual: userAtualId || null,
+        valor_saida: valorNum,
+      };
+      queueBefore.push({ _id: `local:${uuid()}`, op: "create_saida_animais", at: Date.now(), payload });
+      await idbSet("records", qKey, queueBefore);
+      updateFabSyncVisibility();
+      closeVendaModal();
+      toast("Saída de animais registrada. Será sincronizada quando houver conexão.");
+    });
+  }
+
+  // Busca de animal por brinco (IndexedDB): mostra resultados abaixo do campo
+  const inputBrinco = container.querySelector("#vendaAnimalBrinco");
+  const resultsEl = container.querySelector("#vendaAnimalResults");
+  let searchDebounce = null;
+
+  async function searchAnimaisByBrinco(query) {
+    const q = String(query || "").trim();
+    if (!q) {
+      resultsEl.hidden = true;
+      resultsEl.innerHTML = "";
+      return;
+    }
+    const raw = (await idbGet("animais", "list")) || [];
+    const animais = filterByCurrentFazenda(raw).filter((a) => !a.deleted).map(normalizeAnimal);
+    const lower = q.toLowerCase();
+    const matches = animais.filter((a) => {
+      const brinco = String(a.brinco_padrao || "").toLowerCase();
+      return brinco.includes(lower) || (q.length >= 2 && brinco.includes(lower));
+    });
+    if (matches.length === 0) {
+      resultsEl.innerHTML = '<div class="saVendaAnimalResultItem saVendaAnimalResultEmpty">Nenhum animal encontrado</div>';
+      resultsEl.hidden = false;
+      return;
+    }
+    const nome = (a) => String(a.nome_completo || "").trim() || "—";
+    resultsEl.innerHTML = matches
+      .slice(0, 10)
+      .map(
+        (a) => {
+          const brinco = escapeHtml(a.brinco_padrao || "—");
+          const nomeStr = escapeHtml(nome(a));
+          const sexoStr = escapeHtml(renderSex(a.sexo));
+          const display = `${a.brinco_padrao || "—"} — ${nome(a)} — ${renderSex(a.sexo)}`;
+          const valor = Number.isFinite(Number(a.valor_animal)) ? String(a.valor_animal) : "";
+          const peso = Number.isFinite(Number(a.peso_atual_kg)) ? String(a.peso_atual_kg) : "";
+          return `<button type="button" class="saVendaAnimalResultItem" role="option" data-id="${escapeHtml(a._id)}" data-brinco="${escapeHtml(a.brinco_padrao || "")}" data-display="${escapeHtml(display).replace(/"/g, "&quot;")}" data-valor="${escapeHtml(valor)}" data-peso="${escapeHtml(peso)}">${brinco} — ${nomeStr} — ${sexoStr}</button>`;
+        }
+      )
+      .join("");
+    resultsEl.hidden = false;
+  }
+
+  if (inputBrinco && resultsEl) {
+    inputBrinco.addEventListener("input", () => {
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => searchAnimaisByBrinco(inputBrinco.value), 200);
+    });
+    inputBrinco.addEventListener("focus", () => {
+      if (inputBrinco.value.trim()) searchAnimaisByBrinco(inputBrinco.value);
+    });
+    resultsEl.addEventListener("click", (e) => {
+      const btn = e.target.closest(".saVendaAnimalResultItem[data-brinco]");
+      if (btn) {
+        inputBrinco.value = btn.dataset.display || btn.dataset.brinco || "";
+        inputBrinco.setAttribute("data-selected-id", btn.dataset.id || "");
+        resultsEl.hidden = true;
+        resultsEl.innerHTML = "";
+
+        const inputValor = container.querySelector("#vendaValor");
+        const inputPeso = container.querySelector("#vendaPeso");
+        const valorNum = parseFloat(btn.dataset.valor || "0") || 0;
+        const pesoVal = btn.dataset.peso !== undefined && btn.dataset.peso !== "" ? String(btn.dataset.peso) : "";
+        if (inputPeso) inputPeso.value = pesoVal;
+        if (inputValor) {
+          if (valorNum > 0) {
+            const centsStr = Math.round(valorNum * 100).toString();
+            inputValor.value = formatBrCurrencyFromDigits(centsStr);
+            inputValor.dataset.raw = String(valorNum);
+          } else {
+            inputValor.value = "";
+            inputValor.dataset.raw = "0";
+          }
+        }
+      }
+    });
+    document.addEventListener("click", (ev) => {
+      if (!resultsEl.hidden && !container.querySelector(".saVendaFieldAnimal")?.contains(ev.target)) {
+        resultsEl.hidden = true;
+      }
+    });
+  }
+
+  // --- Proprietário de destino: busca por nome em colaboradores ---
+  const FAZENDA_FORA_SISTEMA = "Fazenda Fora do Sistema";
+  const inputProprietario = container.querySelector("#vendaProprietarioDestino");
+  const resultsProprietario = container.querySelector("#vendaProprietarioDestinoResults");
+  const wrapFazendaDestino = container.querySelector("#saVendaFazendaDestinoWrap");
+  const selectFazendaDestino = container.querySelector("#vendaFazendaDestino");
+  let selectedColaborador = null;
+  let searchProprietarioDebounce = null;
+
+  async function searchColaboradoresByName(query) {
+    if (!resultsProprietario) return;
+    const q = String(query || "").trim();
+    if (!q) {
+      resultsProprietario.setAttribute("hidden", "");
+      resultsProprietario.style.display = "none";
+      resultsProprietario.innerHTML = "";
+      return;
+    }
+    try {
+      const list = (await idbGet("colaboradores", "list")) || [];
+      const lower = q.toLowerCase();
+      const matches = list.filter((c) => {
+        const nome = String(c.nome || "").toLowerCase();
+        return nome.includes(lower);
+      });
+      if (matches.length === 0) {
+        resultsProprietario.innerHTML = '<div class="saVendaAnimalResultItem saVendaAnimalResultEmpty">Nenhum proprietário encontrado</div>';
+      } else {
+        resultsProprietario.innerHTML = matches
+          .slice(0, 10)
+          .map(
+            (c) => {
+              const nome = escapeHtml(c.nome || "—");
+              const tipo = escapeHtml(c.tipo || "");
+              return `<button type="button" class="saVendaAnimalResultItem" role="option" data-id="${escapeHtml(c._id)}" data-nome="${escapeHtml(c.nome || "").replace(/"/g, "&quot;")}">${nome}${tipo ? ` <span class="saVendaResultSub">(${tipo})</span>` : ""}</button>`;
+            }
+          )
+          .join("");
+      }
+      resultsProprietario.removeAttribute("hidden");
+      resultsProprietario.style.display = "block";
+    } catch (e) {
+      console.error("[Venda] searchColaboradoresByName:", e);
+      resultsProprietario.innerHTML = '<div class="saVendaAnimalResultItem saVendaAnimalResultEmpty">Erro ao buscar. Tente novamente.</div>';
+      resultsProprietario.removeAttribute("hidden");
+      resultsProprietario.style.display = "block";
+    }
+  }
+
+  function hideFazendaDestinoWrap() {
+    if (wrapFazendaDestino) {
+      wrapFazendaDestino.setAttribute("hidden", "");
+      wrapFazendaDestino.style.display = "none";
+    }
+    if (selectFazendaDestino) {
+      selectFazendaDestino.innerHTML = '<option value="">Selecione a fazenda de destino</option>';
+      selectFazendaDestino.value = "";
+    }
+  }
+
+  async function onColaboradorSelected(colaborador) {
+    selectedColaborador = colaborador;
+    if (!wrapFazendaDestino || !selectFazendaDestino) return;
+    const fazendaIds = Array.isArray(colaborador?.fazendas) ? colaborador.fazendas.map((id) => String(id)) : [];
+    if (fazendaIds.length === 0) {
+      hideFazendaDestinoWrap();
+      return;
+    }
+    const listFazendas = (await idbGet("fazenda", "list")) || [];
+    const fazendasDoColaborador = listFazendas.filter((f) => fazendaIds.includes(String(f._id || "")));
+    const temFazendaFora = fazendasDoColaborador.some((f) => String(f.name || "").trim() === FAZENDA_FORA_SISTEMA);
+    if (temFazendaFora) {
+      hideFazendaDestinoWrap();
+      return;
+    }
+    wrapFazendaDestino.removeAttribute("hidden");
+    wrapFazendaDestino.style.display = "";
+    selectFazendaDestino.innerHTML =
+      '<option value="">Selecione a fazenda de destino</option>' +
+      fazendasDoColaborador.map((f) => `<option value="${escapeHtml(f._id)}">${escapeHtml(f.name || "—")}</option>`).join("");
+    selectFazendaDestino.value = "";
+  }
+
+  // Fazenda de destino: fica invisível até escolher um colaborador (e só aparece se ele não tiver "Fazenda Fora do Sistema")
+  if (wrapFazendaDestino) {
+    wrapFazendaDestino.setAttribute("hidden", "");
+    wrapFazendaDestino.style.display = "none";
+  }
+
+  if (inputProprietario && resultsProprietario) {
+    inputProprietario.addEventListener("input", () => {
+      clearTimeout(searchProprietarioDebounce);
+      selectedColaborador = null;
+      hideFazendaDestinoWrap();
+      searchProprietarioDebounce = setTimeout(() => searchColaboradoresByName(inputProprietario.value), 150);
+    });
+    inputProprietario.addEventListener("focus", () => {
+      if (inputProprietario.value.trim()) searchColaboradoresByName(inputProprietario.value);
+    });
+    resultsProprietario.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".saVendaAnimalResultItem[data-id]");
+      if (btn && !btn.classList.contains("saVendaAnimalResultEmpty")) {
+        const id = btn.dataset.id;
+        const nome = btn.dataset.nome || "";
+        inputProprietario.value = nome;
+        inputProprietario.setAttribute("data-selected-id", id || "");
+        resultsProprietario.setAttribute("hidden", "");
+        resultsProprietario.style.display = "none";
+        resultsProprietario.innerHTML = "";
+        const list = (await idbGet("colaboradores", "list")) || [];
+        const col = list.find((c) => String(c._id) === String(id));
+        if (col) onColaboradorSelected(col);
+      }
+    });
+    document.addEventListener("click", (ev) => {
+      if (!container.querySelector(".saVendaFieldProprietarioDestino")?.contains(ev.target)) {
+        if (resultsProprietario && !resultsProprietario.hasAttribute("hidden")) {
+          resultsProprietario.setAttribute("hidden", "");
+          resultsProprietario.style.display = "none";
+        }
+      }
+    });
+  }
+
+  // --- Campo Valor (R$): formatação em moeda BR com . (milhares) e , (decimais) em tempo real ---
+  const inputValor = container.querySelector("#vendaValor");
+  if (inputValor) {
+    function parseBrCurrency(str) {
+      const s = String(str || "").replace(/\./g, "").replace(",", ".");
+      const n = parseFloat(s);
+      return Number.isFinite(n) ? n : 0;
+    }
+    inputValor.addEventListener("input", () => {
+      const digits = inputValor.value.replace(/\D/g, "");
+      const limited = digits.slice(0, 18);
+      const formatted = formatBrCurrencyFromDigits(limited);
+      const start = inputValor.selectionStart;
+      const lenBefore = inputValor.value.length;
+      inputValor.value = formatted;
+      inputValor.dataset.raw = limited.length >= 2
+        ? String(parseFloat(limited.slice(0, -2) + "." + limited.slice(-2)))
+        : (limited.length === 1 ? "0.0" + limited : "0");
+      const lenAfter = inputValor.value.length;
+      const newPos = Math.max(0, start + (lenAfter - lenBefore));
+      inputValor.setSelectionRange(newPos, newPos);
+    });
+    inputValor.addEventListener("blur", () => {
+      const digits = inputValor.value.replace(/\D/g, "");
+      const formatted = formatBrCurrencyFromDigits(digits);
+      if (formatted) {
+        inputValor.value = formatted;
+        inputValor.dataset.raw = digits.length >= 2
+          ? String(parseFloat(digits.slice(0, -2) + "." + digits.slice(-2)))
+          : "0";
+      } else {
+        inputValor.value = "";
+        inputValor.dataset.raw = "0";
+      }
+      enqueueValorUpdateIfAnimalSelected();
+    });
+    inputValor.addEventListener("focus", () => {
+      const digits = inputValor.value.replace(/\D/g, "");
+      if (digits.length > 0) inputValor.value = formatBrCurrencyFromDigits(digits);
+    });
+
+    /** Ao alterar o Valor com um animal selecionado: atualiza o animal no IDB e coloca na fila para sincronizar (update_animal). */
+    async function enqueueValorUpdateIfAnimalSelected() {
+      const inputBrinco = container.querySelector("#vendaAnimalBrinco");
+      const animalId = inputBrinco?.getAttribute("data-selected-id")?.trim();
+      if (!animalId) return;
+      const rawVal = parseFloat(inputValor.dataset.raw || "0") || 0;
+      const arr = (await idbGet("animais", "list")) || [];
+      const idx = arr.findIndex((a) => String(a?._id) === String(animalId));
+      if (idx === -1) return;
+      const prev = arr[idx];
+      const prevValor = Number(prev?.valor_animal) || 0;
+      if (prevValor === rawVal) return;
+      const updated = normalizeAnimal({
+        ...prev,
+        valor_animal: rawVal,
+        _local: prev._local || true,
+        _sync: "pending",
+        data_modificacao: prev.data_modificacao,
+      });
+      arr[idx] = updated;
+      await idbSet("animais", "list", arr);
+      const qKey = `queue:${state.ctx.fazendaId || ""}:${state.ctx.ownerId || ""}:animal`;
+      const queue = (await idbGet("records", qKey)) || [];
+      const withoutValorUpdatesForThis = queue.filter(
+        (item) => !(item.op === "animal_update" && String(item.targetId) === String(animalId) && item.fromValorAnimal === true)
+      );
+      withoutValorUpdatesForThis.push({
+        op: "animal_update",
+        at: Date.now(),
+        payload: updated,
+        targetId: animalId,
+        fromValorAnimal: true,
+      });
+      await idbSet("records", qKey, withoutValorUpdatesForThis);
+      updateFabSyncVisibility();
+    }
+  }
+
+  // --- Campo Peso: ao alterar, atualiza o animal local (animal_peso + peso_atual_kg) e enfileira só animal_create_peso.
+  // Não enfileira animal_update: o backend já atualiza peso_atual_kg ao processar animal_create_peso. ---
+  const inputPeso = container.querySelector("#vendaPeso");
+  if (inputPeso) {
+    inputPeso.addEventListener("blur", () => {
+      enqueuePesoUpdateIfAnimalSelected();
+    });
+    async function enqueuePesoUpdateIfAnimalSelected() {
+      const inputBrinco = container.querySelector("#vendaAnimalBrinco");
+      const animalId = inputBrinco?.getAttribute("data-selected-id")?.trim();
+      if (!animalId) return;
+      const pesoVal = parseFloat(inputPeso.value) || 0;
+      const arr = (await idbGet("animais", "list")) || [];
+      const idx = arr.findIndex((a) => String(a?._id) === String(animalId));
+      if (idx === -1) return;
+      const prev = arr[idx];
+      const prevPeso = Number(prev?.peso_atual_kg) || 0;
+      if (prevPeso === pesoVal) return;
+      const owner = (await idbGet("owner", "current")) || {};
+      const userId = String(state.ctx.ownerId || owner._id || "").trim();
+      const animalPeso = {
+        animal: animalId,
+        data_pesagem: new Date().toISOString(),
+        peso_atual_kg: pesoVal,
+        tipo_equipamento: "Manual",
+        momento_pesagem: "Pesagem regular",
+        user: userId,
+      };
+      // Atualiza animal local com animal_peso e peso_atual_kg (backend fará o mesmo ao processar animal_create_peso)
+      const updated = normalizeAnimal({
+        ...prev,
+        animal_peso: animalPeso,
+        peso_atual_kg: pesoVal,
+        _local: prev._local || true,
+        _sync: "pending",
+        data_modificacao: prev.data_modificacao,
+      });
+      arr[idx] = updated;
+      await idbSet("animais", "list", arr);
+      const qKey = `queue:${state.ctx.fazendaId || ""}:${state.ctx.ownerId || ""}:animal`;
+      const queue = (await idbGet("records", qKey)) || [];
+      const withoutPesoCreatesForThis = queue.filter(
+        (item) => !(item.op === "animal_create_peso" && String(item.payload?.animal) === String(animalId))
+      );
+      withoutPesoCreatesForThis.push({
+        _id: `local:${uuid()}`,
+        op: "animal_create_peso",
+        at: Date.now(),
+        payload: animalPeso,
+      });
+      await idbSet("records", qKey, withoutPesoCreatesForThis);
+      updateFabSyncVisibility();
+    }
+  }
 }
 
 // ---------------- SW ----------------
@@ -3174,15 +3894,23 @@ async function getPendingSyncList() {
       const opType = op?.op || "animal_update";
       let label = opType === "animal_create" ? "Novo animal" : "Atualização de animal";
       if (opType === "animal_update" && isTransfer) label = "Transferência entre fazendas";
+      if (opType === "animal_create_peso") label = "Pesagem";
+      if (opType === "create_saida_animais") label = "Saída de animais";
       const payload = op?.payload || {};
       let oldAnimal = null;
-      if (opType === "animal_update" && (op.targetId || payload._id)) {
-        const animalId = op.targetId || payload._id;
+      if ((opType === "animal_update" && (op.targetId || payload._id)) || (opType === "animal_create_peso" && payload.animal)) {
+        const animalId = op.targetId || payload._id || payload.animal;
+        oldAnimal = animaisList.find(a => String(a?._id) === String(animalId));
+      }
+      if (opType === "create_saida_animais" && Array.isArray(payload.animais) && payload.animais.length > 0) {
+        const animalId = payload.animais[0];
         oldAnimal = animaisList.find(a => String(a?._id) === String(animalId));
       }
       const nome = String(payload.nome_completo || (oldAnimal && oldAnimal.nome_completo) || "").trim();
       const brinco = String(payload.brinco || payload.brinco_padrao || (oldAnimal && (oldAnimal.brinco || oldAnimal.brinco_padrao)) || "").trim();
-      const detail = nome || brinco || "—";
+      let detail = nome || brinco || "—";
+      if (opType === "animal_create_peso" && payload.peso_atual_kg != null) detail = (detail !== "—" ? detail + " · " : "") + payload.peso_atual_kg + " kg";
+      if (opType === "create_saida_animais") detail = (detail !== "—" ? detail + " · " : "") + (payload.animais?.length || 1) + " animal(is)";
       items.push({
         queueOrder: globalIndex++,
         queueKey: qKey,
@@ -3489,6 +4217,7 @@ async function renderDashboard() {
   // Calculado a partir dos animais: para cada lote, média do peso_atual_kg dos animais que pertencem ao lote (list_lotes ou lote)
   const lotesListRaw = (await idbGet("lotes", "list")) || [];
   const lotesList = filterByCurrentFazenda(lotesListRaw);
+  const toLoteIdFromAnimal = (id) => (id && typeof id === "object" && id._id != null) ? String(id._id) : String(id || "");
 
   const loteAggAll = lotesList
     .map(l => {
@@ -3496,7 +4225,8 @@ async function renderDashboard() {
       const noLote = activeAnimais.filter(a => {
         const norm = normalizeAnimal(a);
         const inList = norm.list_lotes && norm.list_lotes.some(lid => String(lid) === loteId);
-        return inList || String(a?.lote || "") === loteId;
+        const animalLoteId = toLoteIdFromAnimal(a?.lote);
+        return inList || animalLoteId === loteId;
       });
       const totalPeso = noLote.reduce((s, a) => s + toNumberOrZero(a.peso_atual_kg), 0);
       const avg = noLote.length > 0 ? totalPeso / noLote.length : 0;
@@ -4023,6 +4753,18 @@ async function applySyncResult(result, qKey) {
         delete animal._sync;
         animaisList[i] = animal;
       });
+    } else if (resultado.op === "animal_create_peso" && resultado.animal_peso) {
+      const animalId = resultado.animal || resultado.targetId || resultado.id_local || resultado.animal_peso?.animal;
+      if (!animalId) return;
+      const animalIndex = animaisList.findIndex(a => String(a?._id) === String(animalId));
+      if (animalIndex !== -1) {
+        const animal = { ...animaisList[animalIndex] };
+        animal.animal_peso = resultado.animal_peso;
+        if (resultado.animal_peso.peso_atual_kg != null) animal.peso_atual_kg = resultado.animal_peso.peso_atual_kg;
+        delete animal._local;
+        delete animal._sync;
+        animaisList[animalIndex] = animal;
+      }
     }
   }
 
@@ -4257,6 +4999,56 @@ const dateToTimestampSync = (dateValue) => {
 /** Constrói array de operacoes para envio a partir de uma fila (queue). */
 function buildOperacoesFromQueue(queue, dadosOp) {
   return queue.map(op => {
+        // create_saida_animais: enviado como { op, data_hora, _id/id_local, payload } para o status poder remover da fila
+        if (op.op === "create_saida_animais") {
+          const out = {
+            op: "create_saida_animais",
+            data_hora: op.at || Date.now(),
+            payload: { ...(op.payload || {}) },
+          };
+          if (op._id) { out._id = op._id; out.id_local = op._id; }
+          return out;
+        }
+        // animal_create_peso: mesmo formato de payload que create_saida_animais; só animais e animal_peso preenchidos, resto null/""
+        if (op.op === "animal_create_peso") {
+          const p = op.payload || {};
+          const animalPesoObj = {
+            animal: p.animal,
+            data_pesagem: p.data_pesagem,
+            peso_atual_kg: p.peso_atual_kg,
+            tipo_equipamento: p.tipo_equipamento || "Manual",
+            momento_pesagem: p.momento_pesagem || "Pesagem regular",
+            user: p.user,
+          };
+          if (op._id) animalPesoObj._id = op._id;
+          else if (p._id) animalPesoObj._id = p._id;
+          const out = {
+            op: "animal_create_peso",
+            data_hora: op.at || Date.now(),
+            payload: {
+              animais: p.animal ? [p.animal] : [],
+              animal: p.animal || null,
+              animal_peso: animalPesoObj,
+              proprietario_destino: null,
+              fazenda_destino: null,
+              peso_saida: p.peso_atual_kg ?? null,
+              nota_fiscal: "",
+              data_aquisicao: null,
+              valor: null,
+              condicao_pagamento: "",
+              numero_gta: "",
+              serie_gta: "",
+              data_emissao_gta: null,
+              data_validade_gta: null,
+              uf_gta: "",
+              fazenda_origem: null,
+              user_atual: p.user || null,
+              valor_saida: null,
+            },
+          };
+          if (op._id) { out._id = op._id; out.id_local = op._id; }
+          return out;
+        }
         // Clona o payload e garante que proprietario está presente
         const payload = { ...op.payload };
         
@@ -4332,6 +5124,9 @@ function buildOperacoesFromQueue(queue, dadosOp) {
 
 /** Envia um payload de sincronização e trata resposta (síncrona ou assíncrona). Retorna true se iniciou polling. */
 async function sendSyncPayload(syncPayload, qKey, qKeysToDeleteForApply = null) {
+
+  console.log(syncPayload);
+
   const response = await fetch(API_CONFIG.getUrl(API_CONFIG.ENDPOINTS.SYNC_DADOS), {
     method: "POST",
     headers: { "Content-Type": "application/json" },

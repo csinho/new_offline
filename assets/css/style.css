@@ -254,11 +254,14 @@
             text-overflow: ellipsis;
         }
 
-        /* Main */
+        /* Main: ocupa o espaço restante da grid para a área de conteúdo não ficar em branco */
         .main {
             display: flex;
             flex-direction: column;
             min-width: 0;
+            flex: 1;
+            min-height: 0;
+            overflow: auto;
         }
 
         .content {
@@ -267,6 +270,8 @@
             width: 100%;
             margin-left: auto;
             margin-right: auto;
+            flex: 1;
+            min-height: 0;
         }
 
         /* Desktop: todas as telas na área principal centralizadas com mesma largura máxima */
@@ -2631,6 +2636,225 @@
                 border: 1px solid var(--text);
                 color: var(--text);
             }
+            /* Header venda (mesmo layout do form animal) */
+            #saVendaForm .pageHead {
+                display: grid;
+                grid-template-columns: 1fr auto;
+                grid-template-rows: auto auto;
+                padding: 24px 28px;
+                gap: 12px 16px;
+                margin-bottom: 16px;
+                align-items: center;
+                min-height: 72px;
+                border-radius: 10px;
+            }
+            #saVendaForm .pageHeadRow1 {
+                grid-column: 1 / -1;
+            }
+            #saVendaForm .pageHeadRow2 {
+                grid-column: 1;
+                text-align: left;
+            }
+            #saVendaForm .pageHeadRow2 .pageTitle,
+            #saVendaForm .pageHeadRow2 .pageSub {
+                text-align: left;
+            }
+            #saVendaForm .pageTitle {
+                font-size: 14px;
+                font-weight: 700;
+            }
+            #saVendaForm .pageSub {
+                font-size: 11px;
+                margin-top: 2px;
+            }
+            #saVendaForm .animalFormBackBtn,
+            #saVendaForm .animalFormHeaderBtn {
+                height: 36px;
+                padding: 0 14px;
+                font-size: 12px;
+                font-weight: 600;
+                border-radius: var(--radius);
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 0;
+            }
+            #saVendaForm .animalFormBackBtn {
+                background: transparent;
+                border: 1px solid var(--text);
+                color: var(--text);
+            }
+            #saVendaForm #saVendaBtnRealizar {
+                background: var(--btn, #edff77);
+                border: none;
+                color: var(--btnText, #121826);
+                box-shadow: 0 4px 12px rgba(237, 255, 119, 0.3);
+            }
+            #saVendaForm #saVendaBtnRealizar:hover {
+                filter: brightness(0.97);
+            }
+            /* Modal Confirmar venda de animais */
+            .saVendaModalOverlay {
+                position: fixed;
+                inset: 0;
+                background: rgba(17, 24, 39, 0.5);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 1000;
+                padding: 16px;
+            }
+            .saVendaModalOverlay[hidden] {
+                display: none !important;
+            }
+            .saVendaModal {
+                background: #fff;
+                border-radius: 20px;
+                box-shadow: 0 20px 60px rgba(17, 24, 39, 0.2);
+                max-width: 520px;
+                width: 100%;
+                max-height: 90vh;
+                overflow: auto;
+            }
+            .saVendaModalHeader {
+                padding: 24px 24px 8px;
+                position: relative;
+            }
+            .saVendaModalTitle {
+                font-size: 1.25rem;
+                font-weight: 800;
+                color: #111827;
+                margin: 0 0 4px;
+            }
+            .saVendaModalSub {
+                font-size: 0.875rem;
+                color: #6b7280;
+                margin: 0;
+            }
+            .saVendaModalClose {
+                position: absolute;
+                top: 16px;
+                right: 16px;
+                width: 32px;
+                height: 32px;
+                border: none;
+                background: transparent;
+                font-size: 1.5rem;
+                line-height: 1;
+                color: #6b7280;
+                cursor: pointer;
+                border-radius: 8px;
+            }
+            .saVendaModalClose:hover {
+                background: rgba(17, 24, 39, 0.06);
+                color: #111827;
+            }
+            .saVendaModalBody {
+                padding: 16px 24px;
+            }
+            .saVendaModalOrigemDestino {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                margin-bottom: 16px;
+            }
+            .saVendaModalCard {
+                flex: 1;
+                background: #f0fdf4;
+                border: 1px solid #bbf7d0;
+                border-radius: 12px;
+                padding: 14px 16px;
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+            }
+            .saVendaModalCardIcon {
+                font-size: 1.1rem;
+            }
+            .saVendaModalCardLabel {
+                font-size: 0.75rem;
+                font-weight: 600;
+                color: #166534;
+            }
+            .saVendaModalCardValue {
+                font-size: 0.9375rem;
+                font-weight: 600;
+                color: #111827;
+            }
+            .saVendaModalArrow {
+                color: #22c55e;
+                font-size: 1.25rem;
+                font-weight: 700;
+            }
+            .saVendaModalQtd {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 16px;
+                font-size: 0.9375rem;
+                color: #374151;
+            }
+            .saVendaModalQtdIcon {
+                font-size: 1.1rem;
+            }
+            .saVendaModalDetalhes {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 16px 24px;
+                margin-bottom: 16px;
+            }
+            .saVendaModalDetalhe {
+                margin: 0;
+                font-size: 0.8125rem;
+                color: #374151;
+            }
+            .saVendaModalDetalheLabel {
+                color: #6b7280;
+            }
+            .saVendaModalAviso {
+                display: flex;
+                align-items: flex-start;
+                gap: 10px;
+                padding: 12px 14px;
+                background: #f9fafb;
+                border-radius: 10px;
+                font-size: 0.8125rem;
+                color: #6b7280;
+            }
+            .saVendaModalAvisoIcon {
+                font-size: 1rem;
+                flex-shrink: 0;
+            }
+            .saVendaModalFooter {
+                display: flex;
+                gap: 12px;
+                justify-content: flex-end;
+                padding: 16px 24px 24px;
+            }
+            .saVendaModalBtn {
+                padding: 10px 20px;
+                border-radius: 10px;
+                font-size: 0.9375rem;
+                font-weight: 600;
+                cursor: pointer;
+            }
+            .saVendaModalBtnCancel {
+                background: #fff;
+                border: 1px solid #d1d5db;
+                color: #374151;
+            }
+            .saVendaModalBtnCancel:hover {
+                background: #f9fafb;
+            }
+            .saVendaModalBtnConfirm {
+                background: var(--btn, #edff77);
+                border: none;
+                color: var(--btnText, #121826);
+                box-shadow: 0 4px 12px rgba(237, 255, 119, 0.3);
+            }
+            .saVendaModalBtnConfirm:hover {
+                filter: brightness(0.97);
+            }
             #modAnimaisForm #btnBioId {
                 background: var(--btn);
                 border: none;
@@ -3865,6 +4089,500 @@
 
 .saBtnNewCenter {
   margin: 0 auto;
+}
+
+/* ---------- Tela "Informações sobre a venda" (Nova venda) ---------- */
+.saVendaForm {
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 20px;
+  background: var(--bg-page);
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+.saVendaFormBody {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+/* Formulário apenas (saída individual — sem listagem) */
+.saVendaFormBody.saVendaFormOnly {
+  grid-template-columns: 1fr;
+}
+
+.saVendaFormCard {
+  background: #fff;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.saVendaFormGrid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 16px 20px;
+}
+
+/* 1ª linha: 5 campos; 2ª linha: 6 campos */
+@media (max-width: 699px) {
+  .saVendaFormGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.saVendaRequired {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+/* Campo Animal: busca direta por brinco (ícone de lupa) */
+.saVendaAnimalSearchWrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  padding: 8px 12px;
+  min-height: 40px;
+  transition: border-color 0.2s;
+}
+
+.saVendaAnimalSearchWrap:focus-within {
+  border-color: var(--btn, #c6e012);
+  outline: none;
+}
+
+.saVendaAnimalSearchIcon {
+  font-size: 14px;
+  color: var(--muted, #6b7280);
+  flex-shrink: 0;
+}
+
+.saVendaAnimalSearchInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font-size: 14px;
+  color: var(--text, #111827);
+  background: transparent;
+  outline: none;
+  box-shadow: none;
+}
+
+.saVendaAnimalSearchWrap:focus-within .saVendaAnimalSearchInput {
+  border: none;
+  outline: none;
+  box-shadow: none;
+}
+
+.saVendaAnimalSearchInput::placeholder {
+  color: var(--muted, #9ca3af);
+}
+
+.saVendaAnimalSearchInput:focus {
+  outline: none;
+  box-shadow: none;
+  border: none;
+}
+
+.saVendaFieldAnimal,
+.saVendaFieldProprietarioDestino {
+  position: relative;
+}
+
+.saVendaAnimalResults {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  background: #fff;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 50;
+}
+
+.saVendaAnimalResultItem {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  border: none;
+  background: none;
+  font-size: 13px;
+  color: var(--text, #111827);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.saVendaAnimalResultItem:hover {
+  background: #f3f4f6;
+}
+
+.saVendaAnimalResultItem:not(.saVendaAnimalResultEmpty)[data-brinco]:active,
+.saVendaAnimalResultItem:not(.saVendaAnimalResultEmpty)[data-id]:active {
+  background: #edff77;
+}
+
+.saVendaResultSub {
+  font-size: 11px;
+  color: var(--muted, #6b7280);
+  font-weight: 400;
+}
+
+.saVendaAnimalResultEmpty {
+  padding: 12px;
+  color: var(--muted, #6b7280);
+  font-size: 13px;
+  cursor: default;
+}
+
+.saVendaFormLeft {
+  min-width: 0;
+  background: #fff;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.saVendaTableWrap {
+  overflow-x: auto;
+  min-width: 0;
+}
+
+.saVendaTable {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.saVendaTable th,
+.saVendaTable td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  overflow: hidden;
+}
+
+.saVendaTable th {
+  font-weight: 600;
+  color: var(--text, #111827);
+  background: #f9fafb;
+}
+
+/* Sexo e Raça mais estreitas */
+.saVendaTable th:nth-child(2),
+.saVendaTable td:nth-child(2) {
+  width: 150px;
+  max-width: 150px;
+}
+
+.saVendaTable th:nth-child(3),
+.saVendaTable td:nth-child(3) {
+  width: 52px;
+  max-width: 52px;
+}
+
+.saVendaTable th:nth-child(4),
+.saVendaTable td:nth-child(4) {
+  width: 100px;
+  max-width: 100px;
+}
+
+/* Peso e Valor R$ mais largas */
+.saVendaTable th:nth-child(5),
+.saVendaTable td:nth-child(5) {
+  width: 88px;
+  max-width: 88px;
+}
+
+.saVendaTable th:nth-child(6),
+.saVendaTable td:nth-child(6) {
+  width: 92px;
+  max-width: 92px;
+}
+
+.saVendaThCheck,
+.saVendaTdCheck {
+  width: 40px;
+  max-width: 40px;
+  text-align: center;
+}
+
+.saVendaCheckWrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.saVendaCheckWrap input {
+  position: absolute;
+  opacity: 0;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.saVendaCheckbox {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border, #d1d5db);
+  border-radius: 4px;
+  background: #fff;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.saVendaCheckWrap input:checked + .saVendaCheckbox {
+  background: var(--btn, #c6e012);
+  border-color: var(--btn, #c6e012);
+}
+
+.saVendaCheckWrap input:focus-visible + .saVendaCheckbox {
+  outline: 2px solid var(--btn, #c6e012);
+  outline-offset: 2px;
+}
+
+.saVendaInputCell {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+/* Esconde setinhas do input number */
+.saVendaInputCell[type="number"]::-webkit-outer-spin-button,
+.saVendaInputCell[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.saVendaInputCell[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.saVendaInputCell:focus {
+  outline: none;
+  border-color: var(--btn, #c6e012);
+}
+
+.saVendaTableEmpty {
+  text-align: center;
+  color: var(--muted, #6b7280);
+  padding: 24px !important;
+}
+
+.saVendaFormRight {
+  background: #fff;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+/* Mesmo tamanho do form create/edit animais (36px altura, 11px texto, 10px label) */
+.saVendaFormCard .saVendaField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin-bottom: 2px;
+}
+
+.saVendaFormCard .saVendaField:last-child {
+  margin-bottom: 0;
+}
+
+.saVendaFormCard .saVendaField label {
+  display: block;
+  font-size: 10px;
+  color: #6b7280;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0 2px;
+}
+
+.saVendaFormCard .saVendaField .saVendaRequired {
+  color: var(--danger, #ef4444);
+  margin-left: 2px;
+}
+
+.saVendaFormCard .saVendaSelect,
+.saVendaFormCard .saVendaInput {
+  width: 100%;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--stroke, #cfd7e3);
+  background: #fff;
+  padding: 0 10px;
+  outline: none;
+  font-size: 11px;
+  color: var(--text, #111827);
+  font-family: inherit;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+}
+
+.saVendaFormCard .saVendaSelect {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-position: right 10px center;
+  background-repeat: no-repeat;
+  background-size: 1.2em 1.2em;
+  padding-right: 32px;
+}
+
+.saVendaFormCard .saVendaSelect:focus,
+.saVendaFormCard .saVendaInput:focus {
+  border-color: #d4e844;
+  box-shadow: 0 0 0 4px rgba(237, 255, 119, 0.25);
+}
+
+.saVendaFormCard .saVendaSelect::placeholder,
+.saVendaFormCard .saVendaInput::placeholder {
+  color: #d1d5db;
+}
+
+.saVendaFormCard .saVendaInputSuffix {
+  margin-left: 4px;
+  font-size: 11px;
+  vertical-align: middle;
+}
+
+/* Campo Animal (busca): mesma altura 36px do form animais */
+.saVendaFormCard .saVendaAnimalSearchWrap {
+  height: 36px;
+  min-height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--stroke, #cfd7e3);
+  padding: 0 10px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.saVendaFormCard .saVendaAnimalSearchWrap:focus-within {
+  border-color: #d4e844;
+  box-shadow: 0 0 0 4px rgba(237, 255, 119, 0.25);
+}
+
+.saVendaFormCard .saVendaAnimalSearchInput {
+  font-size: 11px;
+}
+
+.saVendaFormCard .saVendaInput[type="number"]::-webkit-outer-spin-button,
+.saVendaFormCard .saVendaInput[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.saVendaFormCard .saVendaInput[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.saVendaFormCard {
+  border-radius: 16px;
+  padding: 20px;
+}
+
+/* Fallback quando fora do .saVendaFormCard (evita quebrar outros usos) */
+.saVendaField {
+  margin-bottom: 16px;
+}
+
+.saVendaField:last-child {
+  margin-bottom: 0;
+}
+
+.saVendaField label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text, #111827);
+  margin-bottom: 6px;
+}
+
+.saVendaSelect,
+.saVendaInput {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text, #111827);
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.saVendaSelect:focus,
+.saVendaInput:focus {
+  outline: none;
+  border-color: var(--btn, #c6e012);
+}
+
+.saVendaSelect::placeholder,
+.saVendaInput::placeholder {
+  color: var(--muted, #9ca3af);
+}
+
+.saVendaCurrencyWrap {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.saVendaCurrencyWrap:focus-within {
+  border-color: var(--btn, #c6e012);
+  box-shadow: 0 0 0 4px rgba(237, 255, 119, 0.25);
+}
+
+.saVendaCurrencyPrefix {
+  padding: 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text, #111827);
+  background: rgba(0, 0, 0, 0.02);
+  border-right: 1px solid var(--border, #e5e7eb);
+}
+
+.saVendaCurrencyWrap .saVendaInputCurrency {
+  border: none;
+  border-radius: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.saVendaCurrencyWrap .saVendaInputCurrency:focus {
+  box-shadow: none;
+}
+
+.saVendaInputSuffix {
+  margin-left: 4px;
+  font-size: 14px;
+  vertical-align: middle;
 }
 
 /* Barra de progresso da sincronização em modo indeterminado (durante polling) */

@@ -210,6 +210,14 @@ export const ENTRY_TYPE_LIST = [
   "Ajuste inventário"
 ];
 
+/**
+ * Lista de condições de pagamento (venda / saída de animais)
+ */
+export const CONDICAO_PAGAMENTO_LIST = [
+  "A vista",
+  "parcelado"
+];
+
 // ========================================================
 // MÓDULOS DO APP (nomes para usar no Bubble ao criar módulos)
 // ========================================================
