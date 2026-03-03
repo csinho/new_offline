@@ -253,6 +253,14 @@ export const CAUSA_MORTE_LIST = [
   "Outros"
 ];
 
+/**
+ * Opções do dropdown "Tipo de pesagem" (módulo Pesagem)
+ */
+export const TIPO_PESAGEM_LIST = [
+  "Pesagem regular",
+  "Desmame"
+];
+
 // ========================================================
 // OPERAÇÕES OFFLINE (fila / dados.operacoes)
 // ========================================================
@@ -303,6 +311,7 @@ export const SAIDA_TIPO_TO_OFFLINE_OP = {
 export const MODULES = [
   { key: "animal", label: "Animais", frontend: "pronto" },
   { key: "movimentacao", label: "Movimentações", frontend: "pronto" },
+  { key: "pesagem", label: "Pesagem", frontend: "pronto" },
   { key: "saida_animais", label: "Saída de Animais", frontend: "pronto" },
   { key: "vacinacao", label: "Vacinação", frontend: "pendente" },
   { key: "manejo", label: "Manejo", frontend: "pendente" },
@@ -332,6 +341,10 @@ export const DEFAULT_ABA_CAMPOS_KEYS = {
     pastos: ["pasto"],
     fazendas: ["fazenda_destino", "lote", "pasto"],
   },
+  pesagem: {
+    // Módulo Pesagem: uma única aba "Pesagem" com estes campos principais.
+    pesagem: ["colaborador", "tipo_pesagem", "peso", "data_pesagem"],
+  },
   saida_animais: {
     venda: [
       "condicao_pagamento",
@@ -350,20 +363,13 @@ export const DEFAULT_ABA_CAMPOS_KEYS = {
       "animal",
     ],
     doacao: [
-      "condicao_pagamento",
-      "movimentacao_saida_animal",
-      "valor",
-      "peso_saida",
-      "data_aquisicao",
-      "nota_fiscal",
-      "numero_gta",
-      "data_emissao_gta",
-      "data_validade_gta",
-      "serie_gta",
-      "uf_gta",
+      // Doação reutiliza o mesmo layout enxuto de Empréstimo/Ajuste:
+      // proprietário, fazenda, data, número da nota e peso.
       "proprietario_destino",
       "fazenda_destino",
-      "animal",
+      "data_aquisicao",
+      "nota_fiscal",
+      "peso_saida",
     ],
     morte: [
       "causa_morte",
@@ -374,36 +380,22 @@ export const DEFAULT_ABA_CAMPOS_KEYS = {
       "movimentacao_saida_animal",
     ],
     emprestimo: [
-      "condicao_pagamento",
-      "movimentacao_saida_animal",
-      "valor",
-      "peso_saida",
-      "data_aquisicao",
-      "nota_fiscal",
-      "numero_gta",
-      "data_emissao_gta",
-      "data_validade_gta",
-      "serie_gta",
-      "uf_gta",
+      // Empréstimo usa menos campos na tela; estes são os oficiais:
+      // proprietário, fazenda, data, número da nota e peso.
       "proprietario_destino",
       "fazenda_destino",
-      "animal",
+      "data_aquisicao",
+      "nota_fiscal",
+      "peso_saida",
     ],
     "ajuste inventário": [
-      "condicao_pagamento",
-      "movimentacao_saida_animal",
-      "valor",
-      "peso_saida",
-      "data_aquisicao",
-      "nota_fiscal",
-      "numero_gta",
-      "data_emissao_gta",
-      "data_validade_gta",
-      "serie_gta",
-      "uf_gta",
+      // Ajuste inventário segue o mesmo layout de Empréstimo:
+      // proprietário, fazenda, data, número da nota e peso.
       "proprietario_destino",
       "fazenda_destino",
-      "animal",
+      "data_aquisicao",
+      "nota_fiscal",
+      "peso_saida",
     ],
   },
 };

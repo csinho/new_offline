@@ -114,54 +114,94 @@
                                 </div>
                             </div>
 
-                            <!-- Linha principal -->
-                            <div class="grid" style="margin-top:6px;">
-                                <div class="field" style="grid-column: span 2;">
+                            <!-- Linha principal: 4 por linha (Tipo, Brinco, Raça, Peso | Sexo, Categoria, Data, Idade) -->
+                            <div class="grid animalFormGridMain" style="margin-top:6px;">
+                                <div class="field" style="grid-column: span 3;">
                                     <div class="label">Tipo de animal <span class="req">*</span></div>
                                     <select id="animalTipo">
                                         <!-- Populado dinamicamente via config.js -->
                                     </select>
                                 </div>
-
-                                <div class="field" style="grid-column: span 2;">
+                                <div class="field" style="grid-column: span 3;">
                                     <div class="label">Brinco padrão <span class="req">*</span></div>
                                     <input id="animalBrinco" placeholder="ID" />
                                 </div>
-
-                                <div class="field" style="grid-column: span 2;">
+                                <div class="field" style="grid-column: span 3;">
+                                    <div class="label">Raça <span class="req">*</span></div>
+                                    <select id="animalRaca">
+                                        <!-- Populado dinamicamente via config.js -->
+                                    </select>
+                                </div>
+                                <div class="field" style="grid-column: span 3;">
+                                    <div class="label">Peso atual em kg</div>
+                                    <input id="animalPesoAtual" type="number" min="0" step="0.1" value="0" />
+                                </div>
+                                <div class="field" style="grid-column: span 3;">
                                     <div class="label">Sexo <span class="req">*</span></div>
                                     <select id="animalSexo">
                                         <!-- Populado dinamicamente via config.js -->
                                     </select>
                                 </div>
-
-                                <div class="field" style="grid-column: span 2;">
-                                    <div class="label">Peso atual em kg</div>
-                                    <input id="animalPesoAtual" type="number" min="0" step="0.1" value="0" />
-                                </div>
-
-                                <div class="field" style="grid-column: span 2;">
-                                    <div class="label">Data de nascimento <span class="req">*</span></div>
-                                    <input id="animalNasc" type="date" />
-                                </div>
-
-                                <div class="field" style="grid-column: span 2;">
-                                    <div class="label">Idade <span class="req">*</span></div>
-                                    <div id="animalIdadeDisplay" class="animalIdadeDisplay" aria-readonly="true">—</div>
-                                </div>
-
-                                <div class="field" style="grid-column: span 2;">
+                                <div class="field" style="grid-column: span 3;">
                                     <div class="label">Categoria <span class="req">*</span></div>
                                     <select id="animalCategoria">
                                         <!-- Populado dinamicamente via config.js -->
                                     </select>
                                 </div>
+                                <div class="field" style="grid-column: span 3;">
+                                    <div class="label">Data de nascimento <span class="req">*</span></div>
+                                    <input id="animalNasc" type="date" />
+                                </div>
+                                <div class="field" style="grid-column: span 3;">
+                                    <div class="label">Idade <span class="req">*</span></div>
+                                    <div id="animalIdadeDisplay" class="animalIdadeDisplay" aria-readonly="true">—</div>
+                                </div>
+                            </div>
 
-                                <div class="field" style="grid-column: span 12;">
-                                    <div class="label">Raça <span class="req">*</span></div>
-                                    <select id="animalRaca">
-                                        <!-- Populado dinamicamente via config.js -->
-                                    </select>
+                            <!-- Aquisição: 4 por linha (Data, NF, Valor, Origem | Nº GTA, UF, Série, Data emissão, Data validade) -->
+                            <div id="aquisicaoSection" class="aquisicaoSection" style="display:none; margin-top:14px;">
+                                <div class="label" style="margin-bottom:8px;">Aquisição</div>
+                                <div class="grid animalFormGridAquisicao">
+                                    <div class="field" style="grid-column: span 3;">
+                                        <div class="label">Data</div>
+                                        <input id="animalDataAquisicao" type="date" />
+                                    </div>
+                                    <div class="field" style="grid-column: span 3;">
+                                        <div class="label">NF</div>
+                                        <input id="animalNotaFiscal" placeholder="Nota fiscal" />
+                                    </div>
+                                    <div class="field" style="grid-column: span 3;">
+                                        <div class="label">Valor</div>
+                                        <input id="animalValorAquisicao" type="text" placeholder="Valor de aquisição" inputmode="decimal" />
+                                    </div>
+                                    <div class="field" style="grid-column: span 3;">
+                                        <div class="label">Origem/Fornecedor</div>
+                                        <select id="animalOrigemFornecedor">
+                                            <option value="">Origem/Fornecedor</option>
+                                        </select>
+                                    </div>
+                                    <div class="field" style="grid-column: span 2;">
+                                        <div class="label">Nº GTA</div>
+                                        <input id="animalNumeroGTA" placeholder="Número GTA" />
+                                    </div>
+                                    <div class="field" style="grid-column: span 2;">
+                                        <div class="label">UF</div>
+                                        <select id="animalUfGTA">
+                                            <option value="">Selecione</option>
+                                        </select>
+                                    </div>
+                                    <div class="field" style="grid-column: span 2;">
+                                        <div class="label">Série</div>
+                                        <input id="animalSerieGTA" placeholder="Série da GTA" />
+                                    </div>
+                                    <div class="field" style="grid-column: span 3;">
+                                        <div class="label">Data emissão GTA <span class="req">*</span></div>
+                                        <input id="animalDataEmissaoGTA" type="date" />
+                                    </div>
+                                    <div class="field" style="grid-column: span 3;">
+                                        <div class="label">Data validade GTA <span class="req">*</span></div>
+                                        <input id="animalDataValidadeGTA" type="date" />
+                                    </div>
                                 </div>
                             </div>
 
@@ -241,54 +281,16 @@
                                             <span class="accordionIcon">▼</span>
                                         </div>
                                         <div class="accordionPanel" id="tab-genealogia">
-                                            <div class="togglePills">
-                                                <div class="pill">
-                                                    <span>Mãe Cadastrada</span>
-                                                    <label class="switch">
-                                                        <input type="checkbox" id="maeCad" />
-                                                        <span class="slider"></span>
-                                                    </label>
-                                                </div>
-
-                                                <div class="pill">
-                                                    <span>Pai Cadastrado</span>
-                                                    <label class="switch">
-                                                        <input type="checkbox" id="paiCad" />
-                                                        <span class="slider"></span>
-                                                    </label>
-                                                </div>
-                                            </div>
-
                                             <div class="grid">
                                                 <div class="field" style="grid-column: span 6;">
-                                                    <div class="label">Mãe (vinculado)</div>
-                                                    <input id="animalMae" placeholder="Digite o nome para pesquisar" />
+                                                    <div class="label">Mãe</div>
+                                                    <input id="animalMae" type="text" autocomplete="off" placeholder="Digite o nome ou brinco para pesquisar" />
+                                                    <div id="animalMaeResults" class="animalGenealogiaResults" hidden></div>
                                                 </div>
                                                 <div class="field" style="grid-column: span 6;">
-                                                    <div class="label">Pai (vinculado)</div>
-                                                    <input id="animalPai" placeholder="Digite o nome para pesquisar" />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- Accordion Item: Aquisição -->
-                                    <div class="accordionItem">
-                                        <div class="accordionHeader" data-accordion="aquisicao">
-                                            <span>Aquisição</span>
-                                            <span class="accordionIcon">▼</span>
-                                        </div>
-                                        <div class="accordionPanel" id="tab-aquisicao">
-                                            <div class="grid">
-                                                <div class="field" style="grid-column: span 6;">
-                                                    <div class="label">Nº GTA</div>
-                                                    <input id="animalGta" placeholder="12345" />
-                                                </div>
-                                                <div class="field" style="grid-column: span 6;">
-                                                    <div class="label">Estado (UF)</div>
-                                                    <select id="animalUf">
-                                                        <!-- Populado dinamicamente via config.js -->
-                                                    </select>
+                                                    <div class="label">Pai</div>
+                                                    <input id="animalPai" type="text" autocomplete="off" placeholder="Digite o nome ou brinco para pesquisar" />
+                                                    <div id="animalPaiResults" class="animalGenealogiaResults" hidden></div>
                                                 </div>
                                             </div>
                                         </div>
@@ -328,6 +330,7 @@
                                     <span class="dashUserName" id="dashUserName">Usuário</span>
                                     <span class="dashFarmName" id="dashFarmName">—</span>
                                 </div>
+                                <button type="button" id="btnRefazerSyncInicial" class="dashBtnRefazerSync" title="Atualizar dados do servidor" aria-label="Refazer sincronização inicial" hidden>Atualizar dados</button>
                             </div>
                     </div>
                     <div class="dashDesktopWelcome">

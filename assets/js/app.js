@@ -12,6 +12,7 @@ import {
   MOVIMENTACAO_SAIDA_ANIMAL_LIST,
   MOVIMENTACAO_SAIDA_TO_ENTRADA,
   CAUSA_MORTE_LIST,
+  TIPO_PESAGEM_LIST,
   PIPELINE_STEPS,
   SYNC_CONFIG,
   OFFLINE_OPS,
@@ -194,6 +195,15 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
+// Normaliza nomes de abas (remove acentos, deixa minúsculo)
+function normalizeAbaKeyName(s) {
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
 function uuid() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (crypto.getRandomValues(new Uint8Array(1))[0] & 15) >> 0;
@@ -372,7 +382,13 @@ async function parseFromURL() {
       const ownerId = typeof colaborador === "object" && colaborador !== null
         ? String(colaborador._id || "").trim()
         : String(colaborador || "").trim();
-      const rawModules = Array.isArray(data?.modules) ? data.modules : [];
+      // modules pode vir como array ou como um único objeto; normaliza para array
+      let rawModules = [];
+      if (Array.isArray(data?.modules)) {
+        rawModules = data.modules;
+      } else if (data?.modules && typeof data.modules === "object") {
+        rawModules = [data.modules];
+      }
       // Novo modelo: modules é um array de objetos { modulo, abas:[{ aba/titulo, campos:[{key,value,type}]}] }
       const moduleConfigs = rawModules.map((m) => {
         if (typeof m === "string") return { modulo: m };
@@ -389,6 +405,7 @@ async function parseFromURL() {
         moduleConfigs,
         fazendaId,
         ownerId,
+        initialSyncId: idParam,
       };
     } catch (error) {
       console.error("[parseFromURL] Erro ao buscar módulos:", error);
@@ -453,7 +470,7 @@ function ensureAbasCampos(moduleConfigs) {
     if (!byModulo) continue;
     for (const aba of abas) {
       const titulo = (aba.titulo || aba.aba || "").toString().trim();
-      const abaKeyNorm = titulo.toLowerCase();
+      const abaKeyNorm = normalizeAbaKeyName(titulo);
       let knownKeys = byModulo[abaKeyNorm];
       if (!knownKeys && modulo === "saida_animais") knownKeys = byModulo.venda;
       if (!Array.isArray(knownKeys) || knownKeys.length === 0) continue;
@@ -513,6 +530,30 @@ const FORM_FIELD_IDS = {
       serie_gta: "vendaSerie",
       uf_gta: "vendaUF",
     },
+    emprestimo: {
+      // Empréstimo usa apenas estes campos na UI (print): proprietário, fazenda, data, nota e peso.
+      proprietario_destino: "vendaProprietarioDestino",
+      fazenda_destino: "vendaFazendaDestino",
+      data_aquisicao: "vendaData",
+      nota_fiscal: "vendaNotaFiscal",
+      peso_saida: "vendaPeso",
+    },
+    doacao: {
+      // Doação compartilha o mesmo layout enxuto de Empréstimo/Ajuste.
+      proprietario_destino: "vendaProprietarioDestino",
+      fazenda_destino: "vendaFazendaDestino",
+      data_aquisicao: "vendaData",
+      nota_fiscal: "vendaNotaFiscal",
+      peso_saida: "vendaPeso",
+    },
+    "ajuste inventário": {
+      // Ajuste inventário compartilha o mesmo layout de Empréstimo.
+      proprietario_destino: "vendaProprietarioDestino",
+      fazenda_destino: "vendaFazendaDestino",
+      data_aquisicao: "vendaData",
+      nota_fiscal: "vendaNotaFiscal",
+      peso_saida: "vendaPeso",
+    },
     morte: {
       causa_morte: "morteCausaMorte",
       detalhes_observacoes: "morteDetalhesObservacoes",
@@ -520,6 +561,14 @@ const FORM_FIELD_IDS = {
       data_morte: "morteDataMorte",
       imagem_brinco_animal: "morteImagemBrinco",
       movimentacao_saida_animal: "morteMovimentacaoSaida",
+    },
+  },
+  pesagem: {
+    pesagem: {
+      colaborador: "pesoColaboradorSelect",
+      tipo_pesagem: "pesoTipoPesagem",
+      peso: "pesoValorKg",
+      data_pesagem: "pesoDataPesagem",
     },
   },
   movimentacao: {
@@ -543,11 +592,11 @@ function applyModulePrefillToContainer(container, moduleKey, abaKey) {
   if (!cfg) return;
   const abasRaw = Array.isArray(cfg.abas) ? cfg.abas : (Array.isArray(cfg.aba) ? cfg.aba : []);
   const aba = abasRaw.find((a) => {
-    const name = (a.aba || a.titulo || "").toString().trim().toLowerCase();
-    return name === String(abaKey || "").toLowerCase();
+    const name = normalizeAbaKeyName(a.aba || a.titulo || "");
+    return name === normalizeAbaKeyName(abaKey);
   });
   if (!aba || !Array.isArray(aba.campos) || !aba.campos.length) return;
-  const abaNorm = String(abaKey).trim().toLowerCase();
+  const abaNorm = normalizeAbaKeyName(abaKey);
   const mapping = FORM_FIELD_IDS[moduleKey]?.[abaNorm];
   if (!mapping) return;
   for (const campo of aba.campos) {
@@ -626,6 +675,7 @@ function normalizeAnimal(a = {}) {
       }
     }
   }
+
 
   // flags
   out.deleted = !!out.deleted;
@@ -1141,25 +1191,45 @@ function bindPipelineModalOnce() {
         state.pipelineAnimal = newAnimal;
         state.pipelineStepIndex = 0;
         state.pipelineCreateCallback = null;
+        moveAnimalFormBackToContainer();
         renderPipelineStep(0);
       };
       state.activeKey = "animal";
       state.animalView = "form";
       state.animalEditingId = null;
-      const dash = $("#modDashboard");
-      const dashDesktop = document.getElementById("modDashboardDesktop");
-      if (dash) dash.hidden = true;
-      if (dashDesktop) dashDesktop.hidden = true;
-      const animalContainer = $("#animalModuleContainer");
-      const moduleView = $("#moduleView");
-      if (moduleView) moduleView.hidden = true;
-      if (animalContainer) animalContainer.hidden = false;
-      // Saindo do dashboard para o form de criação no fluxo: esconde card de pendências
+      const pipelineModal = document.getElementById("pipelineModal");
+      const stepContent = document.getElementById("pipelineStepContent");
+      const wrap = document.getElementById("pipelineWrap");
+      const secForm = $("#modAnimaisForm");
+      if (pipelineModal) pipelineModal.hidden = true;
+      if (stepContent) {
+        stepContent.hidden = false;
+        stepContent.innerHTML = ""; // só pode aparecer 1 passo por vez: remove Pesagem/Movimentação/Saída
+        if (secForm) stepContent.appendChild(secForm);
+      }
+      if (wrap) {
+        wrap.classList.remove("pipelineWrap--saida", "pipelineWrap--movimentacao", "pipelineWrap--pesagem");
+        wrap.classList.add("pipelineWrap--animalForm");
+      }
+      if (stepContent) stepContent.classList.add("pipelineStepContent--animalForm");
       setPendingSyncCardVisible(false);
       await openAnimalFormForCreate();
       renderSidebar();
     });
   }
+}
+
+/** Move o form de animal de volta para #animalModuleContainer (após salvar no pipeline ou voltar). */
+function moveAnimalFormBackToContainer() {
+  const stepContent = document.getElementById("pipelineStepContent");
+  const animalContainer = $("#animalModuleContainer");
+  const secForm = $("#modAnimaisForm");
+  if (secForm && animalContainer && secForm.parentNode === stepContent) {
+    animalContainer.appendChild(secForm);
+  }
+  const wrap = document.getElementById("pipelineWrap");
+  if (wrap) wrap.classList.remove("pipelineWrap--animalForm");
+  if (stepContent) stepContent.classList.remove("pipelineStepContent--animalForm");
 }
 
 /** Garante que o modal do pipeline está visível ou que o passo atual está sendo exibido (chamado ao abrir o dashboard). */
@@ -1194,9 +1264,9 @@ async function renderPipelineStep(stepIndex) {
   if (!container) return;
   const wrap = document.getElementById("pipelineWrap");
   if (wrap) {
-    wrap.classList.remove("pipelineWrap--saida", "pipelineWrap--movimentacao");
+    wrap.classList.remove("pipelineWrap--saida", "pipelineWrap--movimentacao", "pipelineWrap--pesagem");
   }
-  container.classList.remove("pipelineStepContent--saida", "pipelineStepContent--movimentacao");
+  container.classList.remove("pipelineStepContent--saida", "pipelineStepContent--movimentacao", "pipelineStepContent--pesagem");
   const fromModules = (state.modules || []).map(m => m.key).filter(k => PIPELINE_STEP_KEYS_IMPLEMENTED.includes(k));
   const steps = fromModules.length > 0 ? fromModules : (PIPELINE_STEPS || []);
   const animal = state.pipelineAnimal;
@@ -1584,18 +1654,24 @@ async function renderPipelineStepMovimentacao(container, animal, stepIndex, isLa
         state.pipelineAnimal = newAnimal;
         state.pipelineStepIndex = 0;
         state.pipelineCreateCallback = null;
+        moveAnimalFormBackToContainer();
         renderPipelineStep(0);
       };
       const pipelineModal = document.getElementById("pipelineModal");
       const stepContent = document.getElementById("pipelineStepContent");
+      const wrap = document.getElementById("pipelineWrap");
+      const secForm = $("#modAnimaisForm");
       if (pipelineModal) pipelineModal.hidden = true;
-      if (stepContent) stepContent.hidden = true;
-      const dash = $("#modDashboard");
-      const dashDesktop = document.getElementById("modDashboardDesktop");
-      if (dash) dash.hidden = true;
-      if (dashDesktop) dashDesktop.hidden = true;
-      const animalContainer = $("#animalModuleContainer");
-      if (animalContainer) animalContainer.hidden = false;
+      if (stepContent) {
+        stepContent.hidden = false;
+        stepContent.innerHTML = ""; // só pode aparecer 1 passo por vez
+        if (secForm) stepContent.appendChild(secForm);
+      }
+      if (wrap) {
+        wrap.classList.remove("pipelineWrap--saida", "pipelineWrap--movimentacao", "pipelineWrap--pesagem");
+        wrap.classList.add("pipelineWrap--animalForm");
+      }
+      if (stepContent) stepContent.classList.add("pipelineStepContent--animalForm");
       await openAnimalFormForCreate();
       renderSidebar();
       updateFabSyncVisibility();
@@ -1680,60 +1756,275 @@ async function renderPipelineStepMovimentacao(container, animal, stepIndex, isLa
 }
 
 async function renderPipelineStepPesagem(container, animal, stepIndex, isLast, previousStepLabel) {
+  const pipelineWrap = document.getElementById("pipelineWrap");
+  if (pipelineWrap) pipelineWrap.classList.add("pipelineWrap--pesagem");
+  container.classList.add("pipelineStepContent--pesagem");
+
+  const pesagemConfig = getModuleConfig("pesagem");
+  const fazendaAtual = await idbGet("fazenda", "current");
+  const organizacaoCurrent = await idbGet("organizacao", "current");
+  const orgIdFazenda = fazendaAtual?.organizacao_id ?? (typeof fazendaAtual?.organizacao === "object" ? fazendaAtual?.organizacao?._id : fazendaAtual?.organizacao) ?? null;
+  const orgId = orgIdFazenda || organizacaoCurrent?._id || organizacaoCurrent?.organizacao || null;
+  const colaboradoresRaw = await idbGet("colaboradores", "list");
+  const colaboradoresAll = Array.isArray(colaboradoresRaw) ? colaboradoresRaw : (state.colaboradoresList || []);
+  const colaboradores = orgId
+    ? colaboradoresAll.filter((c) => {
+        const cOrg = c?.organizacao_id ?? (typeof c?.organizacao === "object" ? c?.organizacao?._id : c?.organizacao) ?? null;
+        if (cOrg) return String(cOrg) === String(orgId);
+        if (Array.isArray(c?.fazendas) && fazendaAtual?._id) return c.fazendas.some((f) => String(f) === String(fazendaAtual._id));
+        return true;
+      })
+    : colaboradoresAll;
+  const colabOptions = colaboradores.length
+    ? colaboradores
+        .map((c) => `<option value="${escapeHtml(c._id || "")}">${escapeHtml(c.nome || "—")}</option>`)
+        .join("")
+    : "";
+  const tipoOptions = TIPO_PESAGEM_LIST.map(
+    (t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`
+  ).join("");
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const animalLabel = `Brinco ${escapeHtml(animal.brinco_padrao || "—")} — ${escapeHtml(String(animal.nome_completo || "").trim() || "—")}`;
+
   container.innerHTML = `
-    <div class="pipelineStepHead">
-      <button type="button" class="pipelineBackBtn" id="pipelineBackBtn">&larr; Voltar</button>
-      <h2 class="pipelineStepTitle">${escapeHtml(PIPELINE_STEP_LABELS.pesagem)}</h2>
-      <p class="pipelineStepAnimal">Brinco ${escapeHtml(animal.brinco_padrao || "—")} — ${escapeHtml(String(animal.nome_completo || "").trim() || "—")}</p>
-    </div>
-    <div class="pipelineStepBody">
-      <div class="pipelineField">
-        <label>Peso (kg)</label>
-        <input type="number" id="pipelinePesoInput" class="pipelineInput" placeholder="kg" min="0" step="0.01" value="${animal.peso_atual_kg ?? ""}" />
+    <div class="saVendaForm saMovForm" id="pipelinePesagemForm">
+      <div class="pageHead">
+        <div class="pageHeadRow1">
+          <button type="button" class="animalFormBackBtn" id="pipelinePesagemBackBtn" aria-label="Voltar">← Voltar</button>
+          <div class="pageHeadActions">
+            <button type="button" class="animalFormHeaderBtn btnSaveAnimal" id="pipelinePesagemSalvarBtn" disabled>${isLast ? "Concluir pesagem" : "Salvar pesagem"}</button>
+          </div>
+        </div>
+        <div class="pageHeadRow2">
+          <h1 class="pageTitle">${escapeHtml(PIPELINE_STEP_LABELS.pesagem)}</h1>
+          <p class="pageSub">Cadastre ou atualize pesagens aqui</p>
+          <p class="saVendaHeaderAnimal">${animalLabel}</p>
+        </div>
       </div>
-      <button type="button" class="pipelineCardBtn" id="pipelineBtnPesoNext">${isLast ? "Concluir" : "Próximo"}</button>
+      <div class="saVendaFormBody saVendaFormOnly">
+        <div class="saVendaFormCard">
+          <div class="saVendaFormGrid pipelinePesagemGrid">
+            <div class="saVendaField">
+              <label for="pesoColaboradorSelect">Colaborador <span class="saVendaRequired">*</span></label>
+              <select id="pesoColaboradorSelect" class="saVendaSelect" required>
+                <option value="">Escolha um colaborador</option>${colabOptions}
+              </select>
+            </div>
+            <div class="saVendaField">
+              <label for="pesoTipoPesagem">Tipo da pesagem <span class="saVendaRequired">*</span></label>
+              <select id="pesoTipoPesagem" class="saVendaSelect" required>
+                <option value="">Escolha o tipo de pesagem</option>${tipoOptions}
+              </select>
+            </div>
+            <div class="saVendaField">
+              <label for="pesoValorKg">Valor em Kilograma <span class="saVendaRequired">*</span></label>
+              <div class="saVendaCurrencyWrap">
+                <span class="saVendaCurrencyPrefix" aria-hidden="true">Kg</span>
+                <input type="number" id="pesoValorKg" class="saVendaInput" placeholder="0,00" min="0" step="0.01" inputmode="decimal" />
+              </div>
+            </div>
+            <div class="saVendaField">
+              <label for="pesoDataPesagem">Data da pesagem <span class="saVendaRequired">*</span></label>
+              <input type="date" id="pesoDataPesagem" class="saVendaInput" value="${today}" />
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Modal Confirmar pesagem -->
+      <div id="pesagemModalConfirm" class="saVendaModalOverlay" hidden aria-modal="true" role="dialog" aria-labelledby="pesagemModalTitle">
+        <div class="saVendaModal">
+          <div class="saVendaModalHeader">
+            <h2 id="pesagemModalTitle" class="saVendaModalTitle">Confirmar pesagem</h2>
+            <p class="saVendaModalSub">Revise os detalhes antes de confirmar a pesagem do animal.</p>
+            <button type="button" class="saVendaModalClose" id="pesagemModalClose" aria-label="Fechar">&times;</button>
+          </div>
+          <div class="saVendaModalBody">
+            <div class="saVendaModalDetalhes">
+              <div class="saVendaModalCol">
+                <p class="saVendaModalDetalhe"><span class="saVendaModalDetalheLabel">Animal:</span> <span id="pesagemModalAnimal">—</span></p>
+                <p class="saVendaModalDetalhe"><span class="saVendaModalDetalheLabel">Colaborador:</span> <span id="pesagemModalColaborador">—</span></p>
+                <p class="saVendaModalDetalhe"><span class="saVendaModalDetalheLabel">Tipo da pesagem:</span> <span id="pesagemModalTipo">—</span></p>
+                <p class="saVendaModalDetalhe"><span class="saVendaModalDetalheLabel">Valor (kg):</span> <span id="pesagemModalPeso">—</span></p>
+                <p class="saVendaModalDetalhe"><span class="saVendaModalDetalheLabel">Data da pesagem:</span> <span id="pesagemModalData">—</span></p>
+              </div>
+            </div>
+            <div class="saVendaModalAviso">
+              <span class="saVendaModalAvisoIcon" aria-hidden="true">&#9888;</span>
+              <span>Por favor, confira se as informações estão corretas. Essa ação não poderá ser desfeita!</span>
+            </div>
+          </div>
+          <div class="saVendaModalFooter">
+            <button type="button" class="saVendaModalBtn saVendaModalBtnCancel" id="pesagemModalCancel">Cancelar</button>
+            <button type="button" class="saVendaModalBtn saVendaModalBtnConfirm" id="pesagemModalConfirmBtn">Confirmar pesagem</button>
+          </div>
+        </div>
+      </div>
     </div>
   `;
 
-  document.getElementById("pipelineBackBtn")?.addEventListener("click", async () => {
-    const ok = await confirmPipelineLoseData(PIPELINE_STEP_LABELS.pesagem, previousStepLabel);
-    if (ok) await renderPipelineStep(stepIndex - 1);
-  });
-  document.getElementById("pipelineBtnPesoNext")?.addEventListener("click", async () => {
-    const pesoVal = parseFloat(document.getElementById("pipelinePesoInput")?.value) || 0;
-    const owner = await idbGet("owner", "current");
-    const userId = String(state.ctx.ownerId || owner?._id || "").trim();
-    const animalPeso = {
-      animal: animal._id,
-      data_pesagem: new Date().toISOString(),
-      peso_atual_kg: pesoVal,
-      tipo_equipamento: "Manual",
-      momento_pesagem: "Pesagem regular",
-      user: userId,
+  // Prefill dinâmico vindo do get_modulos (aba "Pesagem")
+  if (pesagemConfig) {
+    applyModulePrefillToContainer(container, "pesagem", "Pesagem");
+  }
+
+  const btnBack = container.querySelector("#pipelinePesagemBackBtn");
+  const btnSalvar = container.querySelector("#pipelinePesagemSalvarBtn");
+  const colaboradorSelect = container.querySelector("#pesoColaboradorSelect");
+  const tipoSelect = container.querySelector("#pesoTipoPesagem");
+  const pesoInput = container.querySelector("#pesoValorKg");
+  const dataInput = container.querySelector("#pesoDataPesagem");
+
+  const updateBtnState = () => {
+    const hasColaborador = !!colaboradorSelect?.value?.trim();
+    const hasTipo = !!tipoSelect?.value?.trim();
+    const pesoVal = Number(pesoInput?.value) || 0;
+    const hasPeso = pesoVal > 0;
+    const hasData = !!dataInput?.value;
+    const ok = hasColaborador && hasTipo && hasPeso && hasData;
+    if (btnSalvar) btnSalvar.disabled = !ok;
+  };
+
+  colaboradorSelect?.addEventListener("change", updateBtnState);
+  tipoSelect?.addEventListener("change", updateBtnState);
+  pesoInput?.addEventListener("input", updateBtnState);
+  dataInput?.addEventListener("change", updateBtnState);
+  updateBtnState();
+
+  const modalOverlay = container.querySelector("#pesagemModalConfirm");
+  const modalCloseBtn = container.querySelector("#pesagemModalClose");
+  const modalCancelBtn = container.querySelector("#pesagemModalCancel");
+  const modalConfirmBtn = container.querySelector("#pesagemModalConfirmBtn");
+
+  function formatBrDatePesagem(isoDate) {
+    if (!isoDate || !String(isoDate).trim()) return "—";
+    const s = String(isoDate).trim().slice(0, 10);
+    if (s.length < 10) return s || "—";
+    const [y, m, d] = s.split("-");
+    return `${d}/${m}/${y}`;
+  }
+
+  function openPesagemModal(data) {
+    if (!modalOverlay) return;
+    const set = (id, text) => {
+      const el = container.querySelector(`#${id}`);
+      if (el) el.textContent = text ?? "—";
     };
-    const arr = (await idbGet("animais", "list")) || [];
-    const idx = arr.findIndex((a) => String(a._id) === String(animal._id));
-    if (idx !== -1) {
-      const prev = arr[idx];
-      const updated = normalizeAnimal({
-        ...prev,
-        animal_peso: animalPeso,
-        peso_atual_kg: pesoVal,
-        _local: prev._local || true,
-        _sync: "pending",
-        data_modificacao: prev.data_modificacao,
-      });
-      arr[idx] = updated;
-      await idbSet("animais", "list", arr);
-      const qKey = `queue:${state.ctx.fazendaId || ""}:${state.ctx.ownerId || ""}:animal`;
-      const queue = (await idbGet("records", qKey)) || [];
-      const withoutPeso = queue.filter((item) => !(item.op === OFFLINE_OPS.ANIMAL_CREATE_PESO && String(item.payload?.animal) === String(animal._id)));
-      withoutPeso.push({ _id: `local:${uuid()}`, op: OFFLINE_OPS.ANIMAL_CREATE_PESO, at: Date.now(), payload: animalPeso });
-      await idbSet("records", qKey, withoutPeso);
-      updateFabSyncVisibility();
+    set("pesagemModalAnimal", data.animalLabel);
+    set("pesagemModalColaborador", data.colaboradorNome);
+    set("pesagemModalTipo", data.tipoPesagem);
+    set("pesagemModalPeso", data.pesoTexto);
+    set("pesagemModalData", data.dataTexto);
+    modalOverlay.hidden = false;
+  }
+
+  function closePesagemModal() {
+    if (modalOverlay) modalOverlay.hidden = true;
+  }
+
+  if (modalCloseBtn) modalCloseBtn.addEventListener("click", closePesagemModal);
+  if (modalCancelBtn) modalCancelBtn.addEventListener("click", closePesagemModal);
+  if (modalOverlay) {
+    modalOverlay.addEventListener("click", (e) => {
+      if (e.target === modalOverlay) closePesagemModal();
+    });
+  }
+
+  btnBack?.addEventListener("click", async () => {
+    const ok = await confirmPipelineLoseData(PIPELINE_STEP_LABELS.pesagem, previousStepLabel);
+    if (ok) {
+      container.classList.remove("pipelineStepContent--pesagem");
+      if (pipelineWrap) pipelineWrap.classList.remove("pipelineWrap--pesagem");
+      await renderPipelineStep(stepIndex - 1);
     }
-    await renderPipelineStep(stepIndex + 1);
   });
+
+  btnSalvar?.addEventListener("click", () => {
+    const colaboradorId = colaboradorSelect?.value?.trim();
+    const tipoPesagem = tipoSelect?.value?.trim();
+    const pesoVal = Number(pesoInput?.value) || 0;
+    const dataVal = dataInput?.value;
+
+    if (!colaboradorId) {
+      toast("Selecione o Colaborador.");
+      return;
+    }
+    if (!tipoPesagem) {
+      toast("Selecione o Tipo da pesagem.");
+      return;
+    }
+    if (!pesoVal || pesoVal <= 0) {
+      toast("Informe o valor em Kilograma.");
+      return;
+    }
+    if (!dataVal) {
+      toast("Informe a Data da pesagem.");
+      return;
+    }
+
+    const colaboradorNome = colaboradores.find((c) => String(c._id) === String(colaboradorId))?.nome || colaboradorSelect?.options?.[colaboradorSelect.selectedIndex]?.textContent?.trim() || "—";
+    openPesagemModal({
+      animalLabel: `${animal.brinco_padrao || "—"} — ${String(animal.nome_completo || "").trim() || "—"}`,
+      colaboradorNome,
+      tipoPesagem,
+      pesoTexto: `${pesoVal} kg`,
+      dataTexto: formatBrDatePesagem(dataVal),
+    });
+  });
+
+  if (modalConfirmBtn) {
+    modalConfirmBtn.addEventListener("click", async () => {
+      const colaboradorId = colaboradorSelect?.value?.trim();
+      const tipoPesagem = tipoSelect?.value?.trim();
+      const pesoVal = Number(pesoInput?.value) || 0;
+      const dataVal = dataInput?.value;
+      if (!colaboradorId || !tipoPesagem || !pesoVal || !dataVal) {
+        closePesagemModal();
+        return;
+      }
+
+      const dataIso = new Date(dataVal).toISOString();
+      const animalPeso = {
+        animal: animal._id,
+        data_pesagem: dataIso,
+        peso_atual_kg: pesoVal,
+        tipo_equipamento: "Manual",
+        momento_pesagem: tipoPesagem || "Pesagem regular",
+        user: colaboradorId,
+      };
+
+      const arr = (await idbGet("animais", "list")) || [];
+      const idx = arr.findIndex((a) => String(a._id) === String(animal._id));
+      if (idx !== -1) {
+        const prev = arr[idx];
+        const updated = normalizeAnimal({
+          ...prev,
+          animal_peso: animalPeso,
+          peso_atual_kg: pesoVal,
+          _local: prev._local || true,
+          _sync: "pending",
+          data_modificacao: prev.data_modificacao,
+        });
+        arr[idx] = updated;
+        await idbSet("animais", "list", arr);
+        const qKey = `queue:${state.ctx.fazendaId || ""}:${state.ctx.ownerId || ""}:animal`;
+        const queue = (await idbGet("records", qKey)) || [];
+        const withoutPeso = queue.filter(
+          (item) => !(item.op === OFFLINE_OPS.ANIMAL_CREATE_PESO && String(item.payload?.animal) === String(animal._id))
+        );
+        withoutPeso.push({
+          _id: `local:${uuid()}`,
+          op: OFFLINE_OPS.ANIMAL_CREATE_PESO,
+          at: Date.now(),
+          payload: animalPeso,
+        });
+        await idbSet("records", qKey, withoutPeso);
+        updateFabSyncVisibility();
+      }
+      closePesagemModal();
+      toast("Pesagem registrada. Será sincronizada quando houver conexão.");
+      await renderPipelineStep(stepIndex + 1);
+    });
+  }
 }
 
 /** Labels das abas do módulo saida_animais (para exibição) */
@@ -1741,7 +2032,7 @@ const SAIDA_ABA_LABELS = {
   venda: "Venda",
   morte: "Morte",
   emprestimo: "Empréstimo",
-  "ajuste inventário": "Ajuste inventário",
+  "ajuste inventario": "Ajuste inventário",
   doacao: "Doação",
 };
 
@@ -1753,7 +2044,7 @@ async function renderPipelineStepSaida(container, animal, stepIndex, isLast, pre
   const saidaConfig = getModuleConfig("saida_animais");
   const abasRaw = Array.isArray(saidaConfig?.abas) ? saidaConfig.abas : [];
   const tabList = abasRaw.length > 0
-    ? abasRaw.map((a) => String(a.aba || a.titulo || "").trim().toLowerCase()).filter(Boolean)
+    ? abasRaw.map((a) => normalizeAbaKeyName(a.aba || a.titulo || "")).filter(Boolean)
     : ["venda", "morte", "emprestimo", "ajuste inventário", "doacao"];
   const activeTab = tabList[0] || "venda";
   const animalLabel = `Brinco ${escapeHtml(animal.brinco_padrao || "—")} — ${escapeHtml(String(animal.nome_completo || "").trim() || "—")}`;
@@ -1776,8 +2067,8 @@ async function renderPipelineStepSaida(container, animal, stepIndex, isLast, pre
           </div>
         </div>
         <div class="pageHeadRow2">
-          <h1 class="pageTitle">${escapeHtml(PIPELINE_STEP_LABELS.saida_animais)}</h1>
-          <p class="pageSub">Registre a saída do animal</p>
+          <h1 class="pageTitle" id="saidaHeaderTitle">${escapeHtml(PIPELINE_STEP_LABELS.saida_animais)}</h1>
+          <p class="pageSub" id="saidaHeaderSub">Registre a saída do animal</p>
           <p class="saVendaHeaderAnimal">${animalLabel}</p>
         </div>
       </div>
@@ -1795,6 +2086,8 @@ async function renderPipelineStepSaida(container, animal, stepIndex, isLast, pre
   const formWrap = document.getElementById("pipelineSaidaFormWrap");
   const btnAvançar = document.getElementById("saidaBtnAvançar");
   const btnConcluir = document.getElementById("saidaBtnConcluir");
+  const headerTitleEl = container.querySelector("#saidaHeaderTitle");
+  const headerSubEl = container.querySelector("#saidaHeaderSub");
 
   function getCurrentTabIndex() {
     const idx = tabList.indexOf(currentTab);
@@ -1803,11 +2096,37 @@ async function renderPipelineStepSaida(container, animal, stepIndex, isLast, pre
   function hasNextTab() {
     return tabList.length > 1 && getCurrentTabIndex() < tabList.length - 1;
   }
+  function updateSaidaHeaderForTab() {
+    const label = SAIDA_ABA_LABELS[currentTab] || currentTab;
+    if (headerTitleEl) {
+      headerTitleEl.textContent = `${PIPELINE_STEP_LABELS.saida_animais} — ${label}`;
+    }
+    if (headerSubEl) {
+      const lower = String(label).toLowerCase();
+      let sub;
+      if (currentTab === "morte") {
+        sub = "Registre a morte do animal";
+      } else if (currentTab === "emprestimo") {
+        sub = "Registre o empréstimo do animal";
+      } else if (currentTab === "ajuste inventario") {
+        sub = "Registre um ajuste de inventário";
+      } else if (currentTab === "ajuste inventário") {
+        sub = "Registre um ajuste de inventário";
+      } else if (currentTab === "doacao") {
+        sub = "Registre a doação do animal";
+      } else {
+        // Venda ou qualquer outra aba de saída
+        sub = "Registre a saída do animal";
+      }
+      headerSubEl.textContent = sub;
+    }
+  }
   function setTabActive(tabKey) {
     currentTab = tabKey;
     container.querySelectorAll(".pipelineMovTab[data-tab]").forEach((t) => {
       t.classList.toggle("active", t.getAttribute("data-tab") === tabKey);
     });
+    updateSaidaHeaderForTab();
   }
   function advanceOrFinish() {
     if (hasNextTab()) {
@@ -1830,9 +2149,83 @@ async function renderPipelineStepSaida(container, animal, stepIndex, isLast, pre
   }
   async function renderSaidaTabContent(tabKey) {
     if (!formWrap) return;
+    currentTab = tabKey;
+    updateSaidaHeaderForTab();
     if (tabKey === "venda") {
       await renderSaidaAnimaisVendaForm(formWrap, {
         preselectedAnimal: animal,
+        onAfterConfirm: () => advanceOrFinish(),
+        onBack: async () => {
+          const ok = await confirmPipelineLoseData(PIPELINE_STEP_LABELS.saida_animais, previousStepLabel);
+          if (ok) {
+            container.classList.remove("pipelineStepContent--saida");
+            if (pipelineWrap) pipelineWrap.classList.remove("pipelineWrap--saida");
+            await renderPipelineStep(stepIndex - 1);
+          }
+        },
+      });
+      if (hasNextTab()) {
+        if (btnAvançar) btnAvançar.style.display = "none";
+        if (btnConcluir) btnConcluir.style.display = "";
+      }
+      return;
+    }
+    if (tabKey === "ajuste inventario") {
+      if (btnConcluir) {
+        btnConcluir.textContent = "Realizar ajuste de inventário";
+      }
+      await renderSaidaAnimaisVendaForm(formWrap, {
+        preselectedAnimal: animal,
+        mode: "ajuste",
+        headerButton: btnConcluir,
+        onAfterConfirm: () => advanceOrFinish(),
+        onBack: async () => {
+          const ok = await confirmPipelineLoseData(PIPELINE_STEP_LABELS.saida_animais, previousStepLabel);
+          if (ok) {
+            container.classList.remove("pipelineStepContent--saida");
+            if (pipelineWrap) pipelineWrap.classList.remove("pipelineWrap--saida");
+            await renderPipelineStep(stepIndex - 1);
+          }
+        },
+      });
+      if (hasNextTab()) {
+        if (btnAvançar) btnAvançar.style.display = "none";
+        if (btnConcluir) btnConcluir.style.display = "";
+      }
+      return;
+    }
+    if (tabKey === "emprestimo") {
+      if (btnConcluir) {
+        btnConcluir.textContent = "Realizar empréstimo de animais";
+      }
+      await renderSaidaAnimaisVendaForm(formWrap, {
+        preselectedAnimal: animal,
+        mode: "emprestimo",
+        headerButton: btnConcluir,
+        onAfterConfirm: () => advanceOrFinish(),
+        onBack: async () => {
+          const ok = await confirmPipelineLoseData(PIPELINE_STEP_LABELS.saida_animais, previousStepLabel);
+          if (ok) {
+            container.classList.remove("pipelineStepContent--saida");
+            if (pipelineWrap) pipelineWrap.classList.remove("pipelineWrap--saida");
+            await renderPipelineStep(stepIndex - 1);
+          }
+        },
+      });
+      if (hasNextTab()) {
+        if (btnAvançar) btnAvançar.style.display = "none";
+        if (btnConcluir) btnConcluir.style.display = "";
+      }
+      return;
+    }
+    if (tabKey === "doacao") {
+      if (btnConcluir) {
+        btnConcluir.textContent = "Realizar doação de animais";
+      }
+      await renderSaidaAnimaisVendaForm(formWrap, {
+        preselectedAnimal: animal,
+        mode: "doacao",
+        headerButton: btnConcluir,
         onAfterConfirm: () => advanceOrFinish(),
         onBack: async () => {
           const ok = await confirmPipelineLoseData(PIPELINE_STEP_LABELS.saida_animais, previousStepLabel);
@@ -2298,11 +2691,52 @@ function updateAnimalIdadeDisplay() {
   displayEl.textContent = formatIdadeMeses(dateStr);
 }
 
+/** Formata número para exibição em Real (R$ 1.234,56) */
+function formatCurrencyBR(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "R$ 0,00";
+  return "R$ " + n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** Extrai valor numérico de string com R$ (ex: "R$ 45.411,00" ou "45411") */
+function parseCurrencyBR(str) {
+  if (str == null || String(str).trim() === "") return 0;
+  const s = String(str).replace(/\s/g, "").replace(/R\$/gi, "").replace(/\./g, "").replace(",", ".");
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function animalDisplayName(a) {
   const name = String(a?.nome_completo || "").trim();
   if (name) return name;
   const br = String(a?.brinco_padrao || "").trim();
   return br ? `Animal ${br}` : "Animal";
+}
+
+/** Retorna animais da mesma organização (todas as fazendas da org) para busca em genealogia. */
+async function getAnimaisByOrganizacao() {
+  const fazendaAtual = await idbGet("fazenda", "current");
+  const org = await idbGet("organizacao", "current");
+  const orgId = fazendaAtual?.organizacao_id ?? (typeof fazendaAtual?.organizacao === "object" ? fazendaAtual?.organizacao?._id : fazendaAtual?.organizacao) ?? org?._id ?? org?.organizacao ?? null;
+  const raw = (await idbGet("animais", "list")) || [];
+  const base = raw.filter((a) => !a.deleted).map(normalizeAnimal);
+  if (!orgId) {
+    return filterByCurrentFazenda(base, "fazenda");
+  }
+  const listFazendas = (await idbGet("fazenda", "list")) || [];
+  const sameOrgId = (f) => {
+    const fOrg = f?.organizacao_id ?? f?.organizacao ?? (typeof f?.organizacao === "object" ? f?.organizacao?._id : null);
+    return String(fOrg || "") === String(orgId);
+  };
+  const fazendaIds = new Set(listFazendas.filter(sameOrgId).map((f) => String(f._id || "")).filter(Boolean));
+  return base.filter((a) => fazendaIds.has(String(a.fazenda || "")));
+}
+
+/** Exibe label do animal para genealogia (brinco — nome). */
+function animalGenealogiaLabel(a) {
+  const br = String(a?.brinco_padrao || "").trim() || "—";
+  const nome = String(a?.nome_completo || "").trim() || "—";
+  return `${br} — ${nome}`;
 }
 
 // ---------------- Animal module: FORM (CREATE / EDIT) ----------------
@@ -2324,7 +2758,7 @@ function readAnimalFormByIds() {
   const categoria = $("#animalCategoria")?.value ?? "";
   const raca = $("#animalRaca")?.value ?? "";
 
-  // extras
+  // extras (Dados adicionais)
   const nome = $("#animalNome")?.value ?? "";
   const finalidade = $("#animalFinalidade")?.value ?? "";
   const pesoNasc = $("#animalPesoNasc")?.value ?? "0";
@@ -2337,25 +2771,37 @@ function readAnimalFormByIds() {
   const pasto = $("#animalPasto")?.value ?? "";
   const obs = $("#animalObs")?.value ?? "";
 
-  // genealogia
-  const maeCad = $("#maeCad")?.checked ? "1" : "0";
-  const paiCad = $("#paiCad")?.checked ? "1" : "0";
-  const mae = $("#animalMae")?.value ?? "";
-  const pai = $("#animalPai")?.value ?? "";
+  // genealogia (Mãe / Pai)
+  const mae = ($("#animalMae")?.getAttribute?.("data-selected-id") || $("#animalMae")?.value) ?? "";
+  const pai = ($("#animalPai")?.getAttribute?.("data-selected-id") || $("#animalPai")?.value) ?? "";
 
-  // aquisição
-  const gta = $("#animalGta")?.value ?? "";
-  const uf = $("#animalUf")?.value ?? "";
+  // aquisição (seção visível quando entry_type = Compra)
+  const dataAquisicaoEl = document.getElementById("animalDataAquisicao");
+  const dataAquisicaoVal = dataAquisicaoEl?.value ?? "";
+  const dataAquisicao = dataAquisicaoVal ? dateToTimestampSync(dataAquisicaoVal) : null;
+  const notaFiscal = $("#animalNotaFiscal")?.value ?? "";
+  const valorAquisicaoRaw = $("#animalValorAquisicao")?.value ?? "";
+  const valorAquisicao = parseCurrencyBR(valorAquisicaoRaw);
+  const origemFornecedor = $("#animalOrigemFornecedor")?.value ?? "";
+  const numeroGta = $("#animalNumeroGTA")?.value ?? "";
+  const ufGta = $("#animalUfGTA")?.value ?? "";
+  const serieGta = $("#animalSerieGTA")?.value ?? "";
+  const dataEmissaoVal = $("#animalDataEmissaoGTA")?.value ?? "";
+  const dataValidadeVal = $("#animalDataValidadeGTA")?.value ?? "";
+  const dataEmissaoGta = dataEmissaoVal ? dateToTimestampSync(dataEmissaoVal) : null;
+  const dataValidadeGta = dataValidadeVal ? dateToTimestampSync(dataValidadeVal) : null;
 
   // tipo entrada (chip ativo)
   const entry = document.querySelector("#tipoEntradaChips .chip.active")?.dataset?.value || "Compra";
+  const valorDisabledForEntry = ["Doação", "Empréstimo", "Ajuste inventário"].includes(entry);
+  const valorAnimalFinal = valorDisabledForEntry ? 0 : valorAquisicao;
 
   // Valida e limpa data de nascimento
   const dataNascimentoISO = dateInputToISO(nasc);
-  const dataNascimentoFinal = (dataNascimentoISO && 
-    String(dataNascimentoISO).toLowerCase() !== "nan" && 
-    String(dataNascimentoISO).trim() !== "") 
-    ? dataNascimentoISO 
+  const dataNascimentoFinal = (dataNascimentoISO &&
+    String(dataNascimentoISO).toLowerCase() !== "nan" &&
+    String(dataNascimentoISO).trim() !== "")
+    ? dataNascimentoISO
     : "";
 
   return {
@@ -2381,13 +2827,18 @@ function readAnimalFormByIds() {
     pasto,
     observacoes: obs,
 
-    mae_cadastrada: maeCad,
-    pai_cadastrado: paiCad,
     mae_vinculo: mae,
     pai_vinculo: pai,
 
-    gta,
-    uf,
+    data_aquisicao: dataAquisicao,
+    nota_fiscal: notaFiscal,
+    valor_animal: valorAnimalFinal,
+    origem_fornecedor: origemFornecedor,
+    numero_gta: numeroGta,
+    uf_gta: ufGta,
+    serie_gta: serieGta,
+    data_emissao_gta: dataEmissaoGta,
+    data_validade_gta: dataValidadeGta,
   };
 }
 
@@ -2419,13 +2870,53 @@ async function writeAnimalFormByIds(data = {}) {
   if ($("#animalPasto")) $("#animalPasto").value = String(data.pasto || "");
   if ($("#animalObs")) $("#animalObs").value = String(data.observacoes || "");
 
-  if ($("#maeCad")) $("#maeCad").checked = data.mae_cadastrada === "1" || data.mae_cadastrada === true;
-  if ($("#paiCad")) $("#paiCad").checked = data.pai_cadastrado === "1" || data.pai_cadastrada === true;
-  if ($("#animalMae")) $("#animalMae").value = String(data.mae_vinculo || "");
-  if ($("#animalPai")) $("#animalPai").value = String(data.pai_vinculo || "");
+  // Genealogia: se mae_vinculo/pai_vinculo forem IDs, resolver para exibir "Brinco — Nome"
+  const animaisOrg = await getAnimaisByOrganizacao();
+  const editingId = state.animalEditingId ? String(state.animalEditingId) : null;
+  if ($("#animalMae")) {
+    const maeId = String(data.mae_vinculo || "").trim();
+    $("#animalMae").removeAttribute("data-selected-id");
+    if (maeId) {
+      const maeAnimal = animaisOrg.find((a) => String(a._id) === maeId);
+      if (maeAnimal) {
+        $("#animalMae").value = animalGenealogiaLabel(maeAnimal);
+        $("#animalMae").setAttribute("data-selected-id", maeId);
+      } else {
+        $("#animalMae").value = maeId;
+      }
+    } else {
+      $("#animalMae").value = "";
+    }
+  }
+  if ($("#animalPai")) {
+    const paiId = String(data.pai_vinculo || "").trim();
+    $("#animalPai").removeAttribute("data-selected-id");
+    if (paiId) {
+      const paiAnimal = animaisOrg.find((a) => String(a._id) === paiId);
+      if (paiAnimal) {
+        $("#animalPai").value = animalGenealogiaLabel(paiAnimal);
+        $("#animalPai").setAttribute("data-selected-id", paiId);
+      } else {
+        $("#animalPai").value = paiId;
+      }
+    } else {
+      $("#animalPai").value = "";
+    }
+  }
 
-  if ($("#animalGta")) $("#animalGta").value = String(data.gta || "");
-  if ($("#animalUf")) $("#animalUf").value = String(data.uf || "");
+  // Aquisição
+  const dataAquisicaoInput = document.getElementById("animalDataAquisicao");
+  if (dataAquisicaoInput) dataAquisicaoInput.value = isoToDateInput(data.data_aquisicao || "");
+  if ($("#animalNotaFiscal")) $("#animalNotaFiscal").value = String(data.nota_fiscal || "");
+  if ($("#animalValorAquisicao")) $("#animalValorAquisicao").value = formatCurrencyBR(data.valor_animal ?? data.valor ?? 0);
+  if ($("#animalOrigemFornecedor")) $("#animalOrigemFornecedor").value = String(data.origem_fornecedor || "");
+  if ($("#animalNumeroGTA")) $("#animalNumeroGTA").value = String(data.numero_gta || data.gta || "");
+  if ($("#animalUfGTA")) $("#animalUfGTA").value = String(data.uf_gta || data.uf || "");
+  if ($("#animalSerieGTA")) $("#animalSerieGTA").value = String(data.serie_gta || "");
+  const dataEmissaoInput = document.getElementById("animalDataEmissaoGTA");
+  if (dataEmissaoInput) dataEmissaoInput.value = isoToDateInput(data.data_emissao_gta || "");
+  const dataValidadeInput = document.getElementById("animalDataValidadeGTA");
+  if (dataValidadeInput) dataValidadeInput.value = isoToDateInput(data.data_validade_gta || "");
 
   // chip seleção
   const val = String(data.entry_type || "Compra");
@@ -2476,11 +2967,11 @@ function updateSaveButtonState() {
  * Popula dropdowns fixos com listas do config.js
  */
 function populateFixedDropdowns() {
-  // UF (Estados)
-  const selUf = $("#animalUf");
-  if (selUf) {
-    selUf.innerHTML = [
-      `<option value="" selected disabled>Selecione o estado</option>`,
+  // UF (Estados) — seção Aquisição
+  const selUfGta = document.getElementById("animalUfGTA");
+  if (selUfGta) {
+    selUfGta.innerHTML = [
+      `<option value="">Selecione</option>`,
       ...UF_LIST.map(uf => `<option value="${escapeHtml(uf.value)}">${escapeHtml(uf.label)}</option>`)
     ].join("");
   }
@@ -2610,6 +3101,27 @@ async function fillOwnersAndLotesInForm() {
       ...pastos.map(p => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`)
     ].join("");
   }
+
+  const selOrigem = document.getElementById("animalOrigemFornecedor");
+  if (selOrigem) {
+    selOrigem.innerHTML = [
+      `<option value="">Origem/Fornecedor</option>`,
+      ...proprietarios.map(p => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`)
+    ].join("");
+  }
+}
+
+function updateAquisicaoSectionVisibility() {
+  const entry = document.querySelector("#tipoEntradaChips .chip.active")?.dataset?.value || "";
+  const section = document.getElementById("aquisicaoSection");
+  const valorInput = document.getElementById("animalValorAquisicao");
+  const showSection = ["Compra", "Doação", "Empréstimo", "Ajuste inventário"].includes(entry);
+  if (section) section.style.display = showSection ? "block" : "none";
+  if (valorInput) {
+    const valorDisabled = entry === "Doação" || entry === "Empréstimo" || entry === "Ajuste inventário";
+    valorInput.disabled = !!valorDisabled;
+    valorInput.classList.toggle("aquisicaoValorDisabled", !!valorDisabled);
+  }
 }
 
 function bindAnimalFormUIOnce() {
@@ -2644,6 +3156,89 @@ function bindAnimalFormUIOnce() {
     });
   });
 
+  // Data de nascimento: ao alterar, recalcula e exibe a idade
+  const animalNasc = document.getElementById("animalNasc");
+  if (animalNasc && !animalNasc.__idadeBound) {
+    animalNasc.__idadeBound = true;
+    animalNasc.addEventListener("input", updateAnimalIdadeDisplay);
+    animalNasc.addEventListener("change", updateAnimalIdadeDisplay);
+  }
+
+  // Campo Valor (aquisição): formata com R$ ao sair do campo
+  const valorAquisicao = document.getElementById("animalValorAquisicao");
+  if (valorAquisicao && !valorAquisicao.__currencyBound) {
+    valorAquisicao.__currencyBound = true;
+    valorAquisicao.addEventListener("blur", () => {
+      const parsed = parseCurrencyBR(valorAquisicao.value);
+      valorAquisicao.value = formatCurrencyBR(parsed);
+    });
+  }
+
+  // Genealogia (Mãe / Pai): busca por animais da mesma organização
+  const animalMaeInput = document.getElementById("animalMae");
+  const animalMaeResults = document.getElementById("animalMaeResults");
+  const animalPaiInput = document.getElementById("animalPai");
+  const animalPaiResults = document.getElementById("animalPaiResults");
+  let genealogiaDebounce = null;
+
+  async function runGenealogiaSearch(inputEl, resultsEl, excludeId) {
+    if (!inputEl || !resultsEl) return;
+    const q = String(inputEl.value || "").trim();
+    if (!q) {
+      resultsEl.innerHTML = "";
+      resultsEl.hidden = true;
+      return;
+    }
+    const animais = await getAnimaisByOrganizacao();
+    const exclude = excludeId ? String(excludeId) : null;
+    const list = animais.filter((a) => !exclude || String(a._id) !== exclude);
+    const lower = q.toLowerCase();
+    const matches = list.filter(
+      (a) =>
+        String(a.nome_completo || "").toLowerCase().includes(lower) ||
+        String(a.brinco_padrao || "").toLowerCase().includes(lower)
+    );
+    if (matches.length === 0) {
+      resultsEl.innerHTML = '<div class="pipelineResultItem pipelineResultEmpty">Nenhum animal encontrado</div>';
+      resultsEl.hidden = false;
+      return;
+    }
+    resultsEl.innerHTML = matches.slice(0, 12).map((a) =>
+      `<button type="button" class="pipelineResultItem" data-id="${escapeHtml(a._id)}">${escapeHtml(animalGenealogiaLabel(a))}</button>`
+    ).join("");
+    resultsEl.hidden = false;
+  }
+
+  function bindGenealogiaInput(inputEl, resultsEl) {
+    if (!inputEl || !resultsEl || inputEl.__genealogiaBound) return;
+    inputEl.__genealogiaBound = true;
+    const excludeId = () => state.animalEditingId ? String(state.animalEditingId) : null;
+    inputEl.addEventListener("input", () => {
+      if (!inputEl.value.trim()) inputEl.removeAttribute("data-selected-id");
+      clearTimeout(genealogiaDebounce);
+      genealogiaDebounce = setTimeout(() => runGenealogiaSearch(inputEl, resultsEl, excludeId()), 200);
+    });
+    inputEl.addEventListener("focus", () => {
+      if (inputEl.value.trim()) runGenealogiaSearch(inputEl, resultsEl, excludeId());
+    });
+    inputEl.addEventListener("blur", () => {
+      setTimeout(() => { resultsEl.hidden = true; }, 180);
+    });
+    resultsEl.addEventListener("click", (e) => {
+      const btn = e.target.closest(".pipelineResultItem[data-id]");
+      if (!btn || btn.classList.contains("pipelineResultEmpty")) return;
+      const id = btn.dataset.id;
+      const label = btn.textContent.trim();
+      inputEl.value = label;
+      inputEl.setAttribute("data-selected-id", id);
+      resultsEl.hidden = true;
+      resultsEl.innerHTML = "";
+      updateSaveButtonState();
+    });
+  }
+  bindGenealogiaInput(animalMaeInput, animalMaeResults);
+  bindGenealogiaInput(animalPaiInput, animalPaiResults);
+
   // chips tipo entrada
   const chipWrap = $("#tipoEntradaChips");
   if (chipWrap) {
@@ -2651,8 +3246,8 @@ function bindAnimalFormUIOnce() {
       chip.addEventListener("click", () => {
         chipWrap.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
         chip.classList.add("active");
-        // Checkmark é adicionado via CSS :after, não precisa manipular texto
         updateSaveButtonState();
+        updateAquisicaoSectionVisibility();
       });
     });
   }
@@ -2747,11 +3342,40 @@ async function openAnimalFormForCreate() {
   populateFixedDropdowns(); // Popula dropdowns fixos (UF, Raça, etc.)
   await fillOwnersAndLotesInForm();
 
+  // Quando o form está dentro do pipeline: botão Voltar volta para o modal inicial
+  if (state.pipelineFromCreate) {
+    const btnVoltar = document.getElementById("btnVoltarTopo");
+    if (btnVoltar && !btnVoltar.__pipelineBackBound) {
+      btnVoltar.__pipelineBackBound = true;
+      btnVoltar.addEventListener("click", async () => {
+        const ok = await confirmPipelineLoseData("Informações do animal", null);
+        if (!ok) return;
+        moveAnimalFormBackToContainer();
+        const pipelineModal = document.getElementById("pipelineModal");
+        const stepContent = document.getElementById("pipelineStepContent");
+        if (pipelineModal) pipelineModal.hidden = false;
+        if (stepContent) {
+          stepContent.hidden = true;
+          stepContent.classList.remove("pipelineStepContent--animalForm");
+        }
+        const wrap = document.getElementById("pipelineWrap");
+        if (wrap) wrap.classList.remove("pipelineWrap--animalForm");
+        state.pipelineFromCreate = false;
+        state.pipelineCreateCallback = null;
+        state.animalView = null;
+        state.activeKey = null;
+        renderSidebar();
+        updateFabSyncVisibility();
+      });
+    }
+  }
+
   // advanced state - sempre inicia desligado
   state.advanced = false;
   const tgl = $("#toggleAdvanced");
   if (tgl) tgl.checked = false;
   applyAdvancedVisibility();
+  updateAquisicaoSectionVisibility();
 
   // default owner - colaborador_principal da fazenda; se não houver, primeiro colaborador vinculado ou ownerId da sessão
   const fazendaAtual = await idbGet("fazenda", "current");
@@ -2788,15 +3412,21 @@ async function openAnimalFormForCreate() {
     lote: "",
     pasto: "",
     observacoes: "",
-    mae_cadastrada: "0",
-    pai_cadastrado: "0",
     mae_vinculo: "",
     pai_vinculo: "",
-    gta: "",
-    uf: "",
+    data_aquisicao: "",
+    nota_fiscal: "",
+    valor_animal: 0,
+    origem_fornecedor: "",
+    numero_gta: "",
+    uf_gta: "",
+    serie_gta: "",
+    data_emissao_gta: "",
+    data_validade_gta: "",
   };
 
   await writeAnimalFormByIds(initData);
+  updateAquisicaoSectionVisibility();
 
   if (state.pipelineRestoreDraft) {
     state.pipelineRestoreDraft = false;
@@ -2829,11 +3459,19 @@ async function openAnimalFormForCreate() {
           pai_cadastrado: draft.pai_cadastrado || "0",
           mae_vinculo: draft.mae_vinculo || "",
           pai_vinculo: draft.pai_vinculo || "",
-          gta: draft.gta || "",
-          uf: draft.uf || "",
+          data_aquisicao: draft.data_aquisicao || "",
+          nota_fiscal: draft.nota_fiscal || "",
+          valor_animal: draft.valor_animal ?? draft.valor ?? 0,
+          origem_fornecedor: draft.origem_fornecedor || "",
+          numero_gta: draft.numero_gta || draft.gta || "",
+          uf_gta: draft.uf_gta || draft.uf || "",
+          serie_gta: draft.serie_gta || "",
+          data_emissao_gta: draft.data_emissao_gta || "",
+          data_validade_gta: draft.data_validade_gta || "",
           entry_type: draft.entry_type || "Compra",
         };
         await writeAnimalFormByIds(formData);
+        updateAquisicaoSectionVisibility();
       }
     } catch (_) {}
   }
@@ -3048,6 +3686,12 @@ const SAIDA_ANIMAIS_TABS = [
 async function renderSaidaAnimaisVendaForm(container, options = {}) {
   if (!container) return;
 
+  const mode = options.mode || "venda";
+  const isEmprestimo = mode === "emprestimo";
+  const isAjuste = mode === "ajuste";
+  const isDoacao = mode === "doacao";
+  const externalHeaderButton = options.headerButton || null;
+
   // Opções dos selects (sem pré-seleção; o pré-preenchimento é aplicado dinamicamente por applyModulePrefillToContainer)
   const condicaoOptions = CONDICAO_PAGAMENTO_LIST.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
   const movimentacaoSaidaOptions = MOVIMENTACAO_SAIDA_ANIMAL_LIST.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join("");
@@ -3060,17 +3704,41 @@ async function renderSaidaAnimaisVendaForm(container, options = {}) {
   const isPipelineContext = !!options.preselectedAnimal;
 
   container.innerHTML = `
-    <div class="saVendaForm${isPipelineContext ? " saVendaFormPipeline" : ""}" id="saVendaForm">
+    <div class="saVendaForm${isPipelineContext ? " saVendaFormPipeline" : ""}${isEmprestimo ? " saVendaFormEmprestimo" : ""}" id="saVendaForm">
       <div class="pageHead">
         <div class="pageHeadRow1">
           <button type="button" class="animalFormBackBtn" id="saVendaBack" aria-label="Voltar">← Voltar</button>
           <div class="pageHeadActions">
-            <button type="button" class="animalFormHeaderBtn btnSaveAnimal" id="saVendaBtnRealizar">Realizar saída de animais</button>
+            <button type="button" class="animalFormHeaderBtn btnSaveAnimal" id="saVendaBtnRealizar">${
+              isEmprestimo
+                ? "Realizar empréstimo de animais"
+                : isAjuste
+                  ? "Realizar ajuste de inventário"
+                  : isDoacao
+                    ? "Realizar doação de animais"
+                    : "Realizar saída de animais"
+            }</button>
           </div>
         </div>
         <div class="pageHeadRow2">
-          <h1 class="pageTitle">Informações sobre a venda</h1>
-          <p class="pageSub">Registre a saída individual do animal</p>
+          <h1 class="pageTitle">${
+            isEmprestimo
+              ? "Informações sobre o empréstimo"
+              : isAjuste
+                ? "Informações sobre ajuste de inventário"
+                : isDoacao
+                  ? "Informações sobre a doação"
+                  : "Informações sobre a venda"
+          }</h1>
+          <p class="pageSub">${
+            isEmprestimo
+              ? "Registre o empréstimo do animal"
+              : isAjuste
+                ? "Registre o ajuste de inventário do animal"
+                : isDoacao
+                  ? "Registre a doação do animal"
+                  : "Registre a saída individual do animal"
+          }</p>
         </div>
       </div>
       <div class="saVendaFormBody saVendaFormOnly">
@@ -3200,13 +3868,51 @@ async function renderSaidaAnimaisVendaForm(container, options = {}) {
     </div>
   `;
 
-  applyModulePrefillToContainer(container, "saida_animais", "Venda");
+  // Prefill dinâmico baseado no modo (venda x empréstimo x ajuste x doação)
+  const abaKeyForPrefill = isEmprestimo
+    ? "emprestimo"
+    : isAjuste
+      ? "ajuste inventário"
+      : isDoacao
+        ? "doacao"
+        : "Venda";
+  applyModulePrefillToContainer(container, "saida_animais", abaKeyForPrefill);
+
+  const innerBtn = container.querySelector("#saVendaBtnRealizar");
+  const headerBtn = externalHeaderButton || innerBtn;
+
+  // Se estamos no pipeline e usando botão externo (header do passo), escondemos o header interno do formulário
+  if (externalHeaderButton && isPipelineContext) {
+    const innerHead = container.querySelector(".pageHead");
+    if (innerHead) innerHead.style.display = "none";
+  }
 
   const backBtn = container.querySelector("#saVendaBack");
   if (backBtn) {
     backBtn.addEventListener("click", () => {
       if (options.onBack) options.onBack();
       else renderSaidaAnimaisModule(container);
+    });
+  }
+
+  if (isEmprestimo || isAjuste || isDoacao) {
+    // Para empréstimo/ajuste/doação, tipo de saída é fixo e alguns campos são escondidos.
+    const movSel = container.querySelector("#vendaMovimentacaoSaida");
+    if (movSel) {
+      movSel.value = isEmprestimo ? "Empréstimo" : isAjuste ? "Ajuste inventário" : "Doação";
+      movSel.disabled = true;
+      const movField = movSel.closest(".saVendaField");
+      if (movField) movField.style.display = "none";
+    }
+    const condField = container.querySelector("#vendaCondicaoPagamento")?.closest(".saVendaField");
+    if (condField) condField.style.display = "none";
+    // Campos de GTA/UF não são exibidos na aba de empréstimo.
+    ["vendaNumeroGTA", "vendaDataEmissaoGTA", "vendaDataValidadeGTA", "vendaSerie", "vendaUF"].forEach((id) => {
+      const el = container.querySelector(`#${id}`);
+      if (el) {
+        const field = el.closest(".saVendaField");
+        if (field) field.style.display = "none";
+      }
     });
   }
 
@@ -3270,6 +3976,8 @@ async function renderSaidaAnimaisVendaForm(container, options = {}) {
   const modalCloseBtn = container.querySelector("#saVendaModalClose");
   const modalCancelBtn = container.querySelector("#saVendaModalCancel");
   const modalConfirmBtn = container.querySelector("#saVendaModalConfirmBtn");
+  const modalTitleEl = document.getElementById("saVendaModalTitle");
+  const modalSubEl = document.querySelector(".saVendaModalSub");
 
   function closeVendaModal() {
     if (modalOverlay) modalOverlay.hidden = true;
@@ -3284,14 +3992,69 @@ async function renderSaidaAnimaisVendaForm(container, options = {}) {
     set("saVendaModalOrigemNome", data.origemNome);
     set("saVendaModalDestinoNome", data.destinoNome);
     set("saVendaModalQtdText", `Quantidade de animais: ${data.quantidade ?? 1}`);
-    set("saVendaModalDataAquisicao", data.dataAquisicao);
-    set("saVendaModalNotaFiscal", data.notaFiscal);
-    set("saVendaModalValorAquisicao", data.valorAquisicao);
-    set("saVendaModalNumeroGTA", data.numeroGTA);
-    set("saVendaModalDataEmissaoGTA", data.dataEmissaoGTA);
-    set("saVendaModalSerieGTA", data.serieGTA);
-    set("saVendaModalEstado", data.estado);
-    set("saVendaModalDataValidadeGTA", data.dataValidadeGTA);
+
+    const dataSpan = document.getElementById("saVendaModalDataAquisicao");
+    const valorSpan = document.getElementById("saVendaModalValorAquisicao");
+    const col2 = document.querySelector(".saVendaModalCol:nth-child(2)");
+
+    if (isEmprestimo || isAjuste || isDoacao) {
+      // Empréstimo / Ajuste inventário / Doação (layout enxuto: data, nota, peso)
+      if (modalTitleEl) {
+        modalTitleEl.textContent = isEmprestimo
+          ? "Confirmar empréstimo de animais"
+          : isAjuste
+            ? "Confirmar ajuste de inventário"
+            : "Confirmar doação de animais";
+      }
+      if (modalSubEl) {
+        modalSubEl.textContent = isEmprestimo
+          ? "Revise os detalhes antes de confirmar o empréstimo."
+          : isAjuste
+            ? "Revise os detalhes antes de confirmar o ajuste de inventário."
+            : "Revise os detalhes antes de confirmar a doação.";
+      }
+      if (dataSpan && dataSpan.previousElementSibling) {
+        dataSpan.previousElementSibling.textContent = isEmprestimo
+          ? "Data de empréstimo:"
+          : isAjuste
+            ? "Data de ajuste:"
+            : "Data de doação:";
+      }
+      if (valorSpan && valorSpan.previousElementSibling) {
+        valorSpan.previousElementSibling.textContent = "Peso:";
+      }
+      set("saVendaModalDataAquisicao", data.dataAquisicao);
+      set("saVendaModalNotaFiscal", data.notaFiscal);
+      set("saVendaModalValorAquisicao", data.pesoTexto || "—");
+      if (col2) col2.style.display = "none";
+      if (modalConfirmBtn) {
+        modalConfirmBtn.textContent = isEmprestimo
+          ? "Confirmar empréstimo de animais"
+          : isAjuste
+            ? "Confirmar ajuste de inventário"
+            : "Confirmar doação de animais";
+      }
+    } else {
+      // Venda (padrão)
+      if (modalTitleEl) modalTitleEl.textContent = "Confirmar venda de animais";
+      if (modalSubEl) modalSubEl.textContent = "Revise os detalhes antes de confirmar a saída dos animais.";
+      if (dataSpan && dataSpan.previousElementSibling) {
+        dataSpan.previousElementSibling.textContent = "Data de aquisição:";
+      }
+      if (valorSpan && valorSpan.previousElementSibling) {
+        valorSpan.previousElementSibling.textContent = "Valor da aquisição:";
+      }
+      set("saVendaModalDataAquisicao", data.dataAquisicao);
+      set("saVendaModalNotaFiscal", data.notaFiscal);
+      set("saVendaModalValorAquisicao", data.valorAquisicao);
+      set("saVendaModalNumeroGTA", data.numeroGTA);
+      set("saVendaModalDataEmissaoGTA", data.dataEmissaoGTA);
+      set("saVendaModalSerieGTA", data.serieGTA);
+      set("saVendaModalEstado", data.estado);
+      set("saVendaModalDataValidadeGTA", data.dataValidadeGTA);
+      if (col2) col2.style.display = "";
+      if (modalConfirmBtn) modalConfirmBtn.textContent = "Confirmar saída de animais";
+    }
     modalOverlay.hidden = false;
   }
 
@@ -3303,8 +4066,11 @@ async function renderSaidaAnimaisVendaForm(container, options = {}) {
     });
   }
 
-  const btnRealizar = container.querySelector("#saVendaBtnRealizar");
+  const btnRealizar = headerBtn;
   if (btnRealizar) {
+    if (isEmprestimo || isAjuste || isDoacao) {
+      btnRealizar.disabled = true;
+    }
     btnRealizar.addEventListener("click", async () => {
       const animalBrinco = container.querySelector("#vendaAnimalBrinco");
       const proprietarioDestino = container.querySelector("#vendaProprietarioDestino");
@@ -3324,9 +4090,11 @@ async function renderSaidaAnimaisVendaForm(container, options = {}) {
         toast("Selecione a Fazenda de destino.");
         return;
       }
-      if (!dataEmissao?.value || !dataValidade?.value) {
-        toast("Preencha Data emissão GTA e Data validade GTA.");
-        return;
+      if (!isEmprestimo && !isAjuste && !isDoacao) {
+        if (!dataEmissao?.value || !dataValidade?.value) {
+          toast("Preencha Data emissão GTA e Data validade GTA.");
+          return;
+        }
       }
       const fazenda = await idbGet("fazenda", "current");
       const origemNome = fazenda?.name || fazenda?.nome || "—";
@@ -3334,8 +4102,11 @@ async function renderSaidaAnimaisVendaForm(container, options = {}) {
       const vendaData = container.querySelector("#vendaData")?.value;
       const vendaNotaFiscal = container.querySelector("#vendaNotaFiscal")?.value?.trim();
       const vendaValor = container.querySelector("#vendaValor");
+      const vendaPesoInput = container.querySelector("#vendaPeso");
       const valorRaw = vendaValor?.dataset?.raw ?? vendaValor?.value;
       const valorAquisicao = (valorRaw !== undefined && valorRaw !== "") ? (formatBrCurrencyFromDigits(String(Math.round(parseFloat(valorRaw) * 100))) || "—") : "—";
+      const pesoValor = Number(vendaPesoInput?.value) || 0;
+      const pesoTexto = pesoValor > 0 ? `${pesoValor} kg` : "—";
       const numeroGTA = container.querySelector("#vendaNumeroGTA")?.value?.trim();
       const serieGTA = container.querySelector("#vendaSerie")?.value?.trim();
       const ufSelect = container.querySelector("#vendaUF");
@@ -3348,6 +4119,7 @@ async function renderSaidaAnimaisVendaForm(container, options = {}) {
         dataAquisicao: formatBrDate(vendaData),
         notaFiscal: vendaNotaFiscal || "—",
         valorAquisicao,
+        pesoTexto,
         numeroGTA: numeroGTA || "—",
         dataEmissaoGTA: formatBrDate(dataEmissao?.value),
         serieGTA: serieGTA || "—",
@@ -3357,6 +4129,25 @@ async function renderSaidaAnimaisVendaForm(container, options = {}) {
     });
   }
 
+  if ((isEmprestimo || isAjuste || isDoacao) && btnRealizar) {
+    const proprietarioDestino = container.querySelector("#vendaProprietarioDestino");
+    const fazendaDestinoWrap = container.querySelector("#saVendaFazendaDestinoWrap");
+    const fazendaDestinoSelect = container.querySelector("#vendaFazendaDestino");
+    const dataInput = container.querySelector("#vendaData");
+    const updateBtnState = () => {
+      const hasProprietario = !!(proprietarioDestino?.value?.trim() && proprietarioDestino.getAttribute("data-selected-id"));
+      const needsFazenda = fazendaDestinoWrap && !fazendaDestinoWrap.hidden;
+      const hasFazenda = !needsFazenda || !!fazendaDestinoSelect?.value?.trim();
+      const hasData = !!dataInput?.value;
+      const ok = hasProprietario && hasFazenda && hasData;
+      btnRealizar.disabled = !ok;
+    };
+    proprietarioDestino?.addEventListener("input", updateBtnState);
+    proprietarioDestino?.addEventListener("change", updateBtnState);
+    fazendaDestinoSelect?.addEventListener("change", updateBtnState);
+    dataInput?.addEventListener("change", updateBtnState);
+    updateBtnState();
+  }
   if (modalConfirmBtn) {
     modalConfirmBtn.addEventListener("click", async () => {
       const animalBrinco = container.querySelector("#vendaAnimalBrinco");
@@ -3380,8 +4171,13 @@ async function renderSaidaAnimaisVendaForm(container, options = {}) {
       const notaFiscal = container.querySelector("#vendaNotaFiscal")?.value?.trim() || "";
       const vendaValor = container.querySelector("#vendaValor");
       const valorNum = parseFloat(vendaValor?.dataset?.raw ?? vendaValor?.value ?? 0) || 0;
-      const condicaoPagamento = container.querySelector("#vendaCondicaoPagamento")?.value?.trim() || "";
-      const movimentacaoSaida = container.querySelector("#vendaMovimentacaoSaida")?.value?.trim() || "";
+      const condicaoPagamento = (isEmprestimo || isAjuste || isDoacao)
+        ? ""
+        : (container.querySelector("#vendaCondicaoPagamento")?.value?.trim() || "");
+      let movimentacaoSaida = container.querySelector("#vendaMovimentacaoSaida")?.value?.trim() || "";
+      if (isEmprestimo) movimentacaoSaida = "Empréstimo";
+      else if (isAjuste) movimentacaoSaida = "Ajuste inventário";
+      else if (isDoacao) movimentacaoSaida = "Doação";
       const movimentacaoEntrada = movimentacaoSaida ? (MOVIMENTACAO_SAIDA_TO_ENTRADA[movimentacaoSaida] ?? "") : "";
       const numeroGTA = container.querySelector("#vendaNumeroGTA")?.value?.trim() || "";
       const serieGTA = container.querySelector("#vendaSerie")?.value?.trim() || "";
@@ -4412,7 +5208,8 @@ async function openDashboard() {
     modView.innerHTML = ""; // Reset content
   }
 
-  // Esconde containers de módulos de animais para garantir que não apareçam junto com o dashboard
+  // Esconde containers de módulos de animais e garante form de animal de volta ao container (se estava no pipeline)
+  moveAnimalFormBackToContainer();
   const animalContainer = $("#animalModuleContainer");
   if (animalContainer) animalContainer.hidden = true;
   const secList = $("#modAnimaisList");
@@ -4470,12 +5267,14 @@ async function checkSyncStatus() {
     btn.style.visibility = "hidden";
     btn.style.opacity = "0";
     btn.style.pointerEvents = "none";
+    setRefazerSyncButtonVisible(false);
     return;
   }
 
   if (!navigator.onLine) {
     btn.hidden = true;
     btn.style.display = "none";
+    setRefazerSyncButtonVisible(false);
     return;
   }
 
@@ -4493,7 +5292,7 @@ async function checkSyncStatus() {
       }
     }
 
-    // Mostra se tiver pendências (em qualquer fila, inclusive transferência entre fazendas)
+    // Mostra FAB se tiver pendências (em qualquer fila)
     if (hasPending) {
       btn.hidden = false;
       btn.style.display = "flex";
@@ -4501,6 +5300,7 @@ async function checkSyncStatus() {
       btn.style.opacity = "1";
       btn.style.pointerEvents = "auto";
       playSyncAvailableSound();
+      setRefazerSyncButtonVisible(false);
     } else {
       resetSyncNotifySound();
       btn.hidden = true;
@@ -4508,11 +5308,93 @@ async function checkSyncStatus() {
       btn.style.visibility = "hidden";
       btn.style.opacity = "0";
       btn.style.pointerEvents = "none";
+      setRefazerSyncButtonVisible(true);
     }
   } catch (e) {
     console.error("[checkSyncStatus] Error:", e);
     btn.hidden = true;
     btn.style.display = "none";
+    setRefazerSyncButtonVisible(false);
+  }
+}
+
+function setRefazerSyncButtonVisible(visible) {
+  const btns = [
+    document.getElementById("btnRefazerSyncInicial"),
+    document.getElementById("btnRefazerSyncInicialMobile")
+  ].filter(Boolean);
+  btns.forEach((b) => {
+    b.hidden = !visible;
+    b.style.display = visible ? "" : "none";
+  });
+}
+
+/**
+ * Refaz a sincronização inicial (get_dados): atualiza dados do servidor.
+ * Só deve ser chamado quando online e sem pendências. Usa o id salvo da URL (?id=) se existir.
+ */
+async function refazerSincronizacaoInicial() {
+  if (!navigator.onLine) {
+    toast("Você está offline. Conecte-se para atualizar os dados.");
+    return;
+  }
+  const btns = [
+    document.getElementById("btnRefazerSyncInicial"),
+    document.getElementById("btnRefazerSyncInicialMobile")
+  ].filter(Boolean);
+  btns.forEach((b) => { b.disabled = true; });
+
+  try {
+    const bootstrapId = await idbGet("meta", "bootstrap_id");
+    if (bootstrapId && String(bootstrapId).trim()) {
+      const modulosUrl = API_CONFIG.getModulosUrl(String(bootstrapId).trim());
+      const res = await fetch(modulosUrl);
+      if (!res.ok) throw new Error(`get_modulos HTTP ${res.status}`);
+      const data = await res.json();
+      const fazendaId = String(data?.fazenda || "").trim();
+      const colaborador = data?.colaborador;
+      const ownerId = typeof colaborador === "object" && colaborador !== null
+        ? String(colaborador._id || "").trim()
+        : String(colaborador || "").trim();
+      let rawModules = [];
+      if (Array.isArray(data?.modules)) rawModules = data.modules;
+      else if (data?.modules && typeof data.modules === "object") rawModules = [data.modules];
+      const moduleConfigs = rawModules.map((m) => {
+        if (typeof m === "string") return { modulo: m };
+        if (m && typeof m === "object") return { ...m, abas: Array.isArray(m.abas) ? m.abas.map((a) => ({ ...a })) : [] };
+        return null;
+      }).filter(Boolean);
+      ensureAbasCampos(moduleConfigs);
+      const moduleKeys = moduleConfigs.length > 0
+        ? moduleConfigs.map((m) => String(m.modulo || m.key || "").trim()).filter(Boolean)
+        : ["animal"];
+      state.ctx = { fazendaId, ownerId };
+      state.modules = buildModules(moduleKeys);
+      state.moduleConfigs = moduleConfigs;
+      await idbSet("meta", "session_config", {
+        modules: moduleKeys,
+        moduleConfigs,
+        ctx: { fazendaId, ownerId },
+        bootstrap_id: bootstrapId,
+        updatedAt: Date.now()
+      });
+      await idbSet("meta", "lastCtx", { fazendaId, ownerId, cachedAt: Date.now() });
+    }
+
+    showBoot("Sincronizando dados…", "Buscando dados do servidor e preparando modo offline.");
+    await bootstrapData();
+    state.bootstrapReady = true;
+    hideBoot();
+    renderSidebar();
+    updateFabSyncVisibility();
+    toast("Dados atualizados com sucesso.");
+  } catch (e) {
+    console.error("[refazerSincronizacaoInicial]", e);
+    hideBoot();
+    toast(e?.message || "Erro ao atualizar dados. Tente novamente.");
+  } finally {
+    btns.forEach((b) => { b.disabled = false; });
+    updateFabSyncVisibility();
   }
 }
 
@@ -5438,12 +6320,15 @@ async function init() {
   const parsed = await parseFromURL();
 
   if (parsed.fazendaId && parsed.ownerId) {
-    await idbSet("meta", "session_config", {
+    const sessionPayload = {
       modules: parsed.modules,
       moduleConfigs: parsed.moduleConfigs,
       ctx: { fazendaId: parsed.fazendaId, ownerId: parsed.ownerId },
       updatedAt: Date.now()
-    });
+    };
+    if (parsed.initialSyncId) sessionPayload.bootstrap_id = parsed.initialSyncId;
+    await idbSet("meta", "session_config", sessionPayload);
+    if (parsed.initialSyncId) await idbSet("meta", "bootstrap_id", parsed.initialSyncId);
     const newUrl = window.location.origin + window.location.pathname;
     window.history.replaceState({}, document.title, newUrl);
 
@@ -5456,6 +6341,7 @@ async function init() {
       state.ctx = saved.ctx;
       state.modules = buildModules(saved.modules);
       state.moduleConfigs = saved.moduleConfigs || [];
+      if (saved.bootstrap_id) await idbSet("meta", "bootstrap_id", saved.bootstrap_id);
     } else {
       state.ctx = { fazendaId: "", ownerId: "" };
       state.modules = buildModules(["animal"]);
@@ -5501,6 +6387,15 @@ async function init() {
 
   // Inicia no dashboard (modal da linha de produção fica abaixo do "Bem-vindo de volta")
   await openDashboard();
+
+  // Botão "Atualizar dados" (refazer sincronização inicial): visível quando online e sem pendências
+  ["btnRefazerSyncInicial", "btnRefazerSyncInicialMobile"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el && !el.__refazerBound) {
+      el.__refazerBound = true;
+      el.addEventListener("click", () => refazerSincronizacaoInicial());
+    }
+  });
 
   // Retomar polling de sincronização pendente (ex.: após refresh)
   const pendingId = await idbGet("meta", "sync_pending_id");
