@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Keys – Linha de Produção Bovichain</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #f3f4f6;
+      --bg-card: #ffffff;
+      --text: #111827;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --accent: #d4e844;
+      --accent-soft: #fefce8;
+      --radius-lg: 14px;
+      --radius-md: 10px;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+      --font-main: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+        "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: var(--font-main);
+      background: radial-gradient(circle at top, #f9fafb 0, #eef2ff 40%, #e5e7eb 100%);
+      color: var(--text);
+    }
+
+    .page {
+      max-width: 1080px;
+      margin: 32px auto 48px;
+      padding: 0 16px;
+    }
+
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .page-title-wrap h1 {
+      margin: 0;
+      font-size: 26px;
+      letter-spacing: -0.03em;
+    }
+
+    .page-title-wrap p {
+      margin: 4px 0 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(17, 24, 39, 0.04);
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .card {
+      background: var(--bg-card);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      padding: 20px 20px 10px;
+      margin-bottom: 20px;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .card-header h2 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: -0.02em;
+    }
+
+    .card-header small {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .pill {
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      border: 1px solid #e5e7eb;
+      background: #f9fafb;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    h3 {
+      margin: 18px 0 8px;
+      font-size: 15px;
+    }
+
+    p {
+      font-size: 13px;
+      color: var(--muted);
+      margin: 4px 0 10px;
+    }
+
+    ul {
+      margin: 4px 0 12px 18px;
+      padding: 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    code {
+      font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono",
+        "Courier New", monospace;
+      font-size: 12px;
+      background: rgba(15, 23, 42, 0.03);
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
+
+    pre {
+      margin: 10px 0 14px;
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      background: #020617;
+      color: #e5e7eb;
+      font-size: 12px;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0 14px;
+      font-size: 12px;
+    }
+
+    thead {
+      background: #f9fafb;
+    }
+
+    th,
+    td {
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    th {
+      text-align: left;
+      font-weight: 600;
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    tbody tr:nth-child(even) td {
+      background: rgba(249, 250, 251, 0.65);
+    }
+
+    .module-label {
+      font-weight: 600;
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+
+    .section-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      background: var(--accent-soft);
+      border: 1px solid rgba(202, 138, 4, 0.25);
+      color: #854d0e;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+      gap: 16px;
+    }
+
+    @media (max-width: 840px) {
+      .page {
+        margin-top: 20px;
+      }
+
+      .grid-2 {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .card {
+        padding: 16px 14px 8px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="page-header">
+      <div class="page-title-wrap">
+        <h1>Keys – Linha de Produção</h1>
+        <p>Mapa de atributos (keys) por módulo/aba para uso no backend.</p>
+      </div>
+      <span class="tag">
+        <span>Ambiente</span>
+        <strong>Pipeline / Curral</strong>
+      </span>
+    </header>
+
+    <!-- CONTEXTO GERAL -->
+    <section class="card">
+      <div class="card-header">
+        <div>
+          <div class="module-label">Contexto</div>
+          <h2>Entrada do pipeline (dashboard)</h2>
+          <small>Busca inicial de animal e início do fluxo.</small>
+        </div>
+      </div>
+      <p>
+        A partir do dashboard o usuário escolhe um animal existente ou cria um novo.
+        Abaixo estão apenas os IDs da tela; não há <code>modulo</code> nem
+        <code>campos</code> em <code>get_modulos</code> para esta etapa.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>ID do elemento</th>
+            <th>Key (backend)</th>
+            <th>Descrição</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>pipelineSearchBrinco</code></td>
+            <td>—</td>
+            <td>Busca de animal pelo brinco (filtra por fazenda atual).</td>
+          </tr>
+          <tr>
+            <td><code>pipelineSearchResults</code></td>
+            <td>—</td>
+            <td>Lista de resultados; ao clicar define o animal e inicia o pipeline.</td>
+          </tr>
+          <tr>
+            <td><code>pipelineBtnCreate</code></td>
+            <td>—</td>
+            <td>Botão “Criar animal” (abre o formulário de criação no pipeline).</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- MODULO ANIMAL -->
+    <section class="card">
+      <div class="card-header">
+        <div>
+          <div class="module-label">Módulo</div>
+          <h2>animal – Criar / editar animal</h2>
+          <small>Usado em <code>animal_create</code> e <code>animal_update</code>.</small>
+        </div>
+        <span class="pill">Não usa get_modulos para prefill</span>
+      </div>
+      <p>
+        O formulário de animal é sempre exibido dentro do pipeline ao clicar em “Criar animal”.
+        Ele <strong>não</strong> é controlado por <code>get_modulos</code>.
+        As keys abaixo servem para payloads de sync e para alinhar os nomes de atributos
+        entre front e backend.
+      </p>
+
+      <h3><span class="section-chip">Cadastro básico</span></h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Key (backend)</th>
+            <th>ID do elemento</th>
+            <th>Tipo</th>
+            <th>Descrição</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>proprietario</code></td>
+            <td><code>animalOwnerSelect</code></td>
+            <td>BD</td>
+            <td>Proprietário (colaborador).</td>
+          </tr>
+          <tr>
+            <td><code>entry_type</code></td>
+            <td><code>tipoEntradaChips</code> (data-value)</td>
+            <td>OS</td>
+            <td>Tipo de entrada: Nascimento, Compra, Doação, Empréstimo, Ajuste inventário.</td>
+          </tr>
+          <tr>
+            <td><code>animal_type</code></td>
+            <td><code>animalTipo</code></td>
+            <td>OS</td>
+            <td>Físico / Genealogia.</td>
+          </tr>
+          <tr>
+            <td><code>brinco_padrao</code></td>
+            <td><code>animalBrinco</code></td>
+            <td>texto</td>
+            <td>Número do brinco.</td>
+          </tr>
+          <tr>
+            <td><code>raca</code></td>
+            <td><code>animalRaca</code></td>
+            <td>OS</td>
+            <td>Raça.</td>
+          </tr>
+          <tr>
+            <td><code>peso_atual_kg</code></td>
+            <td><code>animalPesoAtual</code></td>
+            <td>número</td>
+            <td>Peso atual (kg).</td>
+          </tr>
+          <tr>
+            <td><code>sexo</code></td>
+            <td><code>animalSexo</code></td>
+            <td>OS</td>
+            <td>MACHO / FEMEA.</td>
+          </tr>
+          <tr>
+            <td><code>categoria</code></td>
+            <td><code>animalCategoria</code></td>
+            <td>OS</td>
+            <td>Categoria do animal.</td>
+          </tr>
+          <tr>
+            <td><code>data_nascimento</code></td>
+            <td><code>animalNasc</code></td>
+            <td>data</td>
+            <td>Data de nascimento (usada para cálculo da idade).</td>
+          </tr>
+          <tr>
+            <td>—</td>
+            <td><code>animalIdadeDisplay</code></td>
+            <td>somente leitura</td>
+            <td>Idade calculada (por exemplo, “5 meses”). Não é enviada no payload.</td>
+          </tr>
+          <tr>
+            <td><code>lote</code> / <code>list_lotes</code></td>
+            <td>(chips de lote)</td>
+            <td>BD</td>
+            <td>Um ou mais lotes associados ao animal.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3><span class="section-chip">Aquisição</span></h3>
+      <p>
+        Visibilidade:
+        <strong>Nascimento</strong> (seção oculta);
+        <strong>Compra</strong> (seção visível e editável);
+        <strong>Doação, Empréstimo, Ajuste inventário</strong> (seção visível, mas o campo Valor fica
+        desabilitado e o payload envia <code>valor_animal = 0</code>).
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>ID</th>
+            <th>Tipo</th>
+            <th>Descrição</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>data_aquisicao</code></td>
+            <td><code>animalDataAquisicao</code></td>
+            <td>data/timestamp</td>
+            <td>Data da aquisição.</td>
+          </tr>
+          <tr>
+            <td><code>nota_fiscal</code></td>
+            <td><code>animalNotaFiscal</code></td>
+            <td>texto</td>
+            <td>Número da nota fiscal.</td>
+          </tr>
+          <tr>
+            <td><code>valor</code> / <code>valor_animal</code></td>
+            <td><code>animalValorAquisicao</code></td>
+            <td>número</td>
+            <td>Valor de aquisição (R$).</td>
+          </tr>
+          <tr>
+            <td><code>origem_fornecedor</code></td>
+            <td><code>animalOrigemFornecedor</code></td>
+            <td>BD/texto</td>
+            <td>Origem/Fornecedor.</td>
+          </tr>
+          <tr>
+            <td><code>numero_gta</code></td>
+            <td><code>animalNumeroGTA</code></td>
+            <td>texto</td>
+            <td>Nº da GTA.</td>
+          </tr>
+          <tr>
+            <td><code>uf_gta</code></td>
+            <td><code>animalUfGTA</code></td>
+            <td>OS</td>
+            <td>UF (estado) da GTA.</td>
+          </tr>
+          <tr>
+            <td><code>serie_gta</code></td>
+            <td><code>animalSerieGTA</code></td>
+            <td>texto</td>
+            <td>Série da GTA.</td>
+          </tr>
+          <tr>
+            <td><code>data_emissao_gta</code></td>
+            <td><code>animalDataEmissaoGTA</code></td>
+            <td>data/timestamp</td>
+            <td>Data de emissão da GTA.</td>
+          </tr>
+          <tr>
+            <td><code>data_validade_gta</code></td>
+            <td><code>animalDataValidadeGTA</code></td>
+            <td>data/timestamp</td>
+            <td>Data de validade da GTA.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3><span class="section-chip">Dados adicionais</span></h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>ID</th>
+            <th>Tipo</th>
+            <th>Descrição</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>nome_completo</code></td>
+            <td><code>animalNome</code></td>
+            <td>texto</td>
+            <td>Nome completo / brinco de manejo.</td>
+          </tr>
+          <tr>
+            <td><code>finalidade</code></td>
+            <td><code>animalFinalidade</code></td>
+            <td>OS</td>
+            <td>Finalidade do animal.</td>
+          </tr>
+          <tr>
+            <td><code>peso_nascimento</code></td>
+            <td><code>animalPesoNasc</code></td>
+            <td>número</td>
+            <td>Peso no nascimento (kg).</td>
+          </tr>
+          <tr>
+            <td><code>sisbov</code></td>
+            <td><code>animalSisbov</code></td>
+            <td>texto</td>
+            <td>SISBOV.</td>
+          </tr>
+          <tr>
+            <td><code>identificacao_eletronica</code></td>
+            <td><code>animalEletronica</code></td>
+            <td>texto</td>
+            <td>Identificação eletrônica.</td>
+          </tr>
+          <tr>
+            <td><code>rgd</code></td>
+            <td><code>animalRgd</code></td>
+            <td>texto</td>
+            <td>RGD.</td>
+          </tr>
+          <tr>
+            <td><code>rgn</code></td>
+            <td><code>animalRgn</code></td>
+            <td>texto</td>
+            <td>RGN.</td>
+          </tr>
+          <tr>
+            <td><code>pasto</code></td>
+            <td><code>animalPasto</code></td>
+            <td>BD</td>
+            <td>Pasto atual.</td>
+          </tr>
+          <tr>
+            <td><code>observacoes</code></td>
+            <td><code>animalObs</code></td>
+            <td>texto</td>
+            <td>Observações gerais.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3><span class="section-chip">Genealogia</span></h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>ID</th>
+            <th>Tipo</th>
+            <th>Descrição</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>mae_vinculo</code></td>
+            <td><code>animalMae</code></td>
+            <td>BD</td>
+            <td>ID do animal que é a mãe (busca por nome ou brinco, mesma organização).</td>
+          </tr>
+          <tr>
+            <td><code>pai_vinculo</code></td>
+            <td><code>animalPai</code></td>
+            <td>BD</td>
+            <td>ID do animal que é o pai.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- MODULO MOVIMENTACAO -->
+    <section class="card">
+      <div class="card-header">
+        <div>
+          <div class="module-label">Módulo</div>
+          <h2>movimentacao – Entre lotes, pastos e fazendas</h2>
+          <small>Configuração totalmente controlada por <code>get_modulos</code>.</small>
+        </div>
+        <span class="pill">Abas: lotes, pastos, fazendas</span>
+      </div>
+      <div class="grid-2">
+        <div>
+          <h3><span class="section-chip">Atributos por aba</span></h3>
+          <p><strong>Aba “lotes”</strong> (Entre lotes)</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>ID</th>
+                <th>Descrição</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>lote</code> (origem)</td>
+                <td><code>pipelineMovLoteOrigem</code></td>
+                <td>Lote de origem (pré-definido pelo animal ou select).</td>
+              </tr>
+              <tr>
+                <td><code>lote</code> (destino)</td>
+                <td><code>pipelineMovLoteDestino</code></td>
+                <td>Lote de destino.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <p><strong>Aba “pastos”</strong> (Entre pastos)</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>ID</th>
+                <th>Descrição</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>pasto</code> (origem)</td>
+                <td><code>pipelineMovPastoOrigem</code></td>
+                <td>Pasto de origem.</td>
+              </tr>
+              <tr>
+                <td><code>pasto</code> (destino)</td>
+                <td><code>pipelineMovPastoDestino</code></td>
+                <td>Pasto de destino.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <p><strong>Aba “fazendas”</strong> (Entre fazendas)</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>ID</th>
+                <th>Descrição</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>fazenda_destino</code></td>
+                <td><code>pipelineMovFazendaDestino</code></td>
+                <td>Fazenda de destino.</td>
+              </tr>
+              <tr>
+                <td><code>lote</code> (origem)</td>
+                <td><code>pipelineMovLoteOrigemFazenda</code></td>
+                <td>Lote de origem (fazenda atual).</td>
+              </tr>
+              <tr>
+                <td><code>pasto</code> (origem)</td>
+                <td><code>pipelineMovPastoOrigemFazenda</code></td>
+                <td>Pasto de origem (fazenda atual).</td>
+              </tr>
+              <tr>
+                <td><code>lote</code> (destino)</td>
+                <td><code>pipelineMovLoteDestinoFazenda</code></td>
+                <td>Lote de destino (fazenda destino).</td>
+              </tr>
+              <tr>
+                <td><code>pasto</code> (destino)</td>
+                <td><code>pipelineMovPastoDestinoFazenda</code></td>
+                <td>Pasto de destino (fazenda destino).</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h3><span class="section-chip">get_modulos – Exemplo</span></h3>
+          <p>Exemplo de como enviar as abas de movimentação:</p>
+          <pre><code>{
+  "modulo": "movimentacao",
+  "abas": [
+    {
+      "titulo": "lotes",
+      "campos": [
+        { "key": "lote", "value": "", "type": "OS" }
+      ]
+    },
+    {
+      "titulo": "pastos",
+      "campos": [
+        { "key": "pasto", "value": "", "type": "OS" }
+      ]
+    },
+    {
+      "titulo": "fazendas",
+      "campos": [
+        { "key": "fazenda_destino", "value": "", "type": "OS" },
+        { "key": "lote", "value": "", "type": "OS" },
+        { "key": "pasto", "value": "", "type": "OS" }
+      ]
+    }
+  ]
+}</code></pre>
+          <p>
+            O front compara o <code>titulo</code> da aba em lowercase com
+            <code>lotes</code>, <code>pastos</code> e <code>fazendas</code> para aplicar os
+            valores.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULO PESAGEM -->
+    <section class="card">
+      <div class="card-header">
+        <div>
+          <div class="module-label">Módulo</div>
+          <h2>pesagem – Registro de peso</h2>
+          <small>Usa operação <code>animal_create_peso</code>.</small>
+        </div>
+        <span class="pill">Aba única: Pesagem</span>
+      </div>
+      <div class="grid-2">
+        <div>
+          <h3><span class="section-chip">Atributos</span></h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Key (get_modulos)</th>
+                <th>Key (payload)</th>
+                <th>ID</th>
+                <th>Tipo</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>colaborador</code></td>
+                <td><code>user</code></td>
+                <td><code>pesoColaboradorSelect</code></td>
+                <td>BD – colaborador responsável.</td>
+              </tr>
+              <tr>
+                <td><code>tipo_pesagem</code></td>
+                <td><code>momento_pesagem</code></td>
+                <td><code>pesoTipoPesagem</code></td>
+                <td>OS – Pesagem regular / Desmame.</td>
+              </tr>
+              <tr>
+                <td><code>peso</code></td>
+                <td><code>peso_atual_kg</code></td>
+                <td><code>pesoValorKg</code></td>
+                <td>Valor em kg.</td>
+              </tr>
+              <tr>
+                <td><code>data_pesagem</code></td>
+                <td><code>data_pesagem</code></td>
+                <td><code>pesoDataPesagem</code></td>
+                <td>Data da pesagem.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h3><span class="section-chip">get_modulos – Exemplo</span></h3>
+          <pre><code>{
+  "modulo": "pesagem",
+  "abas": [
+    {
+      "titulo": "Pesagem",
+      "campos": [
+        { "key": "colaborador", "value": "", "type": "OS" },
+        { "key": "tipo_pesagem", "value": "", "type": "OS" },
+        { "key": "peso", "value": "", "type": "OS" },
+        { "key": "data_pesagem", "value": "", "type": "OS" }
+      ]
+    }
+  ]
+}</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODULO SAIDA_ANIMAIS -->
+    <section class="card">
+      <div class="card-header">
+        <div>
+          <div class="module-label">Módulo</div>
+          <h2>saida_animais – Saídas (Venda, Morte, etc.)</h2>
+          <small>Abas configuráveis via <code>get_modulos</code>.</small>
+        </div>
+        <span class="pill">Abas: Venda, Empréstimo, Doação, Ajuste inventário, Morte</span>
+      </div>
+      <div class="grid-2">
+        <div>
+          <h3><span class="section-chip">Atributos por aba</span></h3>
+          <p><strong>Aba “Venda”</strong></p>
+          <table>
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>ID</th>
+                <th>Descrição</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>animal</code></td>
+                <td><code>vendaAnimalBrinco</code></td>
+                <td>Animal (ID) para conferência.</td>
+              </tr>
+              <tr>
+                <td><code>proprietario_destino</code></td>
+                <td><code>vendaProprietarioDestino</code></td>
+                <td>Colaborador de destino.</td>
+              </tr>
+              <tr>
+                <td><code>fazenda_destino</code></td>
+                <td><code>vendaFazendaDestino</code></td>
+                <td>Fazenda de destino.</td>
+              </tr>
+              <tr>
+                <td><code>valor</code> / <code>valor_saida</code></td>
+                <td><code>vendaValor</code></td>
+                <td>Valor de venda.</td>
+              </tr>
+              <tr>
+                <td><code>peso_saida</code></td>
+                <td><code>vendaPeso</code></td>
+                <td>Peso (kg).</td>
+              </tr>
+              <tr>
+                <td><code>condicao_pagamento</code></td>
+                <td><code>vendaCondicaoPagamento</code></td>
+                <td>Condição de pagamento.</td>
+              </tr>
+              <tr>
+                <td><code>movimentacao_saida_animal</code></td>
+                <td><code>vendaMovimentacaoSaida</code></td>
+                <td>Tipo de saída (Venda, Morte, Empréstimo, etc.).</td>
+              </tr>
+              <tr>
+                <td><code>data_aquisicao</code></td>
+                <td><code>vendaData</code></td>
+                <td>Data da emissão/saída.</td>
+              </tr>
+              <tr>
+                <td><code>nota_fiscal</code></td>
+                <td><code>vendaNotaFiscal</code></td>
+                <td>Nota fiscal.</td>
+              </tr>
+              <tr>
+                <td><code>numero_gta</code></td>
+                <td><code>vendaNumeroGTA</code></td>
+                <td>Nº GTA.</td>
+              </tr>
+              <tr>
+                <td><code>data_emissao_gta</code></td>
+                <td><code>vendaDataEmissaoGTA</code></td>
+                <td>Data emissão GTA.</td>
+              </tr>
+              <tr>
+                <td><code>data_validade_gta</code></td>
+                <td><code>vendaDataValidadeGTA</code></td>
+                <td>Data validade GTA.</td>
+              </tr>
+              <tr>
+                <td><code>serie_gta</code></td>
+                <td><code>vendaSerie</code></td>
+                <td>Série GTA.</td>
+              </tr>
+              <tr>
+                <td><code>uf_gta</code></td>
+                <td><code>vendaUF</code></td>
+                <td>UF.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <p><strong>Abas “Empréstimo”, “Doação” e “Ajuste inventário”</strong></p>
+          <p>Usam os mesmos IDs de Venda para os campos abaixo:</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>proprietario_destino</code></td>
+                <td><code>vendaProprietarioDestino</code></td>
+              </tr>
+              <tr>
+                <td><code>fazenda_destino</code></td>
+                <td><code>vendaFazendaDestino</code></td>
+              </tr>
+              <tr>
+                <td><code>data_aquisicao</code></td>
+                <td><code>vendaData</code></td>
+              </tr>
+              <tr>
+                <td><code>nota_fiscal</code></td>
+                <td><code>vendaNotaFiscal</code></td>
+              </tr>
+              <tr>
+                <td><code>peso_saida</code></td>
+                <td><code>vendaPeso</code></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <p><strong>Aba “Morte”</strong></p>
+          <table>
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>ID</th>
+                <th>Descrição</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>causa_morte</code></td>
+                <td><code>morteCausaMorte</code></td>
+                <td>Causa da morte (option set).</td>
+              </tr>
+              <tr>
+                <td><code>responsavel</code></td>
+                <td><code>morteResponsavel</code></td>
+                <td>Colaborador responsável.</td>
+              </tr>
+              <tr>
+                <td><code>data_morte</code></td>
+                <td><code>morteDataMorte</code></td>
+                <td>Data da morte (timestamp).</td>
+              </tr>
+              <tr>
+                <td><code>detalhes_observacoes</code></td>
+                <td><code>morteDetalhesObservacoes</code></td>
+                <td>Texto livre.</td>
+              </tr>
+              <tr>
+                <td><code>imagem_brinco_animal</code></td>
+                <td><code>morteImagemBrinco</code></td>
+                <td>Imagem em base64.</td>
+              </tr>
+              <tr>
+                <td><code>movimentacao_saida_animal</code></td>
+                <td><code>morteMovimentacaoSaida</code></td>
+                <td>Fixo “Morte”.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h3><span class="section-chip">get_modulos – Exemplo completo</span></h3>
+          <pre><code>{
+  "modulo": "saida_animais",
+  "abas": [
+    { "titulo": "Venda", "campos": [ /* ver tabela acima */ ] },
+    { "titulo": "Empréstimo", "campos": [ /* proprietario_destino, ... */ ] },
+    { "titulo": "Doação", "campos": [ /* idem Empréstimo */ ] },
+    { "titulo": "Ajuste inventário", "campos": [ /* idem Empréstimo */ ] },
+    { "titulo": "Morte", "campos": [ /* causa_morte, ... */ ] }
+  ]
+}</code></pre>
+          <p>
+            O backend pode omitir abas que não deseja usar ou enviar
+            <code>campos: []</code>; o front completa com as keys padrão de
+            <code>DEFAULT_ABA_CAMPOS_KEYS</code>.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- RODAPÉ RESUMO -->
+    <section class="card">
+      <div class="card-header">
+        <div>
+          <div class="module-label">Resumo rápido</div>
+          <h2>Mapeamentos e operações</h2>
+          <small>Para implementar o backend com segurança.</small>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div>
+          <h3><span class="section-chip">FORM_FIELD_IDS (get_modulos)</span></h3>
+          <ul>
+            <li><strong>movimentacao/lotes</strong>: <code>lote</code> → <code>pipelineMovLoteDestino</code></li>
+            <li><strong>movimentacao/pastos</strong>: <code>pasto</code> → <code>pipelineMovPastoDestino</code></li>
+            <li><strong>movimentacao/fazendas</strong>: <code>fazenda_destino</code>, <code>lote</code>, <code>pasto</code></li>
+            <li><strong>pesagem/pesagem</strong>: <code>colaborador</code>, <code>tipo_pesagem</code>, <code>peso</code>, <code>data_pesagem</code></li>
+            <li><strong>saida_animais/venda</strong>: todas as keys financeiras/GTA e destino</li>
+            <li><strong>saida_animais/emprestimo, doacao, ajuste inventário</strong>: layout enxuto (5 campos)</li>
+            <li><strong>saida_animais/morte</strong>: causa, responsavel, datas, imagem, movimentacao_saida_animal</li>
+          </ul>
+        </div>
+        <div>
+          <h3><span class="section-chip">Operações offline (OFFLINE_OPS)</span></h3>
+          <ul>
+            <li><code>animal_create</code>, <code>animal_update</code>, <code>animal_create_peso</code></li>
+            <li><code>create_saida_animais_venda</code>, <code>..._morte</code>, <code>..._emprestimo</code>, <code>..._aju_inventario</code>, <code>..._doacao</code></li>
+            <li><code>movimentacao_entre_lotes</code>, <code>movimentacao_entre_pastos</code>, <code>movimentacao_entre_fazendas</code></li>
+          </ul>
+          <p>
+            O tipo de saída exibido na UI (<code>movimentacao_saida_animal</code>)
+            é convertido para a operação correta via
+            <code>SAIDA_TIPO_TO_OFFLINE_OP</code> em <code>config.js</code>.
+          </p>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
+
