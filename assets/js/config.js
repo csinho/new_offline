@@ -9,10 +9,10 @@
 
 export const API_CONFIG = {
   // Base URL para endpoints do Bubble
-  BASE_URL: "https://bovichain-g3.bubbleapps.io/version-0342o/api/1.1/wf",
+  BASE_URL: "https://bovichain-g3.bubbleapps.io/version-8350x/api/1.1/wf",
   
   // Base URL para busca de dados (endpoint diferente)
-  BOOTSTRAP_BASE_URL: "https://app.bovichain.com/version-0342o/api/1.1/wf",
+  BOOTSTRAP_BASE_URL: "https://app.bovichain.com/version-8350x/api/1.1/wf",
   
   // Endpoints
   ENDPOINTS: {
@@ -29,10 +29,10 @@ export const API_CONFIG = {
   },
   
   // Função auxiliar para construir URL de busca com parâmetros
-  getBootstrapUrl(fazendaId, userId) {
+  getBootstrapUrl(fazendaId, colaboradorId) {
     const url = new URL(`${this.BOOTSTRAP_BASE_URL}/${this.ENDPOINTS.GET_DADOS}`);
     url.searchParams.set("fazenda", fazendaId);
-    url.searchParams.set("user", userId);
+    url.searchParams.set("colaborador", colaboradorId);
     return url.toString();
   },
   
@@ -218,6 +218,80 @@ export const CONDICAO_PAGAMENTO_LIST = [
   "parcelado"
 ];
 
+/**
+ * Lista de tipos de movimentação saída de animal (create_saida_animais)
+ * Valor enviado no payload como "movimentacao_saida_animal"
+ */
+export const MOVIMENTACAO_SAIDA_ANIMAL_LIST = [
+  "Venda",
+  "Morte",
+  "Empréstimo",
+  "Ajuste inventário",
+  "Doação"
+];
+
+/**
+ * Mapeamento saída → entrada (ENTRY_TYPE_LIST) para movimentacao_entrada_animal.
+ * Quando há saída (ex.: Venda), o destino registra entrada (ex.: Compra).
+ * "Morte" não tem entrada correspondente (retorna "").
+ */
+export const MOVIMENTACAO_SAIDA_TO_ENTRADA = {
+  "Venda": "Compra",
+  "Doação": "Doação",
+  "Empréstimo": "Empréstimo",
+  "Ajuste inventário": "Ajuste inventário",
+  "Morte": ""
+};
+
+/**
+ * Opções do dropdown "Causa da morte" (aba Morte em saida_animais)
+ */
+export const CAUSA_MORTE_LIST = [
+  "Doença Infecciosa",
+  "Problema Metabólico ou nutricional",
+  "Complicações no Parto",
+  "Outros"
+];
+
+// ========================================================
+// OPERAÇÕES OFFLINE (fila / dados.operacoes)
+// ========================================================
+/**
+ * Nomes oficiais das operações enviadas em dados.operacoes (offline).
+ * Toda a aplicação deve usar APENAS estas constantes (nunca strings diretas).
+ */
+export const OFFLINE_OPS = {
+  ANIMAL_CREATE: "animal_create",
+  ANIMAL_CREATE_PESO: "animal_create_peso",
+
+  CREATE_SAIDA_ANIMAIS_VENDA: "create_saida_animais_venda",
+  CREATE_SAIDA_ANIMAIS_MORTE: "create_saida_animais_morte",
+  CREATE_SAIDA_ANIMAIS_EMPRESTIMO: "create_saida_animais_emprestimo",
+  CREATE_SAIDA_ANIMAIS_AJU_INVENTARIO: "create_saida_animais_aju_inventario",
+  CREATE_SAIDA_ANIMAIS_DOACAO: "create_saida_animais_doacao",
+
+  MOVIMENTACAO_ENTRE_LOTES: "movimentacao_entre_lotes",
+  MOVIMENTACAO_ENTRE_PASTOS: "movimentacao_entre_pastos",
+
+  // Caso especial: entre fazendas (envelope dados.op permanece update_fazenda_new)
+  MOVIMENTACAO_ENTRE_FAZENDAS: "movimentacao_entre_fazendas",
+
+  // Atualização genérica de atributos do animal (nome, valor, raça, etc.)
+  ANIMAL_UPDATE: "animal_update",
+};
+
+/**
+ * Mapeia o tipo de saída (movimentacao_saida_animal) para a operação offline correspondente.
+ * Ex.: "Venda" → "create_saida_animais_venda".
+ */
+export const SAIDA_TIPO_TO_OFFLINE_OP = {
+  "Venda": OFFLINE_OPS.CREATE_SAIDA_ANIMAIS_VENDA,
+  "Morte": OFFLINE_OPS.CREATE_SAIDA_ANIMAIS_MORTE,
+  "Empréstimo": OFFLINE_OPS.CREATE_SAIDA_ANIMAIS_EMPRESTIMO,
+  "Ajuste inventário": OFFLINE_OPS.CREATE_SAIDA_ANIMAIS_AJU_INVENTARIO,
+  "Doação": OFFLINE_OPS.CREATE_SAIDA_ANIMAIS_DOACAO,
+};
+
 // ========================================================
 // MÓDULOS DO APP (nomes para usar no Bubble ao criar módulos)
 // ========================================================
@@ -239,6 +313,113 @@ export const MODULES = [
   { key: "reproducao", label: "Reprodução", frontend: "pendente" },
   { key: "nutricao", label: "Nutrição", frontend: "pendente" },
   { key: "financeiro", label: "Financeiro", frontend: "pendente" },
+];
+
+// ========================================================
+// CAMPOS PADRÃO POR MÓDULO/ABA (get_modulos)
+// ========================================================
+/**
+ * Lista de keys conhecidas por (módulo, aba). Quando o backend envia uma aba com
+ * "campos" vazio ou ausente, o script preenche automaticamente com todos estes
+ * atributos (value: "", type: "OS"). Quando "campos" traz alguns itens, esses
+ * definem o pré-preenchimento (key, value, type); o script completa com as keys
+ * que faltam para o formulário ter todos os atributos.
+ * Ver KEYS_LINHA_DE_PRODUCAO.md.
+ */
+export const DEFAULT_ABA_CAMPOS_KEYS = {
+  movimentacao: {
+    lotes: ["lote"],
+    pastos: ["pasto"],
+    fazendas: ["fazenda_destino", "lote", "pasto"],
+  },
+  saida_animais: {
+    venda: [
+      "condicao_pagamento",
+      "movimentacao_saida_animal",
+      "valor",
+      "peso_saida",
+      "data_aquisicao",
+      "nota_fiscal",
+      "numero_gta",
+      "data_emissao_gta",
+      "data_validade_gta",
+      "serie_gta",
+      "uf_gta",
+      "proprietario_destino",
+      "fazenda_destino",
+      "animal",
+    ],
+    doacao: [
+      "condicao_pagamento",
+      "movimentacao_saida_animal",
+      "valor",
+      "peso_saida",
+      "data_aquisicao",
+      "nota_fiscal",
+      "numero_gta",
+      "data_emissao_gta",
+      "data_validade_gta",
+      "serie_gta",
+      "uf_gta",
+      "proprietario_destino",
+      "fazenda_destino",
+      "animal",
+    ],
+    morte: [
+      "causa_morte",
+      "detalhes_observacoes",
+      "responsavel",
+      "data_morte",
+      "imagem_brinco_animal",
+      "movimentacao_saida_animal",
+    ],
+    emprestimo: [
+      "condicao_pagamento",
+      "movimentacao_saida_animal",
+      "valor",
+      "peso_saida",
+      "data_aquisicao",
+      "nota_fiscal",
+      "numero_gta",
+      "data_emissao_gta",
+      "data_validade_gta",
+      "serie_gta",
+      "uf_gta",
+      "proprietario_destino",
+      "fazenda_destino",
+      "animal",
+    ],
+    "ajuste inventário": [
+      "condicao_pagamento",
+      "movimentacao_saida_animal",
+      "valor",
+      "peso_saida",
+      "data_aquisicao",
+      "nota_fiscal",
+      "numero_gta",
+      "data_emissao_gta",
+      "data_validade_gta",
+      "serie_gta",
+      "uf_gta",
+      "proprietario_destino",
+      "fazenda_destino",
+      "animal",
+    ],
+  },
+};
+
+// ========================================================
+// LINHA DE PRODUÇÃO (PIPELINE)
+// ========================================================
+/**
+ * Ordem dos passos após escolher/criar o animal.
+ * Cada passo é um key de módulo: movimentacao (entre lotes), pesagem, saida_animais.
+ * Default do fluxo "frente de caixa" no curral.
+ */
+export const PIPELINE_STEPS = [
+  "movimentacao",
+  "pesagem",
+  "saida_animais"
 ];
 
 // ========================================================

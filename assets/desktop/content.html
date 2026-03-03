@@ -1,24 +1,4 @@
 <div class="app">
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebarInner">
-                <div class="logoWrap">
-                    <img class="logo" src="https://e45a1d9b2fd81a177eaa3a70ba83bda4.cdn.bubble.io/f1771430285555x676420989400587900/Bovichain-logo.png" alt="BOVICHAIN" />
-                </div>
-
-                <nav class="nav" id="moduleNav"></nav>
-
-                <div class="sidebarFooter">
-                    <div class="sidebarUser">
-                        <div class="sidebarAvatar" id="sidebarAvatar">U</div>
-                        <div class="sidebarUserInfo">
-                            <span class="sidebarUserName" id="sidebarUserName">Usuário</span>
-                            <span class="sidebarUserEmail" id="sidebarFarmName">—</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </aside>
-
         <main class="main">
             <section class="content">
                 <!-- ==========================================================
@@ -338,8 +318,17 @@
 
                 <!-- DASHBOARD Desktop -->
                 <section class="moduleSection dashDesktop" id="modDashboardDesktop" aria-hidden="false">
-                    <div class="dashDesktopTop">
-                        <h1 class="dashDesktopTitle">Dashboard</h1>
+                    <div class="dashHeader dashHeaderDesktop">
+                            <div class="dashHeaderLogo">
+                                <img class="dashDesktopLogoImg" src="https://e45a1d9b2fd81a177eaa3a70ba83bda4.cdn.bubble.io/f1771430285555x676420989400587900/Bovichain-logo.png" alt="Bovichain" />
+                            </div>
+                            <div class="dashHeaderUser">
+                                <div class="dashUserAvatar" id="dashUserAvatar">U</div>
+                                <div class="dashUserInfo">
+                                    <span class="dashUserName" id="dashUserName">Usuário</span>
+                                    <span class="dashFarmName" id="dashFarmName">—</span>
+                                </div>
+                            </div>
                     </div>
                     <div class="dashDesktopWelcome">
                         <div class="dashDesktopWelcomeText">
@@ -348,6 +337,31 @@
                             <p class="dashDesktopSub">Explore seus módulos</p>
                         </div>
                     </div>
+                    <!-- O que deseja fazer? + cards Animal já existe? / Criar animal novo -->
+                    <div class="pipelineWrap" id="pipelineWrap">
+                        <div class="pipelineModal" id="pipelineModal">
+                            <p class="pipelineModalSub pipelineModalSubOnly">O que deseja fazer?</p>
+                            <div class="pipelineModalCards">
+                                <div class="pipelineCard" id="pipelineCardExists">
+                                    <span class="pipelineCardIcon" aria-hidden="true">&#128269;</span>
+                                    <h3 class="pipelineCardTitle">Animal já existe?</h3>
+                                    <p class="pipelineCardSub">Busque pelo brinco do animal</p>
+                                    <div class="pipelineSearchWrap">
+                                        <input type="text" id="pipelineSearchBrinco" class="pipelineSearchInput" placeholder="Digite o nº do Brinco" autocomplete="off" />
+                                    </div>
+                                    <div id="pipelineSearchResults" class="pipelineSearchResults" hidden></div>
+                                </div>
+                                <div class="pipelineCard" id="pipelineCardNew">
+                                    <span class="pipelineCardIcon" aria-hidden="true">&#128046;</span>
+                                    <h3 class="pipelineCardTitle">Criar animal novo</h3>
+                                    <p class="pipelineCardSub">Cadastrar um novo animal</p>
+                                    <button type="button" class="pipelineCardBtn" id="pipelineBtnCreate">Criar animal</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="pipelineStepContent" class="pipelineStepContent" hidden></div>
+                    </div>
+                    <div class="dashDesktopDataSection">
                     <div id="syncStatusBannerDesktop" class="syncStatusBanner" style="display:none; text-align:center; padding:12px 16px; margin:0 0 16px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">
                         <span id="syncStatusTextDesktop">Sincronização em andamento...</span>
                     </div>
@@ -395,6 +409,7 @@
                             </div>
                         </div>
                     </div>
+                    </div><!-- .dashDesktopDataSection -->
                 </section>
 
             </section> <!-- .content end -->

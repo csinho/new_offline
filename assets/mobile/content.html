@@ -1,24 +1,4 @@
 <div class="app">
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebarInner">
-                <div class="logoWrap">
-                    <img class="logo" src="https://e45a1d9b2fd81a177eaa3a70ba83bda4.cdn.bubble.io/f1771430285555x676420989400587900/Bovichain-logo.png" alt="BOVICHAIN" />
-                </div>
-
-                <nav class="nav" id="moduleNav"></nav>
-
-                <div class="sidebarFooter">
-                    <div class="sidebarUser">
-                        <div class="sidebarAvatar" id="sidebarAvatar">U</div>
-                        <div class="sidebarUserInfo">
-                            <span class="sidebarUserName" id="sidebarUserName">Usuário</span>
-                            <span class="sidebarUserEmail" id="sidebarFarmName">—</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </aside>
-
         <main class="main">
             <section class="content">
                 <!-- ==========================================================
@@ -322,21 +302,41 @@
 
                 <!-- DASHBOARD Mobile: visível apenas abaixo de 800px -->
                 <section class="moduleSection dashMobile" id="modDashboard" aria-hidden="false">
-                    <!-- Header Personalizado -->
-                    <!-- Header Personalizado -->
                     <div class="dashHeader">
-                        <img src="https://e45a1d9b2fd81a177eaa3a70ba83bda4.cdn.bubble.io/f1771430285555x676420989400587900/Bovichain-logo.png"
-                            class="dashLogo" alt="Logo">
-                        <br>
-                        <div class="dashProfile">
-                            <div class="dashAvatar" id="dashAvatar">U</div>
-                            <div class="dashWelcome">
-                                <div class="dashSub">Bem-vindo de volta 👋</div>
-                                <div class="dashName" id="dashName">Usuário</div>
+                        <div class="dashHeaderUser">
+                            <div class="dashUserAvatar" id="dashUserAvatarMobile">U</div>
+                            <div class="dashUserInfo">
+                                <span class="dashUserName" id="dashUserNameMobile">Usuário</span>
+                                <span class="dashFarmName" id="dashFarmNameMobile">—</span>
                             </div>
                         </div>
                     </div>
+                    <!-- O que deseja fazer? + cards Animal já existe? / Criar animal novo -->
+                    <div class="pipelineWrap" id="pipelineWrap">
+                        <div class="pipelineModal" id="pipelineModal">
+                            <p class="pipelineModalSub pipelineModalSubOnly">O que deseja fazer?</p>
+                            <div class="pipelineModalCards">
+                                <div class="pipelineCard" id="pipelineCardExists">
+                                    <span class="pipelineCardIcon" aria-hidden="true">&#128269;</span>
+                                    <h3 class="pipelineCardTitle">Animal já existe?</h3>
+                                    <p class="pipelineCardSub">Busque pelo brinco do animal</p>
+                                    <div class="pipelineSearchWrap">
+                                        <input type="text" id="pipelineSearchBrinco" class="pipelineSearchInput" placeholder="Digite o nº do Brinco" autocomplete="off" />
+                                    </div>
+                                    <div id="pipelineSearchResults" class="pipelineSearchResults" hidden></div>
+                                </div>
+                                <div class="pipelineCard" id="pipelineCardNew">
+                                    <span class="pipelineCardIcon" aria-hidden="true">&#128046;</span>
+                                    <h3 class="pipelineCardTitle">Criar animal novo</h3>
+                                    <p class="pipelineCardSub">Cadastrar um novo animal</p>
+                                    <button type="button" class="pipelineCardBtn" id="pipelineBtnCreate">Criar animal</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="pipelineStepContent" class="pipelineStepContent" hidden></div>
+                    </div>
 
+                    <div class="dashMobileDataSection">
                     <!-- Banner de status da sincronização (acima de Módulos) -->
                     <div id="syncStatusBanner" class="syncStatusBanner"
                         style="display:none; text-align:center; padding:12px 16px; margin:0 0 16px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">
@@ -391,6 +391,7 @@
                     </div>
 
                     <div style="height: 40px;"></div>
+                    </div><!-- .dashMobileDataSection -->
                 </section>
 
             </section> <!-- .content end -->

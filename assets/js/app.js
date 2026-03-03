@@ -9,31 +9,50 @@ import {
   SEXO_LIST,
   TIPO_ANIMAL_LIST,
   CONDICAO_PAGAMENTO_LIST,
+  MOVIMENTACAO_SAIDA_ANIMAL_LIST,
+  MOVIMENTACAO_SAIDA_TO_ENTRADA,
+  CAUSA_MORTE_LIST,
+  PIPELINE_STEPS,
   SYNC_CONFIG,
+  OFFLINE_OPS,
+  SAIDA_TIPO_TO_OFFLINE_OP,
+  DEFAULT_ABA_CAMPOS_KEYS,
 } from "./config.js";
 
 const $ = (sel) => document.querySelector(sel);
 
+// Conjunto auxiliar: todas as operações de saída de animais (venda/morte/etc.) usadas na fila offline
+const SAIDA_OFFLINE_OP_SET = new Set(Object.values(SAIDA_TIPO_TO_OFFLINE_OP));
+
 // teste
 
 const state = {
+  // Lista de módulos habilitados (chaves simples) e configuração rica vinda do GET_MODULOS
   modules: [],
+  moduleConfigs: [], // [{ modulo, abas: [{ aba/titulo, campos: [{ key, value, type }] }] }]
   activeKey: null,
   activeFormRoot: null,
   advanced: false,
   ctx: { fazendaId: "", ownerId: "" },
   bootstrapReady: false,
-  view: null, // "dashboard" | "module"
+  view: null, // "dashboard" | "module" | "pipeline" (linha de produção)
 
-  // NOVO: controle de view do módulo animais
+  // Controle de view do módulo animais
   animalView: "list", // "list" | "form"
   animalEditingId: null, // _id do animal em edição (ou null = criando)
-  // Chart.js: instâncias do gráfico Sexo dos Animais (doughnut) para destruir ao atualizar
+  // Chart.js
   chartSex: null,
   chartSexDesktop: null,
-  // Gráfico de barras Peso médio por lote (KG)
   chartPesoLote: null,
   chartPesoLoteDesktop: null,
+
+  // Linha de produção (frente de caixa / curral): animal em fluxo e passo atual
+  pipelineAnimal: null,
+  pipelineStepIndex: 0,
+  pipelineCreateCallback: null,
+  pipelineFromCreate: false,
+  pipelineCreatedAnimalId: null,
+  pipelineRestoreDraft: false,   // após cancelar criação, reabrir form com rascunho
 };
 
 /** Plugin Chart.js: desenha Total no centro do doughnut. Opções em chart.options.plugins.centerText: valueFontSize, labelFontSize */
@@ -134,18 +153,11 @@ function toast(msg) {
 
 function setNetBadge() {
   const online = navigator.onLine;
-  // Borda do avatar no sidebar: verde = online, vermelho = offline
-  const sidebarAvatar = $("#sidebarAvatar");
-  if (sidebarAvatar) {
-    if (online) sidebarAvatar.classList.remove("offline");
-    else sidebarAvatar.classList.add("offline");
-  }
-  // Avatar no dashboard (mobile)
-  const avatar = $("#dashAvatar");
-  if (avatar) {
-    if (online) avatar.classList.remove("offline");
-    else avatar.classList.add("offline");
-  }
+  // Avatar no topo direito do dashboard (desktop e mobile)
+  [ $("#dashUserAvatar"), $("#dashUserAvatarMobile") ].filter(Boolean).forEach(el => {
+    if (online) el.classList.remove("offline");
+    else el.classList.add("offline");
+  });
 }
 
 function showBoot(msg, hint = "") {
@@ -333,16 +345,48 @@ async function parseFromURL() {
         throw new Error(`HTTP ${response.status}: Falha ao buscar módulos`);
       }
       
-      const data = await response.json();
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (parseErr) {
+        console.error("[parseFromURL] JSON inválido na resposta get_modulos:", parseErr);
+        console.error("[parseFromURL] Resposta (início):", text.slice(0, 500));
+        showBoot(
+          "Resposta inválida",
+          "A API get_modulos retornou JSON inválido. Verifique o backend (chaves entre aspas duplas, um único objeto/array na raiz)."
+        );
+        return {
+          modules: ["animal"],
+          moduleConfigs: [],
+          fazendaId: "",
+          ownerId: "",
+        };
+      }
+      // Debug: estrutura completa retornada pelo GET_MODULOS
+      console.log("[get_modulos] payload bruto:", data);
       
       // Extrai fazenda, user e modules da resposta (mantém compat com owner antigo)
       const fazendaId = String(data?.fazenda || "").trim();
-      const ownerId = String(data?.user || data?.owner || "").trim();
-      const modulesArray = Array.isArray(data?.modules) ? data.modules : [];
-      const modules = modulesArray.length > 0 ? modulesArray : ["animal"];
+      const colaborador = data?.colaborador;
+      const ownerId = typeof colaborador === "object" && colaborador !== null
+        ? String(colaborador._id || "").trim()
+        : String(colaborador || "").trim();
+      const rawModules = Array.isArray(data?.modules) ? data.modules : [];
+      // Novo modelo: modules é um array de objetos { modulo, abas:[{ aba/titulo, campos:[{key,value,type}]}] }
+      const moduleConfigs = rawModules.map((m) => {
+        if (typeof m === "string") return { modulo: m };
+        if (m && typeof m === "object") return { ...m, abas: Array.isArray(m.abas) ? m.abas.map((a) => ({ ...a })) : [] };
+        return null;
+      }).filter(Boolean);
+      ensureAbasCampos(moduleConfigs);
+      const moduleKeys = moduleConfigs.length > 0
+        ? moduleConfigs.map((m) => String(m.modulo || m.key || "").trim()).filter(Boolean)
+        : ["animal"];
       
       return {
-        modules,
+        modules: moduleKeys,
+        moduleConfigs,
         fazendaId,
         ownerId,
       };
@@ -355,6 +399,7 @@ async function parseFromURL() {
       // Retorna valores vazios para não prosseguir sem dados válidos
       return {
         modules: ["animal"],
+        moduleConfigs: [],
         fazendaId: "",
         ownerId: "",
       };
@@ -366,10 +411,11 @@ async function parseFromURL() {
   const modules = rawModules.split(",").map((s) => s.trim()).filter(Boolean);
   const fazendaId = (u.searchParams.get("fazenda") || "").trim();
   // Aceita ?user= (novo) ou ?owner= (antigo)
-  const ownerId = (u.searchParams.get("user") || u.searchParams.get("owner") || "").trim();
+  const ownerId = (u.searchParams.get("colaborador") || u.searchParams.get("user") || u.searchParams.get("owner") || "").trim();
 
   return {
     modules: modules.length ? modules : ["animal"],
+    moduleConfigs: (modules.length ? modules : ["animal"]).map((m) => ({ modulo: m })),
     fazendaId,
     ownerId,
   };
@@ -383,6 +429,141 @@ function buildModules(keys) {
     pageSub: "",
     storageKey: k
   });
+}
+
+// Retorna a configuração de módulo/aba vinda do GET_MODULOS (se existir)
+function getModuleConfig(moduloKey) {
+  if (!Array.isArray(state.moduleConfigs)) return null;
+  return state.moduleConfigs.find((m) => String(m.modulo || m.key || "").trim() === String(moduloKey).trim()) || null;
+}
+
+/**
+ * Garante que cada aba dos módulos tenha "campos" preenchido com todos os atributos conhecidos.
+ * - Se "campos" vier vazio ou ausente: insere todos os keys padrão daquele módulo/aba (value: "", type: "OS").
+ * - Se "campos" vier com itens: mantém os que o backend enviou (pré-preenchimento key/value/type) e adiciona
+ *   os keys padrão que faltarem (value: "", type: "OS").
+ * Assim o backend usa "campos" apenas para dizer quais campos nascem com value "X"; o script completa o resto.
+ */
+function ensureAbasCampos(moduleConfigs) {
+  if (!Array.isArray(moduleConfigs)) return;
+  for (const config of moduleConfigs) {
+    const modulo = String(config.modulo || config.key || "").trim().toLowerCase();
+    const abas = Array.isArray(config.abas) ? config.abas : (Array.isArray(config.aba) ? config.aba : []);
+    const byModulo = DEFAULT_ABA_CAMPOS_KEYS[modulo];
+    if (!byModulo) continue;
+    for (const aba of abas) {
+      const titulo = (aba.titulo || aba.aba || "").toString().trim();
+      const abaKeyNorm = titulo.toLowerCase();
+      let knownKeys = byModulo[abaKeyNorm];
+      if (!knownKeys && modulo === "saida_animais") knownKeys = byModulo.venda;
+      if (!Array.isArray(knownKeys) || knownKeys.length === 0) continue;
+      const existing = Array.isArray(aba.campos) ? aba.campos : [];
+      const existingKeys = new Set(existing.map((c) => String(c.key || "").trim()).filter(Boolean));
+      if (existing.length === 0) {
+        aba.campos = knownKeys.map((key) => ({ key, value: "", type: "OS" }));
+        continue;
+      }
+      for (const key of knownKeys) {
+        if (existingKeys.has(key)) continue;
+        existing.push({ key, value: "", type: "OS" });
+        existingKeys.add(key);
+      }
+      aba.campos = existing;
+    }
+  }
+}
+
+// Retorna valor pré-definido de campo para um módulo/aba.
+// Para "saida_animais" usamos nome da aba (ex.: "Venda").
+// Para "movimentacao" usamos título da aba (ex.: "lotes", "pastos", "fazendas").
+function getPrefilledField(moduloKey, abaKey, fieldKey) {
+  const cfg = getModuleConfig(moduloKey);
+  if (!cfg) return null;
+  const abasRaw = Array.isArray(cfg.abas) ? cfg.abas : (Array.isArray(cfg.aba) ? cfg.aba : []);
+  if (!abasRaw.length) return null;
+  const aba = abasRaw.find((a) => {
+    const name = (a.aba || a.titulo || "").toString().trim().toLowerCase();
+    return name === String(abaKey || "").toLowerCase();
+  });
+  if (!aba || !Array.isArray(aba.campos)) return null;
+  return aba.campos.find((c) => String(c.key || "").trim() === String(fieldKey || "").trim()) || null;
+}
+
+/**
+ * Mapeamento key (get_modulos.campos[].key) → id do elemento no DOM.
+ * Única fonte de verdade: o script aplica ao formulário qualquer campo que chegar em
+ * get_modulos (modules[].abas[].campos[]) cuja key exista neste mapa. Não há regras fixas
+ * por key no código — tudo é dinâmico. Ver KEYS_LINHA_DE_PRODUCAO.md para alinhar com o backend.
+ */
+const FORM_FIELD_IDS = {
+  saida_animais: {
+    venda: {
+      animal: "vendaAnimalBrinco",
+      proprietario_destino: "vendaProprietarioDestino",
+      fazenda_destino: "vendaFazendaDestino",
+      valor: "vendaValor",
+      peso_saida: "vendaPeso",
+      condicao_pagamento: "vendaCondicaoPagamento",
+      movimentacao_saida_animal: "vendaMovimentacaoSaida",
+      data_aquisicao: "vendaData",
+      nota_fiscal: "vendaNotaFiscal",
+      numero_gta: "vendaNumeroGTA",
+      data_emissao_gta: "vendaDataEmissaoGTA",
+      data_validade_gta: "vendaDataValidadeGTA",
+      serie_gta: "vendaSerie",
+      uf_gta: "vendaUF",
+    },
+    morte: {
+      causa_morte: "morteCausaMorte",
+      detalhes_observacoes: "morteDetalhesObservacoes",
+      responsavel: "morteResponsavel",
+      data_morte: "morteDataMorte",
+      imagem_brinco_animal: "morteImagemBrinco",
+      movimentacao_saida_animal: "morteMovimentacaoSaida",
+    },
+  },
+  movimentacao: {
+    lotes: { lote: "pipelineMovLoteDestino" },
+    pastos: { pasto: "pipelineMovPastoDestino" },
+    fazendas: { fazenda_destino: "pipelineMovFazendaDestino", lote: "pipelineMovLoteDestinoFazenda", pasto: "pipelineMovPastoDestinoFazenda" },
+  },
+};
+
+/**
+ * Aplica ao container os valores de campos vindos do get_modulos (totalmente dinâmico).
+ * Lê modules[].abas[].campos[] e, para cada item, se a key existir em FORM_FIELD_IDS
+ * para esse módulo/aba, define o valor no elemento correspondente. Não há lógica por key
+ * no código — apenas key → elementId.
+ * moduleKey: ex. "saida_animais" | "movimentacao"
+ * abaKey: ex. "Venda" | "lotes" (comparado em lowercase com abas[].titulo)
+ */
+function applyModulePrefillToContainer(container, moduleKey, abaKey) {
+  if (!container || !moduleKey || !abaKey) return;
+  const cfg = getModuleConfig(moduleKey);
+  if (!cfg) return;
+  const abasRaw = Array.isArray(cfg.abas) ? cfg.abas : (Array.isArray(cfg.aba) ? cfg.aba : []);
+  const aba = abasRaw.find((a) => {
+    const name = (a.aba || a.titulo || "").toString().trim().toLowerCase();
+    return name === String(abaKey || "").toLowerCase();
+  });
+  if (!aba || !Array.isArray(aba.campos) || !aba.campos.length) return;
+  const abaNorm = String(abaKey).trim().toLowerCase();
+  const mapping = FORM_FIELD_IDS[moduleKey]?.[abaNorm];
+  if (!mapping) return;
+  for (const campo of aba.campos) {
+    const key = String(campo.key || "").trim();
+    const elementId = mapping[key];
+    if (!key || !elementId) continue;
+    const el = container.querySelector(`#${elementId}`);
+    if (!el) continue;
+    const val = campo.value != null ? String(campo.value).trim() : "";
+    if (el.tagName === "SELECT") {
+      el.value = val;
+    } else {
+      el.value = val;
+      if (el.classList.contains("saVendaInputCurrency") && el.dataset) el.dataset.raw = val;
+    }
+  }
 }
 
 // ---------------- Bootstrap Bubble data ----------------
@@ -558,7 +739,8 @@ async function bootstrapData() {
     url = getEndpointUrl(state.ctx);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+    const timeoutMs = 30000; // 30s — get_dados pode demorar com muitos dados
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     const res = await fetch(url, {
       method: "GET",
@@ -586,8 +768,7 @@ async function bootstrapData() {
       throw new Error(`Falha ao ler JSON: ${detail}`);
     }
 
-    // Formato v5: organizacao { _id, user { management_fazenda } }; colaboradores []; list_fazendas [ { fazenda: {...} } ] no topo
-    // Fazenda atual = organizacao.user.management_fazenda; list_fazendas é array no raiz do data
+    // get_dados: organizacao { _id, colaborador { _id, nome, management_fazenda } }; colaboradores []; list_fazendas [ { fazenda: {...} } ]
     let organizacaoRaw = null;
     let listFazendaObjects = [];
     let fazendaCurrentRaw = null;
@@ -595,7 +776,7 @@ async function bootstrapData() {
 
     if (data?.organizacao) {
       organizacaoRaw = data.organizacao;
-      ownerRaw = data.organizacao.user ?? null;
+      ownerRaw = data.organizacao.colaborador ?? null;
       if (ownerRaw?.management_fazenda) {
         const mgmtId = String(ownerRaw.management_fazenda).trim();
         if (!state.ctx.fazendaId) state.ctx = { ...state.ctx, fazendaId: mgmtId };
@@ -609,7 +790,8 @@ async function bootstrapData() {
       ) ?? listFazendaObjects[0] ?? null;
     } else {
       fazendaCurrentRaw = data?.fazenda || null;
-      ownerRaw = data?.user ?? data?.owner ?? null;
+      const col = data?.colaborador ?? data?.user ?? data?.owner ?? null;
+      ownerRaw = typeof col === "object" && col !== null ? col : (col ? { _id: String(col) } : null);
       if (fazendaCurrentRaw) listFazendaObjects = [fazendaCurrentRaw];
     }
 
@@ -696,7 +878,6 @@ async function bootstrapData() {
     const lotes = toCloneable((Array.isArray(allLotesRaw) ? allLotesRaw : []).map(normalizeLote));
     const pastos = toCloneable((Array.isArray(allPastosRaw) ? allPastosRaw : []).map(normalizePasto));
     const vacinacao = toCloneable((Array.isArray(allVacinacaoRaw) ? allVacinacaoRaw : []).map(normalizeVacinacaoItem));
-    const proprietarios = toCloneable(Array.isArray(fazendaCurrentRaw?.list_proprietarios) ? fazendaCurrentRaw.list_proprietarios : []);
 
     // ✅ Gravação com debug por etapa (pra não “sumir” o erro)
     try {
@@ -709,7 +890,6 @@ async function bootstrapData() {
       await idbSet("lotes", "list", lotes);
       await idbSet("pastos", "list", pastos);
       await idbSet("vacinacao", "list", vacinacao);
-      await idbSet("fazenda", "list_proprietarios", proprietarios);
 
       await idbSet("meta", cachedCtxKey, { cachedAt: Date.now() });
       await idbSet("meta", "lastCtx", { ...state.ctx, cachedAt: Date.now() });
@@ -737,7 +917,11 @@ async function bootstrapData() {
     return;
 
   } catch (err) {
-    console.error("[BOOT] falhou:", err, { url });
+    const isAbort = err?.name === "AbortError";
+    const msg = isAbort
+      ? "A requisição demorou muito e foi cancelada. Verifique sua conexão ou tente novamente."
+      : (err?.message || String(err));
+    console.error("[BOOT] falhou:", err?.name || err, msg, { url });
 
     // Se falhou, mas já tem cache, libera offline com cache
     if (cachedOk) {
@@ -750,64 +934,34 @@ async function bootstrapData() {
     // Sem cache: bloqueia
     showBoot(
       "Não foi possível sincronizar",
-      `Detalhe: ${err?.message || err}`
+      `Detalhe: ${msg}`
     );
     state.bootstrapReady = false;
     return;
   }
 }
 
-// ---------------- Sidebar ----------------
+// ---------------- Dashboard: bloco usuário no topo direito (sidebar removido) ----------------
 function renderSidebar() {
-  const nav = $("#moduleNav");
-  if (!nav) return;
-  nav.innerHTML = "";
-
-  // Dashboard — fora da timeline (separado)
-  const inicioItem = document.createElement("div");
-  const isDashboard = state.view === "dashboard";
-  inicioItem.className = "navItem" + (isDashboard ? " active" : "");
-  inicioItem.innerHTML = `<span class="navIcon">🏠</span><span class="navLabel">Dashboard</span>`;
-  inicioItem.onclick = async () => {
-    state.view = "dashboard";
-    state.activeKey = null;
-    renderSidebar();
-    await openDashboard();
-  };
-  nav.appendChild(inicioItem);
-
-  // Timeline: só os módulos (1, 2, 3...) — ordem da requisição = ordem da esteira
-  const timelineWrap = document.createElement("div");
-  timelineWrap.className = "navTimeline";
-  let step = 1;
-  for (const m of state.modules) {
-    const mDef = MODULE_CATALOG[m.key] || m;
-    const icon = mDef.icon || "📦";
-    const item = document.createElement("div");
-    item.className = "navItem" + (state.view === "module" && m.key === state.activeKey ? " active" : "");
-    item.innerHTML = `<span class="navTimelineDot" aria-hidden="true">${step}</span><span class="navIcon">${icon}</span><span class="navLabel">${escapeHtml(m.label)}</span>`;
-    item.onclick = async () => {
-      await openModule(m.key);
-    };
-    timelineWrap.appendChild(item);
-    step++;
-  }
-  nav.appendChild(timelineWrap);
-
   renderSidebarUser();
 }
 
+/** Preenche o bloco de usuário no topo direito do dashboard (avatar, nome, fazenda). Desktop e mobile podem ter IDs diferentes. */
 async function renderSidebarUser() {
-  const avatarEl = $("#sidebarAvatar");
-  const nameEl = $("#sidebarUserName");
-  const farmEl = $("#sidebarFarmName");
-  if (!avatarEl && !nameEl && !farmEl) return;
+  const avatarEls = [ $("#dashUserAvatar"), $("#dashUserAvatarMobile") ].filter(Boolean);
+  const nameEls = [ $("#dashUserName"), $("#dashUserNameMobile") ].filter(Boolean);
+  const farmEls = [ $("#dashFarmName"), $("#dashFarmNameMobile") ].filter(Boolean);
+  if (avatarEls.length === 0 && nameEls.length === 0 && farmEls.length === 0) return;
 
   const sessionOwner = await idbGet("owner", "current");
   let owner = sessionOwner;
-  if (!owner && state.ctx?.ownerId) {
-    const owners = (await idbGet("fazenda", "list_proprietarios")) || [];
-    owner = owners.find(o => String(o._id) === String(state.ctx.ownerId));
+  if (!owner) {
+    const fazenda = await idbGet("fazenda", "current");
+    const colaboradores = (await idbGet("colaboradores", "list")) || [];
+    const principalId = fazenda?.colaborador_principal;
+    if (principalId) {
+      owner = colaboradores.find(c => String(c._id) === String(principalId)) || owner;
+    }
   }
   const name = owner?.nome || "Usuário";
   const firstLetter = name.charAt(0).toUpperCase();
@@ -815,13 +969,1188 @@ async function renderSidebarUser() {
   const fazenda = await idbGet("fazenda", "current");
   const farmName = fazenda?.name || "—";
 
-  if (avatarEl) {
-    avatarEl.textContent = firstLetter;
-    if (navigator.onLine) avatarEl.classList.remove("offline");
-    else avatarEl.classList.add("offline");
+  const allAnimaisRaw = (await idbGet("animais", "list")) || [];
+  const allAnimais = filterByCurrentFazenda(allAnimaisRaw);
+  const hasPending = allAnimais.some(a => a._sync === "pending");
+  const nameHtml = escapeHtml(name) + (hasPending ? " <span style='font-size:12px;vertical-align:middle' title='Dados pendentes'>☁️</span>" : "");
+
+  avatarEls.forEach(el => {
+    el.textContent = firstLetter;
+    if (navigator.onLine) el.classList.remove("offline");
+    else el.classList.add("offline");
+  });
+  nameEls.forEach(el => { el.innerHTML = nameHtml; });
+  farmEls.forEach(el => { el.textContent = farmName; });
+}
+
+// ---------------- Linha de produção (Pipeline) ----------------
+const PIPELINE_STEP_LABELS = {
+  movimentacao: "Movimentação",
+  pesagem: "Pesagem",
+  saida_animais: "Saída de animais"
+};
+
+/** Abas suportadas no passo de movimentação (pipeline). Ordem padrão. */
+const MOVIMENTACAO_ABA_KEYS = ["lotes", "pastos", "fazendas"];
+/** Títulos exibidos por aba */
+const MOVIMENTACAO_ABA_LABELS = { lotes: "Entre lotes", pastos: "Entre pastos", fazendas: "Entre fazendas" };
+
+/** Retorna o div onde o conteúdo dos passos do pipeline é renderizado (dentro do dashboard). */
+function getPipelineContainer() {
+  return document.getElementById("pipelineStepContent");
+}
+
+/** Mostra o modal (dois cards) e esconde a área de passos; volta ao início do fluxo. */
+function showPipelineModalView() {
+  state.pipelineAnimal = null;
+  state.pipelineStepIndex = 0;
+  state.pipelineCreatedAnimalId = null;
+
+  // Limpa busca de animal no dashboard (input e resultados)
+  const inputBrinco = document.getElementById("pipelineSearchBrinco");
+  const resultsEl = document.getElementById("pipelineSearchResults");
+  if (inputBrinco) inputBrinco.value = "";
+  if (resultsEl) {
+    resultsEl.innerHTML = "";
+    resultsEl.hidden = true;
   }
-  if (nameEl) nameEl.textContent = name;
-  if (farmEl) farmEl.textContent = farmName;
+
+  // No dashboard raiz, o card de pendências só aparece com ≥1 dado pendente e online
+  const hasPending = Array.isArray(state.pendingSyncListForCard) && state.pendingSyncListForCard.length > 0;
+  setPendingSyncCardVisible(hasPending && state.view === "dashboard" && navigator.onLine);
+
+  const modal = document.getElementById("pipelineModal");
+  const stepContent = document.getElementById("pipelineStepContent");
+  if (modal) modal.hidden = false;
+  if (stepContent) stepContent.hidden = true;
+}
+
+/** Modal de confirmação: "Deseja cancelar a criação do animal?" (já na fila). Retorna Promise<boolean>. */
+function confirmPipelineCancelCreate() {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "pipelineConfirmOverlay";
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:99999;";
+    overlay.innerHTML = `
+      <div class="pipelineConfirmCard" style="background:#fff;border-radius:12px;padding:24px;max-width:360px;box-shadow:0 8px 24px rgba(0,0,0,0.15);">
+        <p style="margin:0 0 20px;font-size:15px;color:#111827;">Deseja cancelar a criação do animal? Essa criação já foi adicionada à fila de sincronização.</p>
+        <div style="display:flex;gap:12px;justify-content:flex-end;">
+          <button type="button" class="pipelineConfirmBtnNo" style="padding:8px 16px;border:1px solid #d1d5db;background:#fff;border-radius:8px;cursor:pointer;">Não</button>
+          <button type="button" class="pipelineConfirmBtnYes" style="padding:8px 16px;background:#edff77;border:none;border-radius:8px;cursor:pointer;font-weight:600;">Sim, cancelar</button>
+        </div>
+      </div>`;
+    const remove = () => { overlay.remove(); };
+    overlay.querySelector(".pipelineConfirmBtnNo").onclick = () => { remove(); resolve(false); };
+    overlay.querySelector(".pipelineConfirmBtnYes").onclick = () => { remove(); resolve(true); };
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) { remove(); resolve(false); } });
+    document.body.appendChild(overlay);
+  });
+}
+
+/**
+ * Modal de confirmação ao voltar no pipeline.
+ * @param {string} currentStepName - Nome do módulo atual (ex.: "Saída de animais").
+ * @param {string|null} previousStepName - Nome do módulo anterior. Se null, está voltando para o dashboard (só uma pergunta).
+ * @returns {Promise<boolean>}
+ */
+function confirmPipelineLoseData(currentStepName, previousStepName) {
+  const isGoingToDashboard = previousStepName == null || previousStepName === "";
+  const message = isGoingToDashboard
+    ? "Os dados preenchidos nesta tela serão perdidos. Deseja voltar?"
+    : `Os dados preenchidos nesta tela serão perdidos. Ao voltar, você retornará ao módulo "${previousStepName}" e poderá alterar o que foi feito lá. Deseja voltar?`;
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "pipelineConfirmOverlay";
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:99999;";
+    overlay.innerHTML = `
+      <div class="pipelineConfirmCard" style="background:#fff;border-radius:12px;padding:24px;max-width:400px;box-shadow:0 8px 24px rgba(0,0,0,0.15);">
+        <p style="margin:0 0 20px;font-size:15px;color:#111827;">${escapeHtml(message)}</p>
+        <div style="display:flex;gap:12px;justify-content:flex-end;">
+          <button type="button" class="pipelineConfirmBtnNo" style="padding:8px 16px;border:1px solid #d1d5db;background:#fff;border-radius:8px;cursor:pointer;">Não</button>
+          <button type="button" class="pipelineConfirmBtnYes" style="padding:8px 16px;background:#edff77;border:none;border-radius:8px;cursor:pointer;font-weight:600;">Sim, voltar</button>
+        </div>
+      </div>`;
+    const remove = () => { overlay.remove(); };
+    overlay.querySelector(".pipelineConfirmBtnNo").onclick = () => { remove(); resolve(false); };
+    overlay.querySelector(".pipelineConfirmBtnYes").onclick = () => { remove(); resolve(true); };
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) { remove(); resolve(false); } });
+    document.body.appendChild(overlay);
+  });
+}
+
+/** Liga eventos do modal da linha de produção (no dashboard) uma vez. */
+function bindPipelineModalOnce() {
+  const modal = document.getElementById("pipelineModal");
+  if (!modal || modal.dataset.pipelineBound === "1") return;
+  modal.dataset.pipelineBound = "1";
+
+  const inputBrinco = document.getElementById("pipelineSearchBrinco");
+  const resultsEl = document.getElementById("pipelineSearchResults");
+  let searchDebounce = null;
+
+  async function searchPipelineBrinco(query) {
+    const q = String(query || "").trim();
+    if (!q) { resultsEl.hidden = true; resultsEl.innerHTML = ""; return; }
+    const raw = (await idbGet("animais", "list")) || [];
+    const animais = filterByCurrentFazenda(raw).filter((a) => !a.deleted).map(normalizeAnimal);
+    const lower = q.toLowerCase();
+    const matches = animais.filter((a) => String(a.brinco_padrao || "").toLowerCase().includes(lower));
+    if (matches.length === 0) {
+      resultsEl.innerHTML = '<div class="pipelineResultItem pipelineResultEmpty">Nenhum animal encontrado</div>';
+      resultsEl.hidden = false;
+      return;
+    }
+    const nome = (a) => String(a.nome_completo || "").trim() || "—";
+    resultsEl.innerHTML = matches.slice(0, 10).map((a) =>
+      `<button type="button" class="pipelineResultItem" data-id="${escapeHtml(a._id)}" data-brinco="${escapeHtml(a.brinco_padrao || "")}">${escapeHtml(a.brinco_padrao || "—")} — ${escapeHtml(nome(a))}</button>`
+    ).join("");
+    resultsEl.hidden = false;
+  }
+
+  if (inputBrinco && resultsEl) {
+    inputBrinco.addEventListener("input", () => {
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => searchPipelineBrinco(inputBrinco.value), 200);
+    });
+    inputBrinco.addEventListener("focus", () => { if (inputBrinco.value.trim()) searchPipelineBrinco(inputBrinco.value); });
+    resultsEl.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".pipelineResultItem[data-id]");
+      if (!btn || btn.classList.contains("pipelineResultEmpty")) return;
+      const id = btn.dataset.id;
+      const animaisList = (await idbGet("animais", "list")) || [];
+      const animal = animaisList.find((a) => String(a._id) === String(id));
+      if (!animal) return;
+      state.pipelineAnimal = normalizeAnimal(animal);
+      state.pipelineStepIndex = 0;
+      const pipelineModal = document.getElementById("pipelineModal");
+      const stepContent = document.getElementById("pipelineStepContent");
+      if (pipelineModal) pipelineModal.hidden = true;
+      if (stepContent) stepContent.hidden = false;
+       // Dentro do fluxo da linha de produção: esconde o card de pendências
+      setPendingSyncCardVisible(false);
+      await renderPipelineStep(0);
+    });
+  }
+
+  const btnCreate = document.getElementById("pipelineBtnCreate");
+  if (btnCreate) {
+    btnCreate.addEventListener("click", async () => {
+      state.pipelineFromCreate = true;
+      state.pipelineCreatedAnimalId = null;
+      state.pipelineCreateCallback = (newAnimal) => {
+        state.pipelineAnimal = newAnimal;
+        state.pipelineStepIndex = 0;
+        state.pipelineCreateCallback = null;
+        renderPipelineStep(0);
+      };
+      state.activeKey = "animal";
+      state.animalView = "form";
+      state.animalEditingId = null;
+      const dash = $("#modDashboard");
+      const dashDesktop = document.getElementById("modDashboardDesktop");
+      if (dash) dash.hidden = true;
+      if (dashDesktop) dashDesktop.hidden = true;
+      const animalContainer = $("#animalModuleContainer");
+      const moduleView = $("#moduleView");
+      if (moduleView) moduleView.hidden = true;
+      if (animalContainer) animalContainer.hidden = false;
+      // Saindo do dashboard para o form de criação no fluxo: esconde card de pendências
+      setPendingSyncCardVisible(false);
+      await openAnimalFormForCreate();
+      renderSidebar();
+    });
+  }
+}
+
+/** Garante que o modal do pipeline está visível ou que o passo atual está sendo exibido (chamado ao abrir o dashboard). */
+function ensurePipelineModalReady() {
+  const pipelineModal = document.getElementById("pipelineModal");
+  const stepContent = document.getElementById("pipelineStepContent");
+  if (!pipelineModal || !stepContent) return;
+
+  bindPipelineModalOnce();
+
+  if (!state.pipelineAnimal) {
+    pipelineModal.hidden = false;
+    stepContent.hidden = true;
+    // No dashboard raiz: card de pendências só aparece com ≥1 dado pendente e online
+    const hasPending = Array.isArray(state.pendingSyncListForCard) && state.pendingSyncListForCard.length > 0;
+    setPendingSyncCardVisible(hasPending && state.view === "dashboard" && navigator.onLine);
+  } else {
+    pipelineModal.hidden = true;
+    stepContent.hidden = false;
+    // Dentro do fluxo (qualquer passo): card de pendências some
+    setPendingSyncCardVisible(false);
+    renderPipelineStep(state.pipelineStepIndex);
+  }
+}
+
+/** Passos do pipeline que temos tela implementada (ordem vem de state.modules do GET). */
+const PIPELINE_STEP_KEYS_IMPLEMENTED = ["movimentacao", "pesagem", "saida_animais"];
+
+/** Renderiza o passo atual do pipeline (movimentação, pesagem ou saída) com o animal já selecionado. */
+async function renderPipelineStep(stepIndex) {
+  const container = getPipelineContainer();
+  if (!container) return;
+  const wrap = document.getElementById("pipelineWrap");
+  if (wrap) {
+    wrap.classList.remove("pipelineWrap--saida", "pipelineWrap--movimentacao");
+  }
+  container.classList.remove("pipelineStepContent--saida", "pipelineStepContent--movimentacao");
+  const fromModules = (state.modules || []).map(m => m.key).filter(k => PIPELINE_STEP_KEYS_IMPLEMENTED.includes(k));
+  const steps = fromModules.length > 0 ? fromModules : (PIPELINE_STEPS || []);
+  const animal = state.pipelineAnimal;
+
+  // Voltar antes do primeiro passo ou fim do fluxo: volta para a pergunta inicial (dashboard)
+  if (stepIndex < 0 || stepIndex >= steps.length || !animal) {
+    // Primeiro limpa o estado do pipeline para que isDashboardRoot fique true
+    state.pipelineAnimal = null;
+    state.pipelineStepIndex = 0;
+    state.pipelineCreatedAnimalId = null;
+    // Recarrega a lista de pendências antes de mostrar o modal (para card e FAB usarem dados atualizados)
+    try {
+      const pendingList = await getPendingSyncList();
+      state.pendingSyncListForCard = pendingList;
+      if (pendingList.length > 0 && (state.pendingSyncPage === undefined || state.pendingSyncPage < 0)) {
+        state.pendingSyncPage = 0;
+      }
+    } catch (e) {
+      console.error("Erro ao atualizar pendências ao sair do pipeline:", e);
+    }
+    // Volta visualmente para o dashboard (modal visível, passo escondido)
+    showPipelineModalView();
+    const isDashboardRoot = state.view === "dashboard" && !state.pipelineAnimal;
+    const hasPending = Array.isArray(state.pendingSyncListForCard) && state.pendingSyncListForCard.length > 0;
+    if (hasPending && isDashboardRoot && navigator.onLine) {
+      setPendingSyncCardVisible(true);
+      renderPendingSyncCard();
+    } else {
+      setPendingSyncCardVisible(false);
+    }
+    updateFabSyncVisibility();
+    if (hasPending && isDashboardRoot) {
+      checkSyncStatus();
+    }
+    return;
+  }
+
+  const stepKey = steps[stepIndex];
+  const stepLabel = PIPELINE_STEP_LABELS[stepKey] || stepKey;
+  const isLast = stepIndex >= steps.length - 1;
+  const previousStepLabel = stepIndex > 0 ? (PIPELINE_STEP_LABELS[steps[stepIndex - 1]] || steps[stepIndex - 1]) : null;
+
+  if (stepKey === "movimentacao") {
+    await renderPipelineStepMovimentacao(container, animal, stepIndex, isLast, previousStepLabel);
+    return;
+  }
+  if (stepKey === "pesagem") {
+    await renderPipelineStepPesagem(container, animal, stepIndex, isLast, previousStepLabel);
+    return;
+  }
+  if (stepKey === "saida_animais") {
+    await renderPipelineStepSaida(container, animal, stepIndex, isLast, previousStepLabel);
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="pipelineStepHead">
+      <button type="button" class="pipelineBackBtn" id="pipelineBackBtn">&larr; Voltar</button>
+      <h2 class="pipelineStepTitle">${escapeHtml(stepLabel)}</h2>
+    </div>
+    <div class="pipelineStepPlaceholder"><p>Passo: ${escapeHtml(stepLabel)}</p><button type="button" class="pipelineCardBtn" id="pipelineBtnNext">Próximo</button></div>`;
+  document.getElementById("pipelineBackBtn")?.addEventListener("click", async () => {
+    const ok = await confirmPipelineLoseData(stepLabel, previousStepLabel);
+    if (ok) await renderPipelineStep(stepIndex - 1);
+  });
+  document.getElementById("pipelineBtnNext")?.addEventListener("click", () => renderPipelineStep(stepIndex + 1));
+}
+
+async function renderPipelineStepMovimentacao(container, animal, stepIndex, isLast, previousStepLabel) {
+  const pipelineWrap = document.getElementById("pipelineWrap");
+  if (pipelineWrap) pipelineWrap.classList.add("pipelineWrap--movimentacao");
+  container.classList.add("pipelineStepContent--movimentacao");
+
+  const movConfig = getModuleConfig("movimentacao");
+  const abasRaw = Array.isArray(movConfig?.abas) ? movConfig.abas : [];
+  const tabList = abasRaw.length
+    ? abasRaw
+        .map((a) => String(a.titulo || a.aba || "").trim().toLowerCase())
+        .filter((t) => MOVIMENTACAO_ABA_KEYS.includes(t))
+        .filter((t, i, arr) => arr.indexOf(t) === i)
+    : [...MOVIMENTACAO_ABA_KEYS];
+  const activeTab = tabList[0] || "lotes";
+
+  const lotesRaw = (await idbGet("lotes", "list")) || [];
+  const pastosRaw = (await idbGet("pastos", "list")) || [];
+  const lotes = filterByCurrentFazenda(lotesRaw);
+  const pastos = filterByCurrentFazenda(pastosRaw);
+  const listFazendas = (await idbGet("fazenda", "list")) || [];
+  const fazendaAtualId = getCurrentFazendaId();
+  const org = await idbGet("organizacao", "current");
+  const organizacaoId = org?._id || org?.organizacao || null;
+  const sameOrgId = (f) => {
+    if (!organizacaoId) return true;
+    const fOrg = f?.organizacao_id ?? f?.organizacao ?? (typeof f?.organizacao === "object" ? f?.organizacao?._id : null);
+    return String(fOrg || "") === String(organizacaoId);
+  };
+  const fazendasDestino = listFazendas.filter(
+    (f) => String(f._id || "") !== fazendaAtualId && sameOrgId(f)
+  );
+
+  const prefillLote = getPrefilledField("movimentacao", "lotes", "lote");
+  const origemLotePredefinida = !!(prefillLote && prefillLote.type === "BD" && prefillLote.value);
+  let loteOrigemId = (origemLotePredefinida ? String(prefillLote.value).trim() : (animal.lote || (Array.isArray(animal.list_lotes) && animal.list_lotes[0]) || "").toString().trim());
+  const loteOrigem = loteOrigemId ? lotes.find((l) => String(l._id) === String(loteOrigemId)) : null;
+
+  const prefillPasto = getPrefilledField("movimentacao", "pastos", "pasto");
+  const origemPastoPredefinida = !!(prefillPasto && prefillPasto.type === "BD" && prefillPasto.value);
+  let pastoOrigemId = origemPastoPredefinida ? String(prefillPasto.value).trim() : "";
+  const pastoOrigem = pastoOrigemId ? pastos.find((p) => String(p._id) === String(pastoOrigemId)) : null;
+
+  const animalLabel = `Brinco ${escapeHtml(animal.brinco_padrao || "—")} — ${escapeHtml(String(animal.nome_completo || "").trim() || "—")}`;
+  const loteOptions = lotes.map((l) => `<option value="${escapeHtml(l._id)}">${escapeHtml(l.nome_lote || "—")}</option>`).join("");
+  const pastoOptions = (pastos || []).map((p) => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`).join("");
+  const fazendaOptions = fazendasDestino.map((f) => `<option value="${escapeHtml(f._id)}">${escapeHtml(f.name || "—")}</option>`).join("");
+
+  const origemLoteHtml = origemLotePredefinida
+    ? `<p class="pipelineFieldValue">${escapeHtml(loteOrigem?.nome_lote || "—")}</p>`
+    : `<select id="pipelineMovLoteOrigem" class="saVendaSelect pipelineSelect"><option value="">Selecione o lote de origem</option>${loteOptions}</select>`;
+  const origemPastoHtml = origemPastoPredefinida
+    ? `<p class="pipelineFieldValue">${escapeHtml(pastoOrigem?.nome || "—")}</p>`
+    : `<select id="pipelineMovPastoOrigem" class="saVendaSelect pipelineSelect"><option value="">Selecione o pasto de origem</option>${pastoOptions}</select>`;
+
+  const tabsHtml = tabList
+    .map(
+      (tabKey) =>
+        `<span class="movTab pipelineMovTab pipelineMovTab--step ${tabKey === activeTab ? "active" : ""}" data-tab="${tabKey}" role="tab" aria-selected="${tabKey === activeTab}">${escapeHtml(MOVIMENTACAO_ABA_LABELS[tabKey] || tabKey)}</span>`
+    )
+    .join("");
+  const contentLotesHtml =
+    tabList.includes("lotes") ?
+      `<div class="movContent pipelineMovContent" id="pipelineMovContentLotes" data-tab="lotes" ${activeTab !== "lotes" ? "hidden" : ""}>
+        <div class="saVendaFormGrid saMovFormGrid">
+          <div class="saVendaField"><label>Lote de origem</label>${origemLoteHtml}</div>
+          <div class="saVendaField"><label for="pipelineMovLoteDestino">Lote de destino</label>
+            <select id="pipelineMovLoteDestino" class="saVendaSelect pipelineSelect"><option value="">Selecione o lote</option></select>
+          </div>
+        </div>
+      </div>`
+    : "";
+  const contentPastosHtml =
+    tabList.includes("pastos") ?
+      `<div class="movContent pipelineMovContent" id="pipelineMovContentPastos" data-tab="pastos" ${activeTab !== "pastos" ? "hidden" : ""}>
+        <div class="saVendaFormGrid saMovFormGrid">
+          <div class="saVendaField"><label>Pasto de origem</label>${origemPastoHtml}</div>
+          <div class="saVendaField"><label for="pipelineMovPastoDestino">Pasto de destino</label>
+            <select id="pipelineMovPastoDestino" class="saVendaSelect pipelineSelect"><option value="">Selecione o pasto</option>${(pastos || []).filter((p) => String(p._id) !== pastoOrigemId).map((p) => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`).join("")}</select>
+          </div>
+        </div>
+      </div>`
+    : "";
+  const contentFazendasHtml =
+    tabList.includes("fazendas") ?
+      `<div class="movContent pipelineMovContent" id="pipelineMovContentFazendas" data-tab="fazendas" ${activeTab !== "fazendas" ? "hidden" : ""}>
+        <div class="saVendaFormGrid saMovFormGrid" style="grid-template-columns: 1fr;">
+          <div class="saVendaField"><label>Origem (lote/pasto)</label>
+            <div class="movToggleGroup" style="display:flex;gap:8px;margin-bottom:8px;">
+              <button type="button" class="movToggleBtn pipelineMovToggleOrigemLote movToggleBtnActive" data-type="lote">Lote</button>
+              <button type="button" class="movToggleBtn pipelineMovToggleOrigemPasto" data-type="pasto">Pasto</button>
+            </div>
+            <select id="pipelineMovLoteOrigemFazenda" class="saVendaSelect pipelineSelect" style="margin-top:4px;"><option value="">Selecione o lote de origem</option>${loteOptions}</select>
+            <select id="pipelineMovPastoOrigemFazenda" class="saVendaSelect pipelineSelect" style="margin-top:4px;display:none;"><option value="">Selecione o pasto de origem</option>${pastoOptions}</select>
+          </div>
+          <div class="saVendaField"><label for="pipelineMovFazendaDestino">Fazenda de destino</label>
+            <select id="pipelineMovFazendaDestino" class="saVendaSelect pipelineSelect"><option value="">Selecione a fazenda</option>${fazendaOptions}</select>
+          </div>
+          <div class="saVendaField"><label>Destino (lote ou pasto na fazenda de destino)</label>
+            <div class="movToggleGroup" style="display:flex;gap:8px;margin-bottom:8px;">
+              <button type="button" class="movToggleBtn movToggleBtnActive pipelineMovToggleDestinoLote" data-type="lote">Lote</button>
+              <button type="button" class="movToggleBtn pipelineMovToggleDestinoPasto" data-type="pasto">Pasto</button>
+            </div>
+            <select id="pipelineMovLoteDestinoFazenda" class="saVendaSelect pipelineSelect" style="margin-top:4px;"><option value="">Selecione o lote de destino</option></select>
+            <select id="pipelineMovPastoDestinoFazenda" class="saVendaSelect pipelineSelect" style="margin-top:4px;display:none;"><option value="">Selecione o pasto de destino</option></select>
+          </div>
+        </div>
+      </div>`
+    : "";
+
+  container.innerHTML = `
+    <div class="saVendaForm saMovForm" id="saMovForm">
+      <div class="pageHead">
+        <div class="pageHeadRow1">
+          <button type="button" class="animalFormBackBtn" id="pipelineBackBtn" aria-label="Voltar">&larr; Voltar</button>
+          <div class="pageHeadActions">
+            <button type="button" class="animalFormHeaderBtn btnSaveAnimal" id="saMovBtnAvançar" style="display:none;">Avançar</button>
+            <button type="button" class="animalFormHeaderBtn btnSaveAnimal" id="saMovBtnConcluir">${isLast ? "Concluir" : "Próximo"}</button>
+          </div>
+        </div>
+        <div class="pageHeadRow2">
+          <h1 class="pageTitle">${escapeHtml(PIPELINE_STEP_LABELS.movimentacao)}</h1>
+          <p class="pageSub">Altere lote, pasto ou fazenda do animal selecionado</p>
+          <p class="saVendaHeaderAnimal">${animalLabel}</p>
+        </div>
+      </div>
+      <div class="saVendaFormBody saVendaFormOnly">
+        <div class="saVendaFormCard">
+          ${tabList.length > 1 ? `<div class="movTabs pipelineMovTabs" role="tablist">${tabsHtml}</div>` : ""}
+          ${contentLotesHtml}
+          ${contentPastosHtml}
+          ${contentFazendasHtml}
+        </div>
+      </div>
+    </div>
+  `;
+
+  let currentTab = activeTab;
+  const contents = { lotes: container.querySelector("#pipelineMovContentLotes"), pastos: container.querySelector("#pipelineMovContentPastos"), fazendas: container.querySelector("#pipelineMovContentFazendas") };
+  const tabButtons = container.querySelectorAll(".pipelineMovTab");
+  const btnAvançar = document.getElementById("saMovBtnAvançar");
+  const btnConcluir = document.getElementById("saMovBtnConcluir");
+
+  function getCurrentTabIndex() {
+    const idx = tabList.indexOf(currentTab);
+    return idx >= 0 ? idx : 0;
+  }
+  function hasNextTab() {
+    return tabList.length > 1 && getCurrentTabIndex() < tabList.length - 1;
+  }
+  function isMovimentacaoTabValid() {
+    if (currentTab === "lotes") {
+      const selDest = document.getElementById("pipelineMovLoteDestino");
+      const selOrig = document.getElementById("pipelineMovLoteOrigem");
+      const destId = selDest?.value?.trim();
+      if (!destId) return false;
+      if (!origemLotePredefinida) {
+        const origemId = selOrig?.value?.trim() || "";
+        if (!origemId) return false;
+      }
+      return true;
+    }
+    if (currentTab === "pastos") {
+      const selDest = document.getElementById("pipelineMovPastoDestino");
+      const selOrig = document.getElementById("pipelineMovPastoOrigem");
+      const destId = selDest?.value?.trim();
+      if (!destId) return false;
+      if (!origemPastoPredefinida) {
+        const origemId = selOrig?.value?.trim() || "";
+        if (!origemId) return false;
+      }
+      return true;
+    }
+    if (currentTab === "fazendas") {
+      const selFaz = document.getElementById("pipelineMovFazendaDestino");
+      const selLote = document.getElementById("pipelineMovLoteDestinoFazenda");
+      const selPasto = document.getElementById("pipelineMovPastoDestinoFazenda");
+      const fazendaDestinoId = selFaz?.value?.trim();
+      const loteDestId = selLote?.value?.trim();
+      const pastoDestId = selPasto?.value?.trim();
+      return !!(fazendaDestinoId && (loteDestId || pastoDestId));
+    }
+    return false;
+  }
+
+  function updateMovimentacaoHeaderButtons() {
+    if (btnAvançar && btnConcluir) {
+      const showAvançar = hasNextTab();
+      btnAvançar.style.display = showAvançar ? "" : "none";
+      btnConcluir.style.display = showAvançar ? "none" : "";
+      btnConcluir.textContent = isLast ? "Concluir" : "Próximo";
+      const valid = isMovimentacaoTabValid();
+      btnAvançar.disabled = !valid;
+      btnAvançar.classList.toggle("pipelineBtnAvançarActive", valid);
+    }
+  }
+
+  function setActiveTab(tabKey) {
+    currentTab = tabKey;
+    tabButtons.forEach((b) => {
+      b.classList.toggle("active", b.dataset.tab === tabKey);
+      b.setAttribute("aria-selected", b.dataset.tab === tabKey ? "true" : "false");
+    });
+    MOVIMENTACAO_ABA_KEYS.forEach((k) => {
+      const el = contents[k];
+      if (el) el.hidden = k !== tabKey;
+    });
+    updateMovimentacaoHeaderButtons();
+  }
+  updateMovimentacaoHeaderButtons();
+
+  const selectLoteDestino = document.getElementById("pipelineMovLoteDestino");
+  const selectLoteOrigem = document.getElementById("pipelineMovLoteOrigem");
+  function fillLoteDestinoOptions(origemId) {
+    if (!selectLoteDestino) return;
+    const opts = lotes
+      .filter((l) => String(l._id) !== String(origemId))
+      .map((l) => `<option value="${escapeHtml(l._id)}">${escapeHtml(l.nome_lote || "—")}</option>`)
+      .join("");
+    selectLoteDestino.innerHTML = `<option value="">Selecione o lote</option>${opts}`;
+  }
+  fillLoteDestinoOptions(origemLotePredefinida ? loteOrigemId : "");
+  if (selectLoteOrigem && !origemLotePredefinida) {
+    if (loteOrigemId) selectLoteOrigem.value = loteOrigemId;
+    selectLoteOrigem.addEventListener("change", () => {
+      fillLoteDestinoOptions(selectLoteOrigem.value || "");
+      updateMovimentacaoHeaderButtons();
+    });
+  }
+  selectLoteDestino?.addEventListener("change", updateMovimentacaoHeaderButtons);
+
+  const selectPastoDestino = document.getElementById("pipelineMovPastoDestino");
+  const selectPastoOrigem = document.getElementById("pipelineMovPastoOrigem");
+  if (selectPastoOrigem && !origemPastoPredefinida && selectPastoDestino) {
+    selectPastoOrigem.addEventListener("change", () => {
+      const orig = selectPastoOrigem.value || "";
+      selectPastoDestino.innerHTML = `<option value="">Selecione o pasto</option>${(pastos || []).filter((p) => String(p._id) !== orig).map((p) => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`).join("")}`;
+      updateMovimentacaoHeaderButtons();
+    });
+  }
+  selectPastoDestino?.addEventListener("change", updateMovimentacaoHeaderButtons);
+
+  const selFazendaDestino = document.getElementById("pipelineMovFazendaDestino");
+  const selLoteOrigemFaz = document.getElementById("pipelineMovLoteOrigemFazenda");
+  const selPastoOrigemFaz = document.getElementById("pipelineMovPastoOrigemFazenda");
+  const selLoteDestinoFaz = document.getElementById("pipelineMovLoteDestinoFazenda");
+  const selPastoDestinoFaz = document.getElementById("pipelineMovPastoDestinoFazenda");
+  let origemTipoFaz = "lote";
+  let destinoTipoFaz = "lote";
+  // Origem (lote/pasto) em "Entre fazendas" só é preenchido pelo get_modulos (applyModulePrefillToContainer); não usar animal para não vir default quando nada chegou
+  const togglesOrigemLote = container.querySelectorAll(".pipelineMovToggleOrigemLote");
+  const togglesOrigemPasto = container.querySelectorAll(".pipelineMovToggleOrigemPasto");
+  const togglesDestinoLote = container.querySelectorAll(".pipelineMovToggleDestinoLote");
+  const togglesDestinoPasto = container.querySelectorAll(".pipelineMovToggleDestinoPasto");
+  function updateFazendaToggles() {
+    togglesOrigemLote.forEach((b) => b.classList.toggle("movToggleBtnActive", origemTipoFaz === "lote"));
+    togglesOrigemPasto.forEach((b) => b.classList.toggle("movToggleBtnActive", origemTipoFaz === "pasto"));
+    togglesDestinoLote.forEach((b) => b.classList.toggle("movToggleBtnActive", destinoTipoFaz === "lote"));
+    togglesDestinoPasto.forEach((b) => b.classList.toggle("movToggleBtnActive", destinoTipoFaz === "pasto"));
+    if (selLoteOrigemFaz) selLoteOrigemFaz.style.display = origemTipoFaz === "lote" ? "block" : "none";
+    if (selPastoOrigemFaz) selPastoOrigemFaz.style.display = origemTipoFaz === "pasto" ? "block" : "none";
+    if (selLoteDestinoFaz) selLoteDestinoFaz.style.display = destinoTipoFaz === "lote" ? "block" : "none";
+    if (selPastoDestinoFaz) selPastoDestinoFaz.style.display = destinoTipoFaz === "pasto" ? "block" : "none";
+  }
+  togglesOrigemLote.forEach((b) => b.addEventListener("click", () => { origemTipoFaz = "lote"; updateFazendaToggles(); }));
+  togglesOrigemPasto.forEach((b) => b.addEventListener("click", () => { origemTipoFaz = "pasto"; updateFazendaToggles(); }));
+  togglesDestinoLote.forEach((b) => b.addEventListener("click", () => { destinoTipoFaz = "lote"; updateFazendaToggles(); }));
+  togglesDestinoPasto.forEach((b) => b.addEventListener("click", () => { destinoTipoFaz = "pasto"; updateFazendaToggles(); }));
+  updateFazendaToggles();
+  selFazendaDestino?.addEventListener("change", async () => {
+    const fid = selFazendaDestino?.value || "";
+    if (!fid) {
+      if (selLoteDestinoFaz) selLoteDestinoFaz.innerHTML = "<option value=\"\">Selecione o lote de destino</option>";
+      if (selPastoDestinoFaz) selPastoDestinoFaz.innerHTML = "<option value=\"\">Selecione o pasto de destino</option>";
+      updateMovimentacaoHeaderButtons();
+      return;
+    }
+    const lotesList = (await idbGet("lotes", "list")) || [];
+    const pastosList = (await idbGet("pastos", "list")) || [];
+    const lotesDest = lotesList.filter((l) => String(l?.fazenda) === String(fid));
+    const pastosDest = pastosList.filter((p) => String(p?.fazenda) === String(fid));
+    if (selLoteDestinoFaz) selLoteDestinoFaz.innerHTML = "<option value=\"\">Selecione o lote de destino</option>" + lotesDest.map((l) => `<option value="${escapeHtml(l._id)}">${escapeHtml(l.nome_lote || "—")}</option>`).join("");
+    if (selPastoDestinoFaz) selPastoDestinoFaz.innerHTML = "<option value=\"\">Selecione o pasto de destino</option>" + pastosDest.map((p) => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`).join("");
+    updateMovimentacaoHeaderButtons();
+  });
+  selLoteDestinoFaz?.addEventListener("change", updateMovimentacaoHeaderButtons);
+  selPastoDestinoFaz?.addEventListener("change", updateMovimentacaoHeaderButtons);
+
+  // Pré-preenchimento dinâmico: aplica ao formulário o que chegou em get_modulos (lotes, pastos, fazendas)
+  applyModulePrefillToContainer(container, "movimentacao", "lotes");
+  applyModulePrefillToContainer(container, "movimentacao", "pastos");
+  applyModulePrefillToContainer(container, "movimentacao", "fazendas");
+  if (selFazendaDestino?.value) selFazendaDestino.dispatchEvent(new Event("change", { bubbles: true }));
+  updateMovimentacaoHeaderButtons();
+
+  document.getElementById("pipelineBackBtn")?.addEventListener("click", async () => {
+    const ok = await confirmPipelineLoseData(PIPELINE_STEP_LABELS.movimentacao, previousStepLabel);
+    if (!ok) return;
+    if (stepIndex === 0 && state.pipelineCreatedAnimalId) {
+      const okCancel = await confirmPipelineCancelCreate();
+      if (!okCancel) return;
+      const animalId = state.pipelineCreatedAnimalId;
+      const arr = (await idbGet("animais", "list")) || [];
+      const draft = arr.find((a) => String(a._id) === String(animalId));
+      if (draft) try { sessionStorage.setItem("pipelineCreateDraft", JSON.stringify(draft)); } catch (_) {}
+      const qKey = `queue:${state.ctx.fazendaId || ""}:${state.ctx.ownerId || ""}:animal`;
+      const queue = (await idbGet("records", qKey)) || [];
+      const newQueue = queue.filter((op) => !(op.op === "animal_create" && String(op.payload?._id) === String(animalId)));
+      await idbSet("records", qKey, newQueue);
+      const newArr = arr.filter((a) => String(a._id) !== String(animalId));
+      await idbSet("animais", "list", newArr);
+      state.pipelineCreatedAnimalId = null;
+      state.pipelineAnimal = null;
+      state.pipelineStepIndex = 0;
+      state.pipelineRestoreDraft = true;
+      state.pipelineFromCreate = true;
+      state.pipelineCreateCallback = (newAnimal) => {
+        state.pipelineAnimal = newAnimal;
+        state.pipelineStepIndex = 0;
+        state.pipelineCreateCallback = null;
+        renderPipelineStep(0);
+      };
+      const pipelineModal = document.getElementById("pipelineModal");
+      const stepContent = document.getElementById("pipelineStepContent");
+      if (pipelineModal) pipelineModal.hidden = true;
+      if (stepContent) stepContent.hidden = true;
+      const dash = $("#modDashboard");
+      const dashDesktop = document.getElementById("modDashboardDesktop");
+      if (dash) dash.hidden = true;
+      if (dashDesktop) dashDesktop.hidden = true;
+      const animalContainer = $("#animalModuleContainer");
+      if (animalContainer) animalContainer.hidden = false;
+      await openAnimalFormForCreate();
+      renderSidebar();
+      updateFabSyncVisibility();
+      return;
+    }
+    if (stepIndex === 0) { showPipelineModalView(); return; }
+    await renderPipelineStep(stepIndex - 1);
+  });
+
+  async function persistCurrentTabAndAdvance(goToNextTab) {
+    const arr = (await idbGet("animais", "list")) || [];
+    const idx = arr.findIndex((a) => String(a._id) === String(animal._id));
+    if (idx === -1) { toast("Animal não encontrado."); return false; }
+    const prev = arr[idx];
+    const qKey = `queue:${state.ctx.fazendaId || ""}:${state.ctx.ownerId || ""}:animal`;
+
+    if (currentTab === "lotes") {
+      const destId = selectLoteDestino?.value?.trim();
+      if (!destId) { toast("Selecione o lote de destino."); return false; }
+      let origemId = loteOrigemId;
+      if (!origemLotePredefinida) origemId = selectLoteOrigem?.value?.trim() || "";
+      if (!origemId) { toast("Selecione o lote de origem."); return false; }
+      const updated = normalizeAnimal({ ...prev, lote: destId, list_lotes: [destId], _local: prev._local || true, _sync: "pending", data_modificacao: prev.data_modificacao });
+      arr[idx] = updated;
+      const queue = (await idbGet("records", qKey)) || [];
+      queue.push({ op: OFFLINE_OPS.MOVIMENTACAO_ENTRE_LOTES, at: Date.now(), payload: updated, targetId: animal._id });
+      await idbSet("records", qKey, queue);
+    } else if (currentTab === "pastos") {
+      const destId = selectPastoDestino?.value?.trim();
+      if (!destId) { toast("Selecione o pasto de destino."); return false; }
+      let origemId = pastoOrigemId;
+      if (!origemPastoPredefinida) origemId = selectPastoOrigem?.value?.trim() || "";
+      if (!origemId) { toast("Selecione o pasto de origem."); return false; }
+      const updated = normalizeAnimal({ ...prev, pasto: destId, _local: prev._local || true, _sync: "pending", data_modificacao: prev.data_modificacao });
+      arr[idx] = updated;
+      const queue = (await idbGet("records", qKey)) || [];
+      queue.push({ op: OFFLINE_OPS.MOVIMENTACAO_ENTRE_PASTOS, at: Date.now(), payload: updated, targetId: animal._id });
+      await idbSet("records", qKey, queue);
+    } else if (currentTab === "fazendas") {
+      const fazendaDestinoId = selFazendaDestino?.value?.trim();
+      const loteDestId = selLoteDestinoFaz?.value?.trim();
+      const pastoDestId = selPastoDestinoFaz?.value?.trim();
+      if (!fazendaDestinoId || (!loteDestId && !pastoDestId)) {
+        toast("Selecione a fazenda de destino e um lote ou pasto de destino.");
+        return false;
+      }
+      const updated = normalizeAnimal({
+        ...prev,
+        fazenda: fazendaDestinoId,
+        lote: loteDestId || "",
+        pasto: pastoDestId || "",
+        list_lotes: loteDestId ? [loteDestId] : [],
+        _local: prev._local || true,
+        _sync: "pending",
+        data_modificacao: prev.data_modificacao,
+      });
+      arr[idx] = updated;
+      const qKeyDest = `queue:${fazendaDestinoId}:${state.ctx.ownerId || ""}:animal`;
+      const queueDest = (await idbGet("records", qKeyDest)) || [];
+      queueDest.push({ op: OFFLINE_OPS.MOVIMENTACAO_ENTRE_FAZENDAS, at: Date.now(), payload: updated, targetId: animal._id });
+      await idbSet("records", qKeyDest, queueDest);
+    }
+
+    await idbSet("animais", "list", arr);
+    state.pipelineAnimal = arr[idx] || state.pipelineAnimal;
+    updateFabSyncVisibility();
+    if (goToNextTab) {
+      const nextIndex = getCurrentTabIndex() + 1;
+      if (nextIndex < tabList.length) setActiveTab(tabList[nextIndex]);
+    } else {
+      await renderPipelineStep(stepIndex + 1);
+    }
+    return true;
+  }
+
+  btnAvançar?.addEventListener("click", async () => {
+    await persistCurrentTabAndAdvance(true);
+  });
+  document.getElementById("saMovBtnConcluir")?.addEventListener("click", async () => {
+    await persistCurrentTabAndAdvance(false);
+  });
+}
+
+async function renderPipelineStepPesagem(container, animal, stepIndex, isLast, previousStepLabel) {
+  container.innerHTML = `
+    <div class="pipelineStepHead">
+      <button type="button" class="pipelineBackBtn" id="pipelineBackBtn">&larr; Voltar</button>
+      <h2 class="pipelineStepTitle">${escapeHtml(PIPELINE_STEP_LABELS.pesagem)}</h2>
+      <p class="pipelineStepAnimal">Brinco ${escapeHtml(animal.brinco_padrao || "—")} — ${escapeHtml(String(animal.nome_completo || "").trim() || "—")}</p>
+    </div>
+    <div class="pipelineStepBody">
+      <div class="pipelineField">
+        <label>Peso (kg)</label>
+        <input type="number" id="pipelinePesoInput" class="pipelineInput" placeholder="kg" min="0" step="0.01" value="${animal.peso_atual_kg ?? ""}" />
+      </div>
+      <button type="button" class="pipelineCardBtn" id="pipelineBtnPesoNext">${isLast ? "Concluir" : "Próximo"}</button>
+    </div>
+  `;
+
+  document.getElementById("pipelineBackBtn")?.addEventListener("click", async () => {
+    const ok = await confirmPipelineLoseData(PIPELINE_STEP_LABELS.pesagem, previousStepLabel);
+    if (ok) await renderPipelineStep(stepIndex - 1);
+  });
+  document.getElementById("pipelineBtnPesoNext")?.addEventListener("click", async () => {
+    const pesoVal = parseFloat(document.getElementById("pipelinePesoInput")?.value) || 0;
+    const owner = await idbGet("owner", "current");
+    const userId = String(state.ctx.ownerId || owner?._id || "").trim();
+    const animalPeso = {
+      animal: animal._id,
+      data_pesagem: new Date().toISOString(),
+      peso_atual_kg: pesoVal,
+      tipo_equipamento: "Manual",
+      momento_pesagem: "Pesagem regular",
+      user: userId,
+    };
+    const arr = (await idbGet("animais", "list")) || [];
+    const idx = arr.findIndex((a) => String(a._id) === String(animal._id));
+    if (idx !== -1) {
+      const prev = arr[idx];
+      const updated = normalizeAnimal({
+        ...prev,
+        animal_peso: animalPeso,
+        peso_atual_kg: pesoVal,
+        _local: prev._local || true,
+        _sync: "pending",
+        data_modificacao: prev.data_modificacao,
+      });
+      arr[idx] = updated;
+      await idbSet("animais", "list", arr);
+      const qKey = `queue:${state.ctx.fazendaId || ""}:${state.ctx.ownerId || ""}:animal`;
+      const queue = (await idbGet("records", qKey)) || [];
+      const withoutPeso = queue.filter((item) => !(item.op === OFFLINE_OPS.ANIMAL_CREATE_PESO && String(item.payload?.animal) === String(animal._id)));
+      withoutPeso.push({ _id: `local:${uuid()}`, op: OFFLINE_OPS.ANIMAL_CREATE_PESO, at: Date.now(), payload: animalPeso });
+      await idbSet("records", qKey, withoutPeso);
+      updateFabSyncVisibility();
+    }
+    await renderPipelineStep(stepIndex + 1);
+  });
+}
+
+/** Labels das abas do módulo saida_animais (para exibição) */
+const SAIDA_ABA_LABELS = {
+  venda: "Venda",
+  morte: "Morte",
+  emprestimo: "Empréstimo",
+  "ajuste inventário": "Ajuste inventário",
+  doacao: "Doação",
+};
+
+async function renderPipelineStepSaida(container, animal, stepIndex, isLast, previousStepLabel) {
+  const pipelineWrap = document.getElementById("pipelineWrap");
+  if (pipelineWrap) pipelineWrap.classList.add("pipelineWrap--saida");
+  container.classList.add("pipelineStepContent--saida");
+
+  const saidaConfig = getModuleConfig("saida_animais");
+  const abasRaw = Array.isArray(saidaConfig?.abas) ? saidaConfig.abas : [];
+  const tabList = abasRaw.length > 0
+    ? abasRaw.map((a) => String(a.aba || a.titulo || "").trim().toLowerCase()).filter(Boolean)
+    : ["venda", "morte", "emprestimo", "ajuste inventário", "doacao"];
+  const activeTab = tabList[0] || "venda";
+  const animalLabel = `Brinco ${escapeHtml(animal.brinco_padrao || "—")} — ${escapeHtml(String(animal.nome_completo || "").trim() || "—")}`;
+
+  const tabsHtml = tabList
+    .map(
+      (tabKey) =>
+        `<span class="movTab pipelineMovTab pipelineMovTab--step ${tabKey === activeTab ? "active" : ""}" data-tab="${escapeHtml(tabKey)}" role="tab">${escapeHtml(SAIDA_ABA_LABELS[tabKey] || tabKey)}</span>`
+    )
+    .join("");
+
+  container.innerHTML = `
+    <div class="saVendaForm saMovForm" id="saMovFormSaida">
+      <div class="pageHead">
+        <div class="pageHeadRow1">
+          <button type="button" class="animalFormBackBtn" id="pipelineSaidaBackBtn" aria-label="Voltar">&larr; Voltar</button>
+          <div class="pageHeadActions">
+            <button type="button" class="animalFormHeaderBtn btnSaveAnimal" id="saidaBtnAvançar" style="display:none;">Avançar</button>
+            <button type="button" class="animalFormHeaderBtn btnSaveAnimal" id="saidaBtnConcluir">${isLast ? "Concluir" : "Próximo"}</button>
+          </div>
+        </div>
+        <div class="pageHeadRow2">
+          <h1 class="pageTitle">${escapeHtml(PIPELINE_STEP_LABELS.saida_animais)}</h1>
+          <p class="pageSub">Registre a saída do animal</p>
+          <p class="saVendaHeaderAnimal">${animalLabel}</p>
+        </div>
+      </div>
+      <div class="saVendaFormBody saVendaFormOnly">
+        <div class="saVendaFormCard">
+          ${tabList.length > 1 ? `<div class="movTabs pipelineMovTabs" role="tablist">${tabsHtml}</div>` : ""}
+          <div id="pipelineSaidaFormWrap" class="pipelineSaidaFormWrap"></div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  state.pipelineStepIndex = stepIndex;
+  let currentTab = activeTab;
+  const formWrap = document.getElementById("pipelineSaidaFormWrap");
+  const btnAvançar = document.getElementById("saidaBtnAvançar");
+  const btnConcluir = document.getElementById("saidaBtnConcluir");
+
+  function getCurrentTabIndex() {
+    const idx = tabList.indexOf(currentTab);
+    return idx >= 0 ? idx : 0;
+  }
+  function hasNextTab() {
+    return tabList.length > 1 && getCurrentTabIndex() < tabList.length - 1;
+  }
+  function setTabActive(tabKey) {
+    currentTab = tabKey;
+    container.querySelectorAll(".pipelineMovTab[data-tab]").forEach((t) => {
+      t.classList.toggle("active", t.getAttribute("data-tab") === tabKey);
+    });
+  }
+  function advanceOrFinish() {
+    if (hasNextTab()) {
+      const nextIdx = getCurrentTabIndex() + 1;
+      const nextTab = tabList[nextIdx];
+      setTabActive(nextTab);
+      renderSaidaTabContent(nextTab);
+      if (btnAvançar) btnAvançar.style.display = "none";
+      if (btnConcluir) btnConcluir.style.display = "";
+      if (nextIdx < tabList.length - 1) {
+        if (btnConcluir) btnConcluir.textContent = "Próximo";
+      } else {
+        if (btnConcluir) btnConcluir.textContent = isLast ? "Concluir" : "Próximo";
+      }
+    } else {
+      container.classList.remove("pipelineStepContent--saida");
+      if (pipelineWrap) pipelineWrap.classList.remove("pipelineWrap--saida");
+      renderPipelineStep(stepIndex + 1);
+    }
+  }
+  async function renderSaidaTabContent(tabKey) {
+    if (!formWrap) return;
+    if (tabKey === "venda") {
+      await renderSaidaAnimaisVendaForm(formWrap, {
+        preselectedAnimal: animal,
+        onAfterConfirm: () => advanceOrFinish(),
+        onBack: async () => {
+          const ok = await confirmPipelineLoseData(PIPELINE_STEP_LABELS.saida_animais, previousStepLabel);
+          if (ok) {
+            container.classList.remove("pipelineStepContent--saida");
+            if (pipelineWrap) pipelineWrap.classList.remove("pipelineWrap--saida");
+            await renderPipelineStep(stepIndex - 1);
+          }
+        },
+      });
+      if (hasNextTab()) {
+        if (btnAvançar) btnAvançar.style.display = "none";
+        if (btnConcluir) btnConcluir.style.display = "";
+      }
+      return;
+    }
+    if (tabKey === "morte") {
+      await renderSaidaAnimaisMorteForm(formWrap, animal, { 
+        headerButton: btnConcluir,
+        onAfterConfirm: () => advanceOrFinish(),
+        onBack: async () => {
+          const ok = await confirmPipelineLoseData("Registro de morte", previousStepLabel);
+          if (ok) {
+            setTabActive("venda");
+            renderSaidaTabContent("venda");
+            if (btnAvançar) btnAvançar.style.display = "none";
+            if (btnConcluir) btnConcluir.style.display = "";
+            if (btnConcluir) btnConcluir.textContent = isLast ? "Concluir" : "Próximo";
+          }
+        },
+      });
+      return;
+    }
+    formWrap.innerHTML = `
+      <div class="saVendaFormCard" style="padding:2rem;text-align:center;">
+        <p class="pageSub" style="margin:0;">Formulário "${escapeHtml(SAIDA_ABA_LABELS[tabKey] || tabKey)}" em preparação.</p>
+        <button type="button" class="pipelineCardBtn" id="saidaPlaceholderAvançar" style="margin-top:1rem;">Avançar</button>
+      </div>`;
+    formWrap.querySelector("#saidaPlaceholderAvançar")?.addEventListener("click", () => advanceOrFinish());
+  }
+
+  document.getElementById("pipelineSaidaBackBtn")?.addEventListener("click", async () => {
+    if (getCurrentTabIndex() === 0) {
+      const ok = await confirmPipelineLoseData(PIPELINE_STEP_LABELS.saida_animais, previousStepLabel);
+      if (ok) {
+        container.classList.remove("pipelineStepContent--saida");
+        if (pipelineWrap) pipelineWrap.classList.remove("pipelineWrap--saida");
+        await renderPipelineStep(stepIndex - 1);
+      }
+    } else {
+      const prevTab = tabList[getCurrentTabIndex() - 1];
+      setTabActive(prevTab);
+      renderSaidaTabContent(prevTab);
+      if (btnConcluir) btnConcluir.style.display = "";
+      if (btnAvançar) btnAvançar.style.display = "none";
+    }
+  });
+  if (btnConcluir) {
+    btnConcluir.style.display = tabList.length > 1 ? "" : "";
+    btnConcluir.addEventListener("click", () => {});
+  }
+  await renderSaidaTabContent(activeTab);
+}
+
+/** Formulário e popup de registro de morte (aba Morte — linha de produção; animal já definido). */
+async function renderSaidaAnimaisMorteForm(container, animal, options = {}) {
+  if (!container) return;
+  const headerBtn = options.headerButton || null;
+  const today = new Date().toISOString().slice(0, 10);
+  const causaOptions = CAUSA_MORTE_LIST.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+  const colaboradoresRaw = await idbGet("colaboradores", "list");
+  const colaboradores = Array.isArray(colaboradoresRaw) ? colaboradoresRaw : (state.colaboradoresList || []);
+  const responsavelOptions = colaboradores
+    .map((c) => `<option value="${escapeHtml(c._id || "")}">${escapeHtml(c.nome || "—")}</option>`)
+    .join("");
+
+  container.innerHTML = `
+    <div class="saVendaForm saVendaFormPipeline" id="saMorteForm">
+      <div class="saVendaFormGrid" style="grid-template-columns: 1fr 1fr;">
+        <div class="saVendaField">
+          <label for="morteCausaMorte">Causa da morte <span class="saVendaRequired">*</span></label>
+          <select id="morteCausaMorte" class="saVendaSelect" required>
+            <option value="">Selecione a causa da morte</option>${causaOptions}
+          </select>
+        </div>
+        <div class="saVendaField">
+          <label for="morteResponsavel">Responsável <span class="saVendaRequired">*</span></label>
+          <select id="morteResponsavel" class="saVendaSelect" required>
+            <option value="">Selecione o responsável</option>${responsavelOptions}
+          </select>
+        </div>
+        <div class="saVendaField">
+          <label for="morteDataMorte">Data da morte <span class="saVendaRequired">*</span></label>
+          <input type="date" id="morteDataMorte" class="saVendaInput" value="${today}" required />
+        </div>
+        <div class="saVendaField" style="grid-column: 1 / -1;">
+          <label for="morteDetalhesObservacoes">Detalhes/Observações</label>
+          <textarea id="morteDetalhesObservacoes" class="saVendaInput" rows="3" placeholder="Digite aqui...."></textarea>
+        </div>
+        <div class="saVendaField" style="grid-column: 1 / -1;">
+          <label>Imagem do brinco ou animal</label>
+          <div class="saVendaUploadArea" id="morteImagemBrincoWrap" style="border:1px dashed var(--border);border-radius:8px;padding:1.5rem;text-align:center;cursor:pointer;position:relative;">
+            <span class="saVendaUploadIcon" aria-hidden="true" style="font-size:1.5rem;">☁</span>
+            <p class="saVendaUploadText" style="margin:8px 0 0;font-size:13px;color:var(--muted);">Clique para fazer upload</p>
+            <p class="saVendaUploadText" style="margin:4px 0 0;font-size:11px;color:var(--muted);">SVG, PNG, JPG ou GIF (máx. 800x400px)</p>
+            <input type="file" id="morteImagemBrinco" accept="image/svg+xml,image/png,image/jpeg,image/gif" style="display:none;" />
+            <div id="morteImagemPreview" class="saVendaUploadPreview" style="display:none;position:relative;margin-top:12px;max-width:100%;justify-content:center;">
+              <button type="button" id="morteImagemRemove" aria-label="Remover imagem" style="position:absolute;top:6px;right:6px;width:24px;height:24px;border-radius:999px;border:none;background:rgba(0,0,0,0.65);color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;">×</button>
+              <img id="morteImagemPreviewImg" alt="Pré-visualização da imagem do brinco ou animal" style="max-width:100%;max-height:200px;border-radius:8px;object-fit:cover;" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="morteModalConfirm" class="saVendaModalOverlay" hidden aria-modal="true" role="dialog">
+      <div class="saVendaModal" style="max-width:400px;">
+        <div class="saVendaModalHeader">
+          <h2 class="saVendaModalTitle">Registrar morte</h2>
+          <button type="button" class="saVendaModalClose" id="morteModalClose" aria-label="Fechar">&times;</button>
+        </div>
+        <div class="saVendaModalBody" style="display:flex;flex-direction:column;gap:12px;">
+          <div style="display:flex;align-items:flex-start;gap:12px;">
+            <span style="background:#f59e0b;color:#fff;width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">!</span>
+            <div>
+              <p style="margin:0;font-size:14px;">Tem certeza que deseja registrar a morte do animal, brinco: <strong id="morteModalBrinco">—</strong>?</p>
+              <p style="margin:8px 0 0;font-size:13px;color:var(--muted);">Após confirmar, esse animal ficará inativo!</p>
+            </div>
+          </div>
+        </div>
+        <div class="saVendaModalFooter">
+          <button type="button" class="saVendaModalBtn saVendaModalBtnCancel" id="morteModalCancel">Cancelar</button>
+          <button type="button" class="saVendaModalBtn saVendaModalBtnConfirm" id="morteModalConfirmBtn">Registrar morte</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  applyModulePrefillToContainer(container, "saida_animais", "Morte");
+
+  const modal = container.querySelector("#morteModalConfirm");
+  const modalClose = container.querySelector("#morteModalClose");
+  const modalCancel = container.querySelector("#morteModalCancel");
+  const modalConfirmBtn = container.querySelector("#morteModalConfirmBtn");
+  const brincoEl = container.querySelector("#morteModalBrinco");
+  const inputCausa = container.querySelector("#morteCausaMorte");
+  const inputResponsavel = container.querySelector("#morteResponsavel");
+  const inputDataMorte = container.querySelector("#morteDataMorte");
+  const inputDetalhes = container.querySelector("#morteDetalhesObservacoes");
+  const inputImagem = container.querySelector("#morteImagemBrinco");
+  const wrapImagem = container.querySelector("#morteImagemBrincoWrap");
+  const previewWrap = container.querySelector("#morteImagemPreview");
+  const previewImg = container.querySelector("#morteImagemPreviewImg");
+  const btnRemoveImg = container.querySelector("#morteImagemRemove");
+  let morteImagemBase64 = null;
+
+  if (wrapImagem && inputImagem) {
+    wrapImagem.addEventListener("click", (ev) => {
+      if (ev.target === btnRemoveImg) return;
+      inputImagem.click();
+    });
+  }
+
+  function isFormValid() {
+    const causa = inputCausa?.value?.trim();
+    const responsavel = inputResponsavel?.value?.trim();
+    const dataMorte = inputDataMorte?.value?.trim();
+    const ok = !!(causa && responsavel && dataMorte);
+    if (headerBtn) {
+      headerBtn.disabled = !ok;
+      headerBtn.classList.toggle("pipelineBtnAvançarActive", ok);
+    }
+    return ok;
+  }
+
+  function applyImageState() {
+    if (!wrapImagem) return;
+    const hasImage = !!morteImagemBase64;
+    const icon = wrapImagem.querySelector(".saVendaUploadIcon");
+    const texts = wrapImagem.querySelectorAll(".saVendaUploadText");
+    if (icon) icon.style.display = hasImage ? "none" : "";
+    texts.forEach((t) => { t.style.display = hasImage ? "none" : ""; });
+    if (previewWrap) previewWrap.style.display = hasImage ? "flex" : "none";
+  }
+
+  if (inputImagem) {
+    inputImagem.addEventListener("change", () => {
+      const file = inputImagem.files && inputImagem.files[0];
+      if (!file) {
+        morteImagemBase64 = null;
+        if (previewImg) previewImg.src = "";
+        applyImageState();
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        morteImagemBase64 = reader.result;
+        if (previewImg) previewImg.src = morteImagemBase64;
+        applyImageState();
+      };
+      reader.onerror = () => {
+        toast("Não foi possível ler a imagem. Tente novamente.");
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  if (btnRemoveImg) {
+    btnRemoveImg.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      morteImagemBase64 = null;
+      if (inputImagem) inputImagem.value = "";
+      if (previewImg) previewImg.src = "";
+      applyImageState();
+    });
+  }
+
+  function openModal() {
+    if (!isFormValid()) {
+      // Mensagens específicas para ajudar o usuário se ele tentar forçar
+      const causa = inputCausa?.value?.trim();
+      if (!causa) {
+        toast("Selecione a causa da morte.");
+        return;
+      }
+      const responsavel = inputResponsavel?.value?.trim();
+      if (!responsavel) {
+        toast("Selecione o responsável.");
+        return;
+      }
+      const dataMorte = inputDataMorte?.value?.trim();
+      if (!dataMorte) {
+        toast("Informe a data da morte.");
+        return;
+      }
+    }
+    const causa = inputCausa?.value?.trim();
+    const responsavel = inputResponsavel?.value?.trim();
+    const dataMorte = inputDataMorte?.value?.trim();
+    if (brincoEl) brincoEl.textContent = animal.brinco_padrao || "—";
+    if (modal) modal.hidden = false;
+  }
+  function closeModal() {
+    if (modal) modal.hidden = true;
+  }
+  if (modalClose) modalClose.addEventListener("click", closeModal);
+  if (modalCancel) modalCancel.addEventListener("click", closeModal);
+
+  if (modalConfirmBtn) {
+    modalConfirmBtn.addEventListener("click", async () => {
+      closeModal();
+      const causa = inputCausa?.value?.trim() || "";
+      const responsavel = inputResponsavel?.value?.trim() || "";
+      const dataMorte = inputDataMorte?.value?.trim() || "";
+      const detalhes = inputDetalhes?.value?.trim() || "";
+      const owner = await idbGet("owner", "current");
+      const userAtualId = String(state.ctx.ownerId || owner?._id || "").trim();
+      const fazendaOrigemId = state.ctx.fazendaId || "";
+      const dataMorteTs = dataMorte ? new Date(dataMorte).getTime() : null;
+
+      const payload = {
+        animais: [animal._id],
+        animal: animal._id,
+        animal_peso: null,
+        proprietario_destino: null,
+        fazenda_destino: null,
+        peso_saida: null,
+        nota_fiscal: "",
+        data_aquisicao: null,
+        valor: null,
+        condicao_pagamento: "",
+        movimentacao_saida_animal: "Morte",
+        movimentacao_entrada_animal: "",
+        numero_gta: "",
+        serie_gta: "",
+        data_emissao_gta: null,
+        data_validade_gta: null,
+        uf_gta: "",
+        fazenda_origem: fazendaOrigemId || null,
+        user_atual: userAtualId || null,
+        valor_saida: null,
+        causa_morte: causa,
+        detalhes_observacoes: detalhes,
+        responsavel,
+        data_morte: dataMorteTs,
+        imagem_brinco_animal: morteImagemBase64,
+      };
+      const qKey = `queue:${fazendaOrigemId}:${state.ctx.ownerId || ""}:animal`;
+      const queue = (await idbGet("records", qKey)) || [];
+      queue.push({ _id: `local:${uuid()}`, op: OFFLINE_OPS.CREATE_SAIDA_ANIMAIS_MORTE, at: Date.now(), payload });
+      await idbSet("records", qKey, queue);
+      updateFabSyncVisibility();
+      toast("Morte registrada. Será sincronizada quando houver conexão.");
+      options?.onAfterConfirm?.();
+    });
+  }
+
+  if (headerBtn) {
+    headerBtn.textContent = "Registrar morte";
+    headerBtn.disabled = true;
+    headerBtn.classList.remove("pipelineBtnAvançarActive");
+    headerBtn.onclick = openModal;
+  }
+
+  ["change", "input"].forEach((evt) => {
+    inputCausa?.addEventListener(evt, isFormValid);
+    inputResponsavel?.addEventListener(evt, isFormValid);
+    inputDataMorte?.addEventListener(evt, isFormValid);
+  });
+  isFormValid();
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 // ---------------- Form helpers ----------------
@@ -974,261 +2303,6 @@ function animalDisplayName(a) {
   if (name) return name;
   const br = String(a?.brinco_padrao || "").trim();
   return br ? `Animal ${br}` : "Animal";
-}
-
-async function renderAnimalList() {
-  const secList = $("#modAnimaisList");
-  const secForm = $("#modAnimaisForm");
-  const animalContainer = $("#animalModuleContainer");
-
-  // Garante que o container está visível
-  if (animalContainer) animalContainer.hidden = false;
-  
-  // Garante visibilidade interna
-  if (secList) secList.hidden = false;
-  if (secForm) secForm.hidden = true;
-
-  // Header principal esconde pois a lista já tem seu próprio greeting
-  setPageHeadVisible(false);
-
-  // Remove o botão "Home" se existir (não deve aparecer no mobile)
-  const backDiv = document.getElementById("mobileBackDash");
-  if (backDiv) {
-    backDiv.remove();
-  }
-
-  // Aguarda um frame para garantir que o DOM está pronto
-  await new Promise(resolve => requestAnimationFrame(resolve));
-
-  // Dados do cache
-  const fazenda = await idbGet("fazenda", "current");
-  const farmName = fazenda?.name || "—";
-  const farmLabel = $("#farmCurrent");
-  if (farmLabel) farmLabel.textContent = farmName;
-
-  const allRaw = (await idbGet("animais", "list")) || [];
-  const all = filterByCurrentFazenda(allRaw);
-  const pastosRaw = (await idbGet("pastos", "list")) || [];
-  const pastos = filterByCurrentFazenda(pastosRaw);
-  const pastoById = Object.fromEntries((pastos || []).map(p => [String(p._id || ""), p.nome || "—"]));
-  const searchEl = $("#animalSearch");
-  const searchElDesktop = $("#animalSearchDesktop");
-  const cardsList = $("#animalCardsList");
-  const tableBody = $("#animalTableBody");
-  const isDesktop = typeof window !== "undefined" && window.innerWidth >= 800;
-  const searchVal = normText(isDesktop ? (searchElDesktop ? searchElDesktop.value : "") : (searchEl ? searchEl.value : ""));
-
-  // No desktop só existe tableBody; no mobile só existe cardsList. Só retorna se nenhum dos dois existir.
-  if (!cardsList && !tableBody) {
-    setTimeout(async () => {
-      const retryCards = $("#animalCardsList");
-      const retryTable = $("#animalTableBody");
-      if (retryCards || retryTable) await renderAnimalList();
-    }, 100);
-    return;
-  }
-
-  const q = searchVal;
-
-  let list = Array.isArray(all) ? all.slice() : [];
-  list = list.map(normalizeAnimal);
-
-  // Filtro padrão: apenas não deletados (removemos lógica de "mortos" vs "ativos")
-  list = list.filter(a => !a.deleted);
-
-  // Busca
-  if (q) {
-    list = list.filter(a => {
-      const br = normText(a?.brinco_padrao);
-      const nm = normText(a?.nome_completo);
-      return br.includes(q) || nm.includes(q);
-    });
-  }
-
-  // Ordenação
-  list.sort((a, b) => {
-    const an = Number(String(a?.brinco_padrao || "").replace(/\D+/g, ""));
-    const bn = Number(String(b?.brinco_padrao || "").replace(/\D+/g, ""));
-    if (Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return an - bn;
-    return String(a?.brinco_padrao || "").localeCompare(String(b?.brinco_padrao || ""));
-  });
-
-  // Renderiza Cards Mobile
-  if (cardsList) {
-    cardsList.innerHTML = "";
-    
-    if (list.length === 0) {
-      cardsList.innerHTML = `
-        <div style="text-align: center; padding: 40px 20px; color: var(--muted);">
-          <p style="font-size: 14px; font-weight: 600;">Nenhum animal encontrado</p>
-          <p style="font-size: 13px; margin-top: 8px;">Tente ajustar sua busca</p>
-        </div>
-      `;
-    } else {
-      for (const a of list) {
-        const card = document.createElement("div");
-        card.className = `animalCard ${a.sexo === "M" ? "male" : "female"}`;
-        card.dataset.id = a._id || "";
-
-        // Determina texto de detalhes (raça, peso e pasto)
-        const raca = escapeHtml(a?.raca || "—");
-        const peso = fmtKg(a?.peso_atual_kg);
-        const pastoNome = pastoById[String(a?.pasto || "")] || "—";
-        const details = `${raca} • ${peso} • Pasto: ${escapeHtml(pastoNome)}`;
-
-        // Flag de sincronização
-        const syncFlag = a._sync === "pending" ? '<span style="font-size: 10px; color: #f59e0b; margin-left: 4px;">⏳</span>' : '';
-        
-        card.innerHTML = `
-          <div class="animalCardIcon">🐮</div>
-          <div class="animalCardContent">
-            <div class="animalCardBrinco">${escapeHtml(a?.brinco_padrao || "—")}${syncFlag}</div>
-            <div class="animalCardDetails">${details}</div>
-          </div>
-        `;
-
-        card.onclick = async () => {
-          await openAnimalFormForEdit(a._id);
-        };
-
-        cardsList.appendChild(card);
-      }
-    }
-  }
-
-  // Tabela Desktop: preenche linhas com paginação (10 itens por página quando há >= 10 itens)
-  const ITEMS_PER_PAGE = 10;
-  const paginationEl = $("#animalTablePagination");
-  if (tableBody) {
-    tableBody.innerHTML = "";
-    if (list.length === 0) {
-      tableBody.innerHTML = `
-        <tr><td colspan="8" style="text-align: center; padding: 32px; color: var(--muted); font-size: 13px;">Nenhum animal encontrado. Tente ajustar a busca.</td></tr>
-      `;
-      if (paginationEl) {
-        paginationEl.hidden = true;
-        paginationEl.innerHTML = "";
-      }
-    } else {
-      const totalItems = list.length;
-      const showPagination = totalItems >= ITEMS_PER_PAGE;
-      if (!showPagination) {
-        if (state.animalListDesktopPage !== undefined) state.animalListDesktopPage = 1;
-      }
-      const totalPages = showPagination ? Math.ceil(totalItems / ITEMS_PER_PAGE) : 1;
-      let page = showPagination ? (state.animalListDesktopPage || 1) : 1;
-      if (page < 1) page = 1;
-      if (page > totalPages) page = totalPages;
-      state.animalListDesktopPage = page;
-
-      const start = (page - 1) * ITEMS_PER_PAGE;
-      const pageList = showPagination ? list.slice(start, start + ITEMS_PER_PAGE) : list;
-
-      for (const a of pageList) {
-        const tr = document.createElement("tr");
-        tr.dataset.id = a._id || "";
-        const statusClass = a._sync === "pending" ? "pending" : "synced";
-        const statusText = a._sync === "pending" ? "Pendente" : "Sincronizado";
-        const pastoNome = pastoById[String(a?.pasto || "")] || "—";
-        tr.innerHTML = `
-          <td>${escapeHtml(a?.brinco_padrao || "—")}</td>
-          <td>${escapeHtml(a?.nome_completo || "—")}</td>
-          <td>${fmtDateDisplay(a?.data_nascimento)}</td>
-          <td>${escapeHtml(renderSex(a?.sexo))}</td>
-          <td>${escapeHtml(a?.categoria || "—")}</td>
-          <td>${escapeHtml(fmtKg(a?.peso_atual_kg))}</td>
-          <td>${escapeHtml(pastoNome)}</td>
-          <td><span class="animalTableStatus ${statusClass}">${statusText}</span></td>
-        `;
-        tr.onclick = async () => {
-          await openAnimalFormForEdit(a._id);
-        };
-        tableBody.appendChild(tr);
-      }
-
-      if (paginationEl) {
-        if (showPagination) {
-          paginationEl.hidden = false;
-          paginationEl.innerHTML = `
-            <button type="button" class="paginationBtn" id="animalPaginationPrev" ${page <= 1 ? "disabled" : ""}>Anterior</button>
-            <span class="paginationInfo">Página ${page} de ${totalPages}</span>
-            <button type="button" class="paginationBtn" id="animalPaginationNext" ${page >= totalPages ? "disabled" : ""}>Próxima</button>
-          `;
-          const prevBtn = $("#animalPaginationPrev");
-          const nextBtn = $("#animalPaginationNext");
-          if (prevBtn && page > 1) {
-            prevBtn.onclick = () => {
-              state.animalListDesktopPage = page - 1;
-              renderAnimalList();
-            };
-          }
-          if (nextBtn && page < totalPages) {
-            nextBtn.onclick = () => {
-              state.animalListDesktopPage = page + 1;
-              renderAnimalList();
-            };
-          }
-        } else {
-          paginationEl.hidden = true;
-          paginationEl.innerHTML = "";
-        }
-      }
-    }
-  }
-
-  // Bind Search (mobile): atualiza lista e mantém desktop em sync
-  if (searchEl && !searchEl.__bound) {
-    searchEl.__bound = true;
-    searchEl.addEventListener("input", async () => {
-      if (searchElDesktop) searchElDesktop.value = searchEl.value;
-      await renderAnimalList();
-    });
-  }
-
-  // Bind Search Button (mobile)
-  const searchBtn = document.querySelector(".animalSearchBtn");
-  if (searchBtn && !searchBtn.__bound) {
-    searchBtn.__bound = true;
-    searchBtn.onclick = async () => {
-      await renderAnimalList();
-    };
-  }
-
-  // Bind Search Desktop: atualiza lista e mantém mobile em sync
-  if (searchElDesktop && !searchElDesktop.__bound) {
-    searchElDesktop.__bound = true;
-    searchElDesktop.addEventListener("input", async () => {
-      if (searchEl) searchEl.value = searchElDesktop.value;
-      await renderAnimalList();
-    });
-  }
-
-  // Bind Create Animal Button (mobile)
-  const btnCreateAnimal = $("#btnCreateAnimal");
-  if (btnCreateAnimal && !btnCreateAnimal.__bound) {
-    btnCreateAnimal.__bound = true;
-    btnCreateAnimal.addEventListener("click", async () => {
-      await openAnimalFormForCreate();
-    });
-  }
-
-  // Bind Create Animal Button (desktop)
-  const btnCreateAnimalDesktop = $("#btnCreateAnimalDesktop");
-  if (btnCreateAnimalDesktop && !btnCreateAnimalDesktop.__bound) {
-    btnCreateAnimalDesktop.__bound = true;
-    btnCreateAnimalDesktop.addEventListener("click", async () => {
-      await openAnimalFormForCreate();
-    });
-  }
-
-  // Bind Back Button
-  const backBtn = $("#animalBackBtn");
-  if (backBtn && !backBtn.__bound) {
-    backBtn.__bound = true;
-    backBtn.onclick = async () => {
-      await openDashboard();
-    };
-  }
 }
 
 // ---------------- Animal module: FORM (CREATE / EDIT) ----------------
@@ -1483,7 +2557,12 @@ async function renderAnimalLoteChips(ids = []) {
 }
 
 async function fillOwnersAndLotesInForm() {
-  const proprietarios = (await idbGet("fazenda", "list_proprietarios")) || [];
+  // Proprietários agora vêm da tabela de colaboradores, filtrando por fazenda vinculada
+  const colaboradores = (await idbGet("colaboradores", "list")) || [];
+  const fazendaId = getCurrentFazendaId();
+  const proprietarios = colaboradores.filter(c =>
+    Array.isArray(c.fazendas) && c.fazendas.some(f => String(f) === String(fazendaId))
+  );
   const lotesRaw = (await idbGet("lotes", "list")) || [];
   const lotes = filterByCurrentFazenda(lotesRaw);
   const pastosRaw = (await idbGet("pastos", "list")) || [];
@@ -1597,67 +2676,13 @@ function bindAnimalFormUIOnce() {
       try {
         await saveAnimalFromForm();
       } finally {
-        document.querySelectorAll(".btnSaveAnimal").forEach((b) => {
+        allSaveBtns.forEach((b) => {
           b.disabled = false;
           b.textContent = "Salvar Animal";
         });
-        updateSaveButtonState();
       }
     });
   });
-
-  // Validação em tempo real dos campos obrigatórios
-  const requiredFields = [
-    "#animalOwnerSelect",
-    "#animalBrinco",
-    "#animalSexo",
-    "#animalNasc",
-    "#animalCategoria",
-    "#animalRaca"
-  ];
-  
-  requiredFields.forEach(selector => {
-    const field = $(selector);
-    if (field && !field.__validationBound) {
-      field.__validationBound = true;
-      field.addEventListener("input", updateSaveButtonState);
-      field.addEventListener("change", updateSaveButtonState);
-    }
-  });
-
-  const nascEl = $("#animalNasc");
-  if (nascEl && !nascEl.__idadeBound) {
-    nascEl.__idadeBound = true;
-    nascEl.addEventListener("input", updateAnimalIdadeDisplay);
-    nascEl.addEventListener("change", updateAnimalIdadeDisplay);
-  }
-
-  updateAnimalIdadeDisplay();
-  updateSaveButtonState();
-
-  // botões voltar
-  const backIds = ["btnVoltarLista", "btnVoltarLista2", "btnVoltarLista3", "btnVoltarTopo"];
-  backIds.forEach(id => {
-    const b = $("#" + id);
-    if (b && !b.__bound) {
-      b.__bound = true;
-      b.addEventListener("click", async (e) => {
-        e.preventDefault(); // prevenir behavior indesejado
-        await openAnimalList();
-      });
-    }
-  });
-
-  // salvar (top)
-  const btnSave = $("#btnSave");
-  if (btnSave) {
-    btnSave.onclick = async () => {
-      await saveAnimalFromForm();
-    };
-  }
-
-  // salvar (bottom - mobile)
-  // Botão salvar já está configurado em bindAnimalFormUIOnce
 
   // toggle avançado
   const tgl = $("#toggleAdvanced");
@@ -1678,36 +2703,7 @@ function applyAdvancedVisibility() {
 }
 
 async function openAnimalList() {
-  state.animalView = "list";
-  state.animalEditingId = null;
-
-  // atualiza “módulo” com layout da lista
-  const m = MODULE_CATALOG["animal"];
-  setPageHeadTexts(m.pageTitle, m.pageSub);
-  setPageHeadVisible(false);
-
-  const secList = $("#modAnimaisList");
-  const secForm = $("#modAnimaisForm");
-  if (secList) secList.hidden = false;
-  if (secForm) secForm.hidden = true;
-
-  // Aguarda um frame para garantir que o DOM está atualizado
-  await new Promise(resolve => requestAnimationFrame(resolve));
-  
-  await renderAnimalList();
-
-  // Esconde FAB Sync no módulo animal
-  const fabSync = document.getElementById("fabSync");
-  if (fabSync) {
-    fabSync.hidden = true;
-    fabSync.style.display = "none";
-    fabSync.style.visibility = "hidden";
-    fabSync.style.opacity = "0";
-    fabSync.style.pointerEvents = "none";
-  }
-
-  // Salva estado de navegação
-  await saveNavigationState();
+  await openDashboard();
 }
 
 async function openAnimalFormForCreate() {
@@ -1735,7 +2731,17 @@ async function openAnimalFormForCreate() {
   const secList = $("#modAnimaisList");
   const secForm = $("#modAnimaisForm");
   if (secList) secList.hidden = true;
-  if (secForm) secForm.hidden = false;
+  if (secForm) {
+    secForm.hidden = false;
+    // Quando o form de animal é aberto como parte da linha de produção,
+    // marcamos o formulário com uma classe especial para aplicar o mesmo
+    // estilo/posicionamento dos módulos do pipeline.
+    if (state.pipelineFromCreate) {
+      secForm.classList.add("animalFormPipeline");
+    } else {
+      secForm.classList.remove("animalFormPipeline");
+    }
+  }
 
   bindAnimalFormUIOnce();
   populateFixedDropdowns(); // Popula dropdowns fixos (UF, Raça, etc.)
@@ -1747,9 +2753,19 @@ async function openAnimalFormForCreate() {
   if (tgl) tgl.checked = false;
   applyAdvancedVisibility();
 
-  // default owner - primeiro da lista (já selecionado em fillOwnersAndLotesInForm)
-  const proprietarios = (await idbGet("fazenda", "list_proprietarios")) || [];
-  const defaultOwner = proprietarios.length > 0 ? proprietarios[0]._id : (state.ctx.ownerId || "");
+  // default owner - colaborador_principal da fazenda; se não houver, primeiro colaborador vinculado ou ownerId da sessão
+  const fazendaAtual = await idbGet("fazenda", "current");
+  const colaboradores = (await idbGet("colaboradores", "list")) || [];
+  const fazendaId = getCurrentFazendaId();
+  const principalId = fazendaAtual?.colaborador_principal;
+  let defaultOwner = principalId || "";
+  if (!defaultOwner) {
+    const vinculado = colaboradores.find(c =>
+      Array.isArray(c.fazendas) && c.fazendas.some(f => String(f) === String(fazendaId))
+    );
+    if (vinculado) defaultOwner = vinculado._id;
+  }
+  if (!defaultOwner) defaultOwner = state.ctx.ownerId || "";
   
   const initData = {
     owner: defaultOwner,
@@ -1782,10 +2798,48 @@ async function openAnimalFormForCreate() {
 
   await writeAnimalFormByIds(initData);
 
-  // título no header (se você quiser diferenciar)
+  if (state.pipelineRestoreDraft) {
+    state.pipelineRestoreDraft = false;
+    try {
+      const raw = sessionStorage.getItem("pipelineCreateDraft");
+      if (raw) {
+        const draft = JSON.parse(raw);
+        sessionStorage.removeItem("pipelineCreateDraft");
+        const formData = {
+          owner: draft.proprietario || draft.owner || "",
+          animal_type: draft.animal_type || "Físico",
+          brinco_padrao: draft.brinco_padrao || "",
+          sexo: draft.sexo || "",
+          peso_atual_kg: draft.peso_atual_kg ?? 0,
+          data_nascimento: draft.data_nascimento || "",
+          categoria: draft.categoria || "",
+          raca: draft.raca || "",
+          nome_completo: draft.nome_completo || "",
+          finalidade: draft.finalidade || "",
+          peso_nascimento: draft.peso_nascimento ?? 0,
+          sisbov: draft.sisbov || "",
+          identificacao_eletronica: draft.identificacao_eletronica || "",
+          rgd: draft.rgd || "",
+          rgn: draft.rgn || "",
+          list_lotes: Array.isArray(draft.list_lotes) ? draft.list_lotes : (draft.lote ? [draft.lote] : []),
+          lote: draft.lote || "",
+          pasto: draft.pasto || "",
+          observacoes: draft.observacoes || "",
+          mae_cadastrada: draft.mae_cadastrada || "0",
+          pai_cadastrado: draft.pai_cadastrado || "0",
+          mae_vinculo: draft.mae_vinculo || "",
+          pai_vinculo: draft.pai_vinculo || "",
+          gta: draft.gta || "",
+          uf: draft.uf || "",
+          entry_type: draft.entry_type || "Compra",
+        };
+        await writeAnimalFormByIds(formData);
+      }
+    } catch (_) {}
+  }
+
   setPageHeadTexts("Informações do animal", "Cadastre ou atualize aqui");
 
-  // Garante que FAB Sync está escondido no form
   const fabSync2 = document.getElementById("fabSync");
   if (fabSync2) {
     fabSync2.hidden = true;
@@ -1795,111 +2849,8 @@ async function openAnimalFormForCreate() {
     fabSync2.style.pointerEvents = "none";
   }
 
-  // Salva estado de navegação
   await saveNavigationState();
 }
-
-async function openAnimalFormForEdit(animalId) {
-  if (await isSyncInProgress()) {
-    toast("Aguarde a finalização da sincronização para editar animais.");
-    return;
-  }
-
-  const all = (await idbGet("animais", "list")) || [];
-  const a = (Array.isArray(all) ? all : []).find(x => String(x?._id) === String(animalId));
-
-  if (!a) {
-    toast("Não foi possível abrir: animal não encontrado no cache.");
-    return;
-  }
-
-  state.view = "module";
-  state.activeKey = "animal";
-  state.animalView = "form";
-  state.animalEditingId = String(animalId);
-
-  // Esconde FAB Sync imediatamente ao abrir o form
-  const fabSync = document.getElementById("fabSync");
-  if (fabSync) {
-    fabSync.hidden = true;
-    fabSync.style.display = "none"; // Força esconder também via CSS
-  }
-
-  setPageHeadVisible(true);
-  setPageHeadTexts("Informações do animal", `Editando: ${animalDisplayName(a)}`);
-
-  const secList = $("#modAnimaisList");
-  const secForm = $("#modAnimaisForm");
-  if (secList) secList.hidden = true;
-  if (secForm) secForm.hidden = false;
-
-  bindAnimalFormUIOnce();
-  populateFixedDropdowns(); // Popula dropdowns fixos (UF, Raça, etc.)
-  await fillOwnersAndLotesInForm();
-
-  // advanced state - sempre inicia desligado
-  state.advanced = false;
-  const tgl = $("#toggleAdvanced");
-  if (tgl) tgl.checked = false;
-  applyAdvancedVisibility();
-
-  // mapeia do seu objeto (cache) para campos do form (proprietario = dono do animal, usado no dropdown)
-  const data = normalizeAnimal(a);
-  const rawOwner = data.proprietario ?? data.owner ?? state.ctx.ownerId ?? "";
-  const ownerId = (typeof rawOwner === "object" && rawOwner !== null && rawOwner._id)
-    ? String(rawOwner._id).trim()
-    : String(rawOwner || "").trim();
-  const mapped = {
-    owner: ownerId,
-    entry_type: data.entry_type || "Compra",
-    animal_type: data.animal_type || "Físico",
-    brinco_padrao: data.brinco_padrao || "",
-    sexo: data.sexo || "",
-    peso_atual_kg: toNumberOrZero(data.peso_atual_kg),
-    data_nascimento: (data.data_nascimento && String(data.data_nascimento).toLowerCase() !== "nan" && String(data.data_nascimento).trim() !== "") 
-      ? String(data.data_nascimento).trim() 
-      : "",
-    categoria: data.categoria || "",
-    raca: data.raca || "",
-
-    nome_completo: data.nome_completo || "",
-    finalidade: data.finalidade || "",
-    peso_nascimento: toNumberOrZero(data.peso_nascimento),
-    sisbov: data.sisbov || "",
-    identificacao_eletronica: data.identificacao_eletronica || "",
-    rgd: data.rgd || "",
-    rgn: data.rgn || "",
-    list_lotes: Array.isArray(data.list_lotes) ? data.list_lotes : (data.lote ? [data.lote] : []),
-    lote: data.lote || (data.list_lotes && data.list_lotes[0]) || "",
-    pasto: data.pasto || "",
-    observacoes: data.observacoes || data.observacoes || "",
-
-    mae_cadastrada: data.mae_cadastrada || "0",
-    pai_cadastrado: data.pai_cadastrado || "0",
-    mae_vinculo: data.mae_vinculo || "",
-    pai_vinculo: data.pai_vinculo || "",
-
-    gta: data.gta || "",
-    uf: data.uf || "",
-  };
-
-  await writeAnimalFormByIds(mapped);
-
-  // Garante que FAB Sync está escondido no form
-  const fabSync3 = document.getElementById("fabSync");
-  if (fabSync3) {
-    fabSync3.hidden = true;
-    fabSync3.style.display = "none";
-    fabSync3.style.visibility = "hidden";
-    fabSync3.style.opacity = "0";
-    fabSync3.style.pointerEvents = "none";
-  }
-
-  // Salva estado de navegação
-  await saveNavigationState();
-}
-
-// ---------------- Save: CREATE or UPDATE offline (com validação de brinco) ----------------
 
 async function saveAnimalFromForm() {
   if (await isSyncInProgress()) {
@@ -1993,19 +2944,44 @@ async function saveAnimalFromForm() {
       // fila
       const qKey = `queue:${state.ctx.fazendaId}:${state.ctx.ownerId}:animal`;
       const queue = (await idbGet("records", qKey)) || [];
-      queue.push({ op: "animal_create", at: Date.now(), payload: record });
+      queue.push({ op: OFFLINE_OPS.ANIMAL_CREATE, at: Date.now(), payload: record });
       await idbSet("records", qKey, queue);
 
-      // Atualiza dashboard e listagem
-      await renderDashboard();
-      await renderAnimalList();
-      
+      updateFabSyncVisibility();
       toast("Animal salvo offline.");
-      
-      // Aguarda um pouco para mostrar o loading
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      await openAnimalList();
+
+      if (state.pipelineCreateCallback) {
+        try {
+          sessionStorage.setItem("pipelineCreateDraft", JSON.stringify(record));
+        } catch (_) {}
+        state.pipelineCreatedAnimalId = record._id || null;
+        state.pipelineFromCreate = false;
+        const cb = state.pipelineCreateCallback;
+        state.pipelineCreateCallback = null;
+        state.view = "dashboard";
+        const dash = $("#modDashboard");
+        const dashDesktop = document.getElementById("modDashboardDesktop");
+        if (dash) dash.hidden = false;
+        if (dashDesktop) dashDesktop.hidden = false;
+        const animalContainer = $("#animalModuleContainer");
+        if (animalContainer) animalContainer.hidden = true;
+        const secList = $("#modAnimaisList");
+        const secForm = $("#modAnimaisForm");
+        if (secList) secList.hidden = true;
+        if (secForm) secForm.hidden = true;
+        state.pipelineAnimal = normalizeAnimal(record);
+        state.pipelineStepIndex = 0;
+        const pipelineModal = document.getElementById("pipelineModal");
+        const stepContent = document.getElementById("pipelineStepContent");
+        if (pipelineModal) pipelineModal.hidden = true;
+        if (stepContent) stepContent.hidden = false;
+        renderSidebar();
+        cb(normalizeAnimal(record));
+        return;
+      }
+
+      await renderDashboard();
+      await openDashboard();
       return;
     }
 
@@ -2032,19 +3008,12 @@ async function saveAnimalFromForm() {
     // fila
     const qKey = `queue:${state.ctx.fazendaId}:${state.ctx.ownerId}:animal`;
     const queue = (await idbGet("records", qKey)) || [];
-    queue.push({ op: "animal_update", at: Date.now(), payload: updated, targetId: editingId });
+    queue.push({ op: OFFLINE_OPS.ANIMAL_UPDATE, at: Date.now(), payload: updated, targetId: editingId });
     await idbSet("records", qKey, queue);
 
-    // Atualiza dashboard e listagem
     await renderDashboard();
-    await renderAnimalList();
-
     toast("Animal atualizado offline.");
-    
-    // Aguarda um pouco para mostrar o loading
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    await openAnimalList();
+    await openDashboard();
   } finally {
     // Esconde loading
     if (bootOverlay) {
@@ -2053,1053 +3022,15 @@ async function saveAnimalFromForm() {
   }
 }
 
-// ---------------- Render módulo ativo ----------------
+// ---------------- Render módulo ativo (desativado: app é só linha de produção) ----------------
 async function renderActiveModule() {
-  const m = state.modules.find(x => x.key === state.activeKey) || state.modules[0];
-  if (!m) return;
-
-  // placeholder BioID
-  const btnBio = $("#btnBioId");
-  if (btnBio) btnBio.onclick = () => toast("BioID (placeholder)");
-
-  if (!state.bootstrapReady) {
-    const view = $("#moduleView");
-    if (view) {
-      view.innerHTML = `
-        <div class="card">
-          <b>Modo offline não está pronto</b>
-          <div style="color:#6b7280;margin-top:6px;">
-            Abra uma vez com internet com os parâmetros corretos para sincronizar os dados.
-          </div>
-        </div>
-      `;
-    }
-    return;
-  }
-
-  // 1. Controle de visibilidade global (Container vs Generic View)
-  const animalContainer = $("#animalModuleContainer");
-  const moduleView = $("#moduleView");
-
-  if (m.key === "animal") {
-    // Exibe container fixo de animais
-    if (animalContainer) animalContainer.hidden = false;
-    if (moduleView) moduleView.hidden = true;
-
-    // Renderiza a sub-view correta (lista ou form)
-    if (state.animalView === "form") {
-      if (state.animalEditingId) await openAnimalFormForEdit(state.animalEditingId);
-      else await openAnimalFormForCreate();
-    } else {
-      await openAnimalList();
-    }
-    
-    // Atualiza visibilidade do FAB Sync
-    updateFabSyncVisibility();
-    return;
-  }
-
-  // Outros módulos: esconde animais, mostra view genérica
-  if (animalContainer) animalContainer.hidden = true;
-  if (moduleView) moduleView.hidden = false;
-
-  setPageHeadVisible(true);
-
-  // Módulo Movimentações (Entre lotes, Entre pastos, Entre fazendas)
-  if (m.key === "movimentacao") {
-    setPageHeadVisible(false);
-    await renderMovimentacoesModule(moduleView);
-    updateFabSyncVisibility();
-    return;
-  }
-
-  // Módulo Saída de Animais (Venda, Morte, Empréstimo, Ajuste inventário, Doação)
-  if (m.key === "saida_animais") {
-    setPageHeadVisible(false);
-    await renderSaidaAnimaisModule(moduleView);
-    return;
-  }
-
-  // default render
-  setPageHeadTexts(m.pageTitle || m.label, m.pageSub || "");
-
-  if (moduleView) {
-    moduleView.innerHTML = `
-      <div class="card">
-        <b>${escapeHtml(m.label)}</b>
-        <div style="color:#6b7280;margin-top:6px;margin-bottom:16px;">Módulo ainda não desenhado no novo layout.</div>
-        <button class="btn secondary" id="btnBackToDashGeneric" style="width:100%">🔙 Voltar ao Dashboard</button>
-      </div>
-    `;
-    const btn = moduleView.querySelector("#btnBackToDashGeneric");
-    if (btn) btn.onclick = openDashboard;
-  }
+  await openDashboard();
 }
 
-// ---------------- Movimentações (módulo Lotes) ----------------
-const MOV_TAB = { LOTES: "lotes", PASTOS: "pastos", FAZENDAS: "fazendas" };
-
+// ---------------- Movimentações: apenas no pipeline (renderPipelineStepMovimentacao) ----------------
 async function renderMovimentacoesModule(container) {
   if (!container) return;
-
-  container.hidden = false;
-  container.innerHTML = `
-    <div class="movPage">
-      <div class="movTabs" role="tablist">
-        <button type="button" class="movTab active" data-tab="lotes" role="tab">Entre lotes</button>
-        <button type="button" class="movTab" data-tab="pastos" role="tab">Entre pastos</button>
-        <button type="button" class="movTab" data-tab="fazendas" role="tab">Entre fazendas</button>
-      </div>
-
-      <div class="movContent movTabLotes" id="movContentLotes">
-        <div class="movHead">
-          <div>
-            <h1 class="movTitle">Movimentação entre lotes</h1>
-            <p class="movSub">Altere os animais da fazenda de um lote para outro</p>
-          </div>
-          <button type="button" class="btn primary movBtnTransferir" id="movBtnTransferir" aria-label="Abrir confirmação de transferência">
-            <span class="movBtnTransferirIcon" aria-hidden="true">⇄</span> Transferir
-          </button>
-        </div>
-
-        <div class="movCards">
-          <div class="movCard movCardHighlight">
-            <label class="movCardLabel"><span class="movCardIcon">📍</span> Seleção do lote de origem</label>
-            <select id="movLoteOrigem" class="movSelect">
-              <option value="">Selecione o lote de origem</option>
-            </select>
-          </div>
-          <div class="movCard">
-            <label class="movCardLabel"><span class="movCardIcon">◆</span> Seleção do lote de destino</label>
-            <select id="movLoteDestino" class="movSelect">
-              <option value="">Selecione o lote de destino</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="movCard movCardTable">
-          <h2 class="movCardTitle"><span class="movCardIcon">🐮</span> Lista de animais</h2>
-          <div class="movTableWrap animalTableWrap">
-            <table class="movTable animalTable">
-              <thead>
-                <tr>
-                  <th class="movThCheck"><label class="movCheckWrap"><input type="checkbox" id="movSelectAll" aria-label="Selecionar todos" /><span class="movCheckbox"></span></label></th>
-                  <th>Brinco</th>
-                  <th>Sexo</th>
-                  <th>Raça</th>
-                  <th>Peso</th>
-                </tr>
-              </thead>
-              <tbody id="movTableBody">
-                <tr><td colspan="5" class="movTableEmpty">Selecione um lote de origem para listar os animais.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <div class="movContent movTabPastos" id="movContentPastos" hidden>
-        <div class="movHead">
-          <div>
-            <h1 class="movTitle">Movimentação entre pastos</h1>
-            <p class="movSub">Altere os animais da fazenda de um pasto para outro</p>
-          </div>
-          <button type="button" class="btn primary movBtnTransferir" id="movBtnTransferirPastos" aria-label="Abrir confirmação de transferência">
-            <span class="movBtnTransferirIcon" aria-hidden="true">⇄</span> Transferir
-          </button>
-        </div>
-
-        <div class="movCards">
-          <div class="movCard movCardHighlight">
-            <label class="movCardLabel"><span class="movCardIcon">📍</span> Seleção do pasto de origem</label>
-            <select id="movPastoOrigem" class="movSelect">
-              <option value="">Selecione o pasto de origem</option>
-            </select>
-          </div>
-          <div class="movCard">
-            <label class="movCardLabel"><span class="movCardIcon">◆</span> Seleção do pasto de destino</label>
-            <select id="movPastoDestino" class="movSelect">
-              <option value="">Selecione o pasto de destino</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="movCard movCardTable">
-          <h2 class="movCardTitle"><span class="movCardIcon">🐮</span> Lista de animais</h2>
-          <div class="movTableWrap animalTableWrap">
-            <table class="movTable animalTable">
-              <thead>
-                <tr>
-                  <th class="movThCheck"><label class="movCheckWrap"><input type="checkbox" id="movSelectAllPastos" aria-label="Selecionar todos" /><span class="movCheckbox"></span></label></th>
-                  <th>Brinco</th>
-                  <th>Sexo</th>
-                  <th>Raça</th>
-                  <th>Peso</th>
-                </tr>
-              </thead>
-              <tbody id="movTableBodyPastos">
-                <tr><td colspan="5" class="movTableEmpty">Selecione um pasto de origem para listar os animais.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <div class="movContent movTabFazendas" id="movContentFazendas" hidden>
-        <div class="movHead">
-          <div>
-            <h1 class="movTitle">Movimentação entre fazendas</h1>
-            <p class="movSub">Altere os animais de uma fazenda para outra</p>
-          </div>
-          <button type="button" class="btn primary movBtnTransferir" id="movBtnTransferirFazendas" aria-label="Abrir confirmação de transferência">
-            <span class="movBtnTransferirIcon" aria-hidden="true">⇄</span> Transferir
-          </button>
-        </div>
-
-        <div class="movCards">
-          <div class="movCard movCardHighlight">
-            <label class="movCardLabel"><span class="movCardIcon">📍</span> Seleção da fazenda de origem</label>
-            <div id="movFazendaOrigemNome" class="movFazendaNome">—</div>
-            <p class="movCardHint" style="margin-top: 8px; color: #6b7280; font-size: 0.875rem;">Agora, selecione o Lote ou Pasto de origem:</p>
-            <div class="movToggleGroup" style="margin-top: 12px; display: flex; gap: 8px;">
-              <button type="button" class="movToggleBtn" id="movToggleLoteOrigem" data-type="lote">Lote</button>
-              <button type="button" class="movToggleBtn movToggleBtnActive" id="movTogglePastoOrigem" data-type="pasto">Pasto</button>
-            </div>
-            <select id="movLoteOrigemFazenda" class="movSelect" style="display: none; margin-top: 12px;">
-              <option value="">Selecione o lote de origem</option>
-            </select>
-            <select id="movPastoOrigemFazenda" class="movSelect" style="margin-top: 12px;">
-              <option value="">Selecione o pasto de origem</option>
-            </select>
-          </div>
-          <div class="movCard">
-            <label class="movCardLabel"><span class="movCardIcon">◆</span> Seleção da fazenda de destino</label>
-            <select id="movFazendaDestino" class="movSelect">
-              <option value="">Selecione a fazenda de destino</option>
-            </select>
-            <p class="movCardHint" style="margin-top: 12px; color: #6b7280; font-size: 0.875rem;">Agora, selecione o Lote ou Pasto de destino:</p>
-            <div class="movToggleGroup" style="margin-top: 12px; display: flex; gap: 8px;">
-              <button type="button" class="movToggleBtn movToggleBtnActive" id="movToggleLoteDestino" data-type="lote">Lote</button>
-              <button type="button" class="movToggleBtn" id="movTogglePastoDestino" data-type="pasto">Pasto</button>
-            </div>
-            <select id="movLoteDestinoFazenda" class="movSelect" style="margin-top: 12px;">
-              <option value="">Selecione o lote de destino</option>
-            </select>
-            <select id="movPastoDestinoFazenda" class="movSelect" style="display: none; margin-top: 12px;">
-              <option value="">Selecione o pasto de destino</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="movCard movCardTable">
-          <h2 class="movCardTitle"><span class="movCardIcon">🐮</span> Lista de animais</h2>
-          <div class="movTableWrap animalTableWrap">
-            <table class="movTable animalTable">
-              <thead>
-                <tr>
-                  <th class="movThCheck"><label class="movCheckWrap"><input type="checkbox" id="movSelectAllFazendas" aria-label="Selecionar todos" /><span class="movCheckbox"></span></label></th>
-                  <th>Brinco</th>
-                  <th>Sexo</th>
-                  <th>Raça</th>
-                  <th>Peso</th>
-                </tr>
-              </thead>
-              <tbody id="movTableBodyFazendas">
-                <tr><td colspan="5" class="movTableEmpty">Selecione um lote ou pasto de origem para listar os animais.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal confirmação transferência (oculto até clicar em Transferir) -->
-    <div id="movModalOverlay" class="movModalOverlay" style="display:none;">
-      <div class="movModal" role="dialog" aria-labelledby="movModalTitle" aria-modal="true">
-        <div class="movModalHeader">
-          <div class="movModalHeaderText">
-            <h2 id="movModalTitle" class="movModalTitle">Confirmar Transferência</h2>
-            <p class="movModalSub">Revise os detalhes antes de confirmar a movimentação dos animais.</p>
-          </div>
-          <button type="button" class="movModalClose" id="movModalClose" aria-label="Fechar">×</button>
-        </div>
-        <div class="movModalBody">
-          <div class="movModalCards">
-            <div class="movModalCard movModalCardOrigem">
-              <span class="movModalCardIcon" aria-hidden="true">⊕</span>
-              <span class="movModalCardLabel">Origem</span>
-              <span class="movModalCardVal" id="movModalOrigem">—</span>
-            </div>
-            <div class="movModalArrow" aria-hidden="true">→</div>
-            <div class="movModalCard movModalCardDestino">
-              <span class="movModalCardIcon movModalCardIconDestino" aria-hidden="true">◎</span>
-              <span class="movModalCardLabel">Destino</span>
-              <span class="movModalCardVal" id="movModalDestino">—</span>
-            </div>
-          </div>
-          <div class="movModalListSection">
-            <h3 class="movModalListTitle"><span class="movModalListIcon" aria-hidden="true">🐮</span> Lista de animais <span id="movModalAnimaisCount">0</span></h3>
-            <div class="movModalListWrap">
-              <div id="movModalAnimais" class="movModalAnimaisList"></div>
-            </div>
-          </div>
-          <div class="movModalWarning">
-            <span class="movModalWarningIcon" aria-hidden="true">⚠</span>
-            <p>Por favor, confira se as informações estão corretas. Essa ação não poderá ser desfeita!</p>
-          </div>
-        </div>
-        <div class="movModalFooter">
-          <button type="button" class="btn secondary movModalBtnCancel" id="movModalCancelar"><span aria-hidden="true">×</span> Cancelar</button>
-          <button type="button" class="btn primary movModalBtnConfirm" id="movModalConfirmar"><span class="movModalBtnConfirmIcon" aria-hidden="true">⇄</span> Confirmar Transferência</button>
-        </div>
-      </div>
-    </div>
-  `;
-
-  const tabLotes = container.querySelector('[data-tab="lotes"]');
-  const tabPastos = container.querySelector('[data-tab="pastos"]');
-  const tabFazendas = container.querySelector('[data-tab="fazendas"]');
-  const contentLotes = document.getElementById("movContentLotes");
-  const contentPastos = document.getElementById("movContentPastos");
-  const contentFazendas = document.getElementById("movContentFazendas");
-
-  function setActiveTab(tabKey) {
-    [tabLotes, tabPastos, tabFazendas].forEach(t => t && t.classList.remove("active"));
-    const active = container.querySelector(`[data-tab="${tabKey}"]`);
-    if (active) active.classList.add("active");
-    if (contentLotes) contentLotes.hidden = tabKey !== "lotes";
-    if (contentPastos) contentPastos.hidden = tabKey !== "pastos";
-    if (contentFazendas) contentFazendas.hidden = tabKey !== "fazendas";
-  }
-
-  tabLotes && (tabLotes.onclick = () => setActiveTab("lotes"));
-  tabPastos && (tabPastos.onclick = () => setActiveTab("pastos"));
-  tabFazendas && (tabFazendas.onclick = () => setActiveTab("fazendas"));
-
-  const lotesRaw = (await idbGet("lotes", "list")) || [];
-  const pastosRaw = (await idbGet("pastos", "list")) || [];
-  const lotes = filterByCurrentFazenda(lotesRaw);
-  const pastos = filterByCurrentFazenda(pastosRaw);
-  const selOrigem = container.querySelector("#movLoteOrigem");
-  const selDestino = container.querySelector("#movLoteDestino");
-  const tbody = container.querySelector("#movTableBody");
-  const selectAll = container.querySelector("#movSelectAll");
-  const btnTransferir = container.querySelector("#movBtnTransferir");
-  const selPastoOrigem = container.querySelector("#movPastoOrigem");
-  const selPastoDestino = container.querySelector("#movPastoDestino");
-  const tbodyPastos = container.querySelector("#movTableBodyPastos");
-  const selectAllPastos = container.querySelector("#movSelectAllPastos");
-  const btnTransferirPastos = container.querySelector("#movBtnTransferirPastos");
-  const modalOverlay = container.querySelector("#movModalOverlay");
-  const modalClose = container.querySelector("#movModalClose");
-  const modalCancelar = container.querySelector("#movModalCancelar");
-  const modalConfirmar = container.querySelector("#movModalConfirmar");
-
-  if (!selOrigem || !selDestino || !tbody) return;
-
-  selOrigem.innerHTML = '<option value="">Selecione o lote de origem</option>' +
-    lotes.map(l => `<option value="${escapeHtml(l._id)}">${escapeHtml(l.nome_lote || "—")}</option>`).join("");
-
-  if (selPastoOrigem) {
-    selPastoOrigem.innerHTML = '<option value="">Selecione o pasto de origem</option>' +
-      (pastos || []).map(p => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`).join("");
-  }
-
-  let animaisDoLote = [];
-  let selectedIds = new Set();
-  let animaisDoPasto = [];
-  let selectedIdsPastos = new Set();
-
-  function getSelectedAnimals() {
-    return animaisDoLote.filter(a => selectedIds.has(String(a._id)));
-  }
-
-  function updateTransferirButton() {
-    const dest = selDestino && selDestino.value;
-    const canTransfer = !!dest && selectedIds.size > 0;
-    if (btnTransferir) {
-      btnTransferir.classList.toggle("movBtnTransferir--disabled", !canTransfer);
-      btnTransferir.setAttribute("aria-disabled", canTransfer ? "false" : "true");
-    }
-  }
-  updateTransferirButton();
-
-  function renderTable(animais) {
-    animaisDoLote = animais;
-    tbody.innerHTML = "";
-    if (animais.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="movTableEmpty">Nenhum animal neste lote.</td></tr>';
-      selectAll && (selectAll.checked = false);
-      selectedIds.clear();
-      updateTransferirButton();
-      return;
-    }
-    animais.forEach(a => {
-      const tr = document.createElement("tr");
-      tr.dataset.id = a._id || "";
-      const id = String(a._id || "");
-      const checked = selectedIds.has(id);
-      tr.innerHTML = `
-        <td class="movTdCheck"><label class="movCheckWrap"><input type="checkbox" class="movRowCheck" data-id="${escapeHtml(id)}" ${checked ? "checked" : ""} /><span class="movCheckbox"></span></label></td>
-        <td>${escapeHtml(a?.brinco_padrao || "—")}</td>
-        <td>${escapeHtml(renderSex(a?.sexo))}</td>
-        <td>${escapeHtml(a?.raca || "—")}</td>
-        <td>${escapeHtml(fmtKg(a?.peso_atual_kg))}</td>
-      `;
-      const cb = tr.querySelector(".movRowCheck");
-      if (cb) {
-        cb.addEventListener("change", () => {
-          if (cb.checked) selectedIds.add(id); else selectedIds.delete(id);
-          selectAll && (selectAll.checked = selectedIds.size === animais.length);
-          updateTransferirButton();
-        });
-      }
-      tbody.appendChild(tr);
-    });
-    selectAll && (selectAll.checked = selectedIds.size === animais.length);
-    updateTransferirButton();
-  }
-
-  selectAll && selectAll.addEventListener("change", () => {
-    if (selectAll.checked) animaisDoLote.forEach(a => selectedIds.add(String(a._id)));
-    else selectedIds.clear();
-    tbody.querySelectorAll(".movRowCheck").forEach(cb => { cb.checked = selectAll.checked; });
-    updateTransferirButton();
-  });
-
-  function updateTransferirPastosButton() {
-    const dest = selPastoDestino && selPastoDestino.value;
-    const canTransfer = !!dest && selectedIdsPastos.size > 0;
-    if (btnTransferirPastos) {
-      btnTransferirPastos.classList.toggle("movBtnTransferir--disabled", !canTransfer);
-      btnTransferirPastos.setAttribute("aria-disabled", canTransfer ? "false" : "true");
-    }
-  }
-  updateTransferirPastosButton();
-
-  function renderTablePastos(animais) {
-    if (!tbodyPastos) return;
-    animaisDoPasto = animais;
-    tbodyPastos.innerHTML = "";
-    if (animais.length === 0) {
-      tbodyPastos.innerHTML = '<tr><td colspan="5" class="movTableEmpty">Nenhum animal neste pasto.</td></tr>';
-      if (selectAllPastos) selectAllPastos.checked = false;
-      selectedIdsPastos.clear();
-      updateTransferirPastosButton();
-      return;
-    }
-    animais.forEach(a => {
-      const tr = document.createElement("tr");
-      tr.dataset.id = a._id || "";
-      const id = String(a._id || "");
-      const checked = selectedIdsPastos.has(id);
-      tr.innerHTML = `
-        <td class="movTdCheck"><label class="movCheckWrap"><input type="checkbox" class="movRowCheck movRowCheckPastos" data-id="${escapeHtml(id)}" ${checked ? "checked" : ""} /><span class="movCheckbox"></span></label></td>
-        <td>${escapeHtml(a?.brinco_padrao || "—")}</td>
-        <td>${escapeHtml(renderSex(a?.sexo))}</td>
-        <td>${escapeHtml(a?.raca || "—")}</td>
-        <td>${escapeHtml(fmtKg(a?.peso_atual_kg))}</td>
-      `;
-      const cb = tr.querySelector(".movRowCheck");
-      if (cb) {
-        cb.addEventListener("change", () => {
-          if (cb.checked) selectedIdsPastos.add(id); else selectedIdsPastos.delete(id);
-          if (selectAllPastos) selectAllPastos.checked = selectedIdsPastos.size === animais.length;
-          updateTransferirPastosButton();
-        });
-      }
-      tbodyPastos.appendChild(tr);
-    });
-    if (selectAllPastos) selectAllPastos.checked = selectedIdsPastos.size === animais.length;
-    updateTransferirPastosButton();
-  }
-
-  if (selectAllPastos) {
-    selectAllPastos.addEventListener("change", () => {
-      if (selectAllPastos.checked) animaisDoPasto.forEach(a => selectedIdsPastos.add(String(a._id)));
-      else selectedIdsPastos.clear();
-      if (tbodyPastos) tbodyPastos.querySelectorAll(".movRowCheckPastos").forEach(cb => { cb.checked = selectAllPastos.checked; });
-      updateTransferirPastosButton();
-    });
-  }
-
-  if (selPastoOrigem) {
-    selPastoOrigem.addEventListener("change", async () => {
-      const originId = selPastoOrigem.value;
-      selectedIdsPastos.clear();
-      const allRaw = (await idbGet("animais", "list")) || [];
-      const all = filterByCurrentFazenda(allRaw);
-      const list = all.filter(a => !a.deleted && String(a?.pasto || "") === String(originId)).map(normalizeAnimal);
-      renderTablePastos(list);
-
-      const destinos = (pastos || []).filter(p => String(p._id) !== String(originId));
-      if (selPastoDestino) {
-        selPastoDestino.innerHTML = '<option value="">Selecione o pasto de destino</option>' +
-          destinos.map(p => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`).join("");
-        selPastoDestino.value = "";
-      }
-      updateTransferirPastosButton();
-    });
-  }
-  if (selPastoDestino) selPastoDestino.addEventListener("change", updateTransferirPastosButton);
-
-  selOrigem.addEventListener("change", async () => {
-    const originId = selOrigem.value;
-    selectedIds.clear();
-    const allRaw = (await idbGet("animais", "list")) || [];
-    const all = filterByCurrentFazenda(allRaw);
-    const list = all.filter(a => {
-      const norm = normalizeAnimal(a);
-      const inLote = norm.list_lotes && norm.list_lotes.some(lid => String(lid) === String(originId));
-      return !a.deleted && (inLote || String(a?.lote || "") === String(originId));
-    }).map(normalizeAnimal);
-    renderTable(list);
-
-    const destinos = lotes.filter(l => String(l._id) !== String(originId));
-    selDestino.innerHTML = '<option value="">Selecione o lote de destino</option>' +
-      destinos.map(l => `<option value="${escapeHtml(l._id)}">${escapeHtml(l.nome_lote || "—")}</option>`).join("");
-    selDestino.value = "";
-    updateTransferirButton();
-  });
-
-  selDestino && selDestino.addEventListener("change", updateTransferirButton);
-
-  function openTransferModal() {
-    const destId = selDestino && selDestino.value;
-    const selected = getSelectedAnimals();
-    if (!destId || selected.length === 0) return;
-    const origemNome = lotes.find(l => String(l._id) === String(selOrigem.value))?.nome_lote || "—";
-    const destinoNome = lotes.find(l => String(l._id) === String(destId))?.nome_lote || "—";
-
-    const modalOrigem = container.querySelector("#movModalOrigem");
-    const modalDestino = container.querySelector("#movModalDestino");
-    const countEl = container.querySelector("#movModalAnimaisCount");
-    const listEl = container.querySelector("#movModalAnimais");
-    if (modalOrigem) modalOrigem.textContent = origemNome;
-    if (modalDestino) modalDestino.textContent = destinoNome;
-    if (countEl) countEl.textContent = selected.length;
-    if (listEl) {
-      listEl.innerHTML = selected.map(a => {
-        const tag = escapeHtml(a?.brinco_padrao || "—");
-        const name = escapeHtml((a?.nome_completo || "").trim() || "—");
-        const raca = escapeHtml(a?.raca || "—");
-        const peso = escapeHtml(fmtKg(a?.peso_atual_kg));
-        const sexo = escapeHtml(renderSex(a?.sexo));
-        return `<div class="movModalAnimalRow">
-          <div class="movModalAnimalId">#${tag} ${name !== "—" ? name : ""}</div>
-          <span class="movModalAnimalRaca">${raca}</span>
-          <span class="movModalAnimalPeso">${peso}</span>
-          <span class="movModalAnimalSexo">${sexo}</span>
-        </div>`;
-      }).join("");
-    }
-
-    if (modalOverlay) {
-      modalOverlay.dataset.destId = destId;
-      modalOverlay.style.display = "flex";
-    }
-  }
-
-  container.addEventListener("click", (e) => {
-    const btnPastos = e.target.closest("#movBtnTransferirPastos");
-    if (btnPastos) {
-      e.preventDefault();
-      e.stopPropagation();
-      const destId = selPastoDestino && selPastoDestino.value;
-      const selected = animaisDoPasto.filter(a => selectedIdsPastos.has(String(a._id)));
-      if (!destId || selected.length === 0) {
-        toast("Selecione pelo menos um animal e o pasto de destino.");
-        return;
-      }
-      const origemNome = (pastos || []).find(p => String(p._id) === String(selPastoOrigem?.value))?.nome || "—";
-      const destinoNome = (pastos || []).find(p => String(p._id) === String(destId))?.nome || "—";
-      const modalOrigem = container.querySelector("#movModalOrigem");
-      const modalDestino = container.querySelector("#movModalDestino");
-      const countEl = container.querySelector("#movModalAnimaisCount");
-      const listEl = container.querySelector("#movModalAnimais");
-      if (modalOrigem) modalOrigem.textContent = origemNome;
-      if (modalDestino) modalDestino.textContent = destinoNome;
-      if (countEl) countEl.textContent = selected.length;
-      if (listEl) {
-        listEl.innerHTML = selected.map(a => {
-          const tag = escapeHtml(a?.brinco_padrao || "—");
-          const name = escapeHtml((a?.nome_completo || "").trim() || "—");
-          const raca = escapeHtml(a?.raca || "—");
-          const peso = escapeHtml(fmtKg(a?.peso_atual_kg));
-          const sexo = escapeHtml(renderSex(a?.sexo));
-          return `<div class="movModalAnimalRow">
-            <div class="movModalAnimalId">#${tag} ${name !== "—" ? name : ""}</div>
-            <span class="movModalAnimalRaca">${raca}</span>
-            <span class="movModalAnimalPeso">${peso}</span>
-            <span class="movModalAnimalSexo">${sexo}</span>
-          </div>`;
-        }).join("");
-      }
-      if (modalOverlay) {
-        modalOverlay.dataset.context = "pastos";
-        modalOverlay.dataset.destId = destId;
-        modalOverlay.style.display = "flex";
-      }
-      return;
-    }
-    const btn = e.target.closest("#movBtnTransferir");
-    if (!btn) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const destId = selDestino && selDestino.value;
-    const selected = getSelectedAnimals();
-    if (!destId || selected.length === 0) {
-      toast("Selecione pelo menos um animal e o lote de destino.");
-      return;
-    }
-    openTransferModal();
-  });
-
-  function closeTransferModal() {
-    if (modalOverlay) modalOverlay.style.display = "none";
-  }
-  modalClose && modalClose.addEventListener("click", closeTransferModal);
-  modalCancelar && modalCancelar.addEventListener("click", closeTransferModal);
-
-  modalConfirmar && modalConfirmar.addEventListener("click", async () => {
-    const context = modalOverlay && modalOverlay.dataset.context;
-    const destId = modalOverlay && modalOverlay.dataset.destId;
-
-    if (context === "pastos") {
-      const selected = animaisDoPasto.filter(a => selectedIdsPastos.has(String(a._id)));
-      if (!destId || selected.length === 0) {
-        closeTransferModal();
-        if (modalOverlay) delete modalOverlay.dataset.context;
-        return;
-      }
-      const list = (await idbGet("animais", "list")) || [];
-      const ids = new Set(selected.map(a => String(a._id)));
-      const qKey = `queue:${state.ctx.fazendaId || ""}:${state.ctx.ownerId || ""}:animal`;
-      const queue = (await idbGet("records", qKey)) || [];
-
-      for (let i = 0; i < list.length; i++) {
-        if (!ids.has(String(list[i]._id))) continue;
-        const prev = list[i];
-        const updated = normalizeAnimal({
-          ...prev,
-          pasto: destId,
-          _local: prev._local || true,
-          _sync: "pending",
-          data_modificacao: prev.data_modificacao,
-        });
-        list[i] = updated;
-        queue.push({ op: "animal_update", at: Date.now(), payload: updated, targetId: prev._id });
-      }
-
-      await idbSet("animais", "list", list);
-      await idbSet("records", qKey, queue);
-
-      closeTransferModal();
-      if (modalOverlay) delete modalOverlay.dataset.context;
-      toast("Transferência de pasto registrada offline. " + selected.length + " animal(is) na fila para sincronizar.");
-
-      selectedIdsPastos.clear();
-      const originPastoId = selPastoOrigem && selPastoOrigem.value;
-      const allRaw = (await idbGet("animais", "list")) || [];
-      const all = filterByCurrentFazenda(allRaw);
-      const refreshedPastos = all.filter(a => !a.deleted && String(a?.pasto || "") === String(originPastoId)).map(normalizeAnimal);
-      renderTablePastos(refreshedPastos);
-      updateTransferirPastosButton();
-      return;
-    }
-
-    const selected = getSelectedAnimals();
-    if (!destId || selected.length === 0) {
-      closeTransferModal();
-      return;
-    }
-
-    const list = (await idbGet("animais", "list")) || [];
-    const ids = new Set(selected.map(a => String(a._id)));
-    const qKey = `queue:${state.ctx.fazendaId || ""}:${state.ctx.ownerId || ""}:animal`;
-    const queue = (await idbGet("records", qKey)) || [];
-
-    for (let i = 0; i < list.length; i++) {
-      if (!ids.has(String(list[i]._id))) continue;
-      const prev = list[i];
-      const updated = normalizeAnimal({
-        ...prev,
-        list_lotes: [destId],
-        lote: destId,
-        _local: prev._local || true,
-        _sync: "pending",
-        data_modificacao: prev.data_modificacao,
-      });
-      list[i] = updated;
-      queue.push({ op: "animal_update", at: Date.now(), payload: updated, targetId: prev._id });
-    }
-
-    await idbSet("animais", "list", list);
-    await idbSet("records", qKey, queue);
-
-    closeTransferModal();
-    toast("Transferência registrada offline. " + selected.length + " animal(is) na fila para sincronizar.");
-
-    selectedIds.clear();
-    const originId = selOrigem.value;
-    const allRaw = (await idbGet("animais", "list")) || [];
-    const all = filterByCurrentFazenda(allRaw);
-    const refreshed = all.filter(a => {
-      const norm = normalizeAnimal(a);
-      const inLote = norm.list_lotes && norm.list_lotes.some(lid => String(lid) === String(originId));
-      return !a.deleted && (inLote || String(a?.lote || "") === String(originId));
-    }).map(normalizeAnimal);
-    renderTable(refreshed);
-    updateTransferirButton();
-  });
-
-  if (modalOverlay) {
-    modalOverlay.addEventListener("click", (e) => {
-      if (e.target === modalOverlay) closeTransferModal();
-    });
-  }
-
-  // ========== MOVIMENTAÇÃO ENTRE FAZENDAS ==========
-  const btnTransferirFazendas = container.querySelector("#movBtnTransferirFazendas");
-  const fazendaOrigemNome = container.querySelector("#movFazendaOrigemNome");
-  const toggleLoteOrigem = container.querySelector("#movToggleLoteOrigem");
-  const togglePastoOrigem = container.querySelector("#movTogglePastoOrigem");
-  const selLoteOrigemFazenda = container.querySelector("#movLoteOrigemFazenda");
-  const selPastoOrigemFazenda = container.querySelector("#movPastoOrigemFazenda");
-  const selFazendaDestino = container.querySelector("#movFazendaDestino");
-  const toggleLoteDestino = container.querySelector("#movToggleLoteDestino");
-  const togglePastoDestino = container.querySelector("#movTogglePastoDestino");
-  const selLoteDestinoFazenda = container.querySelector("#movLoteDestinoFazenda");
-  const selPastoDestinoFazenda = container.querySelector("#movPastoDestinoFazenda");
-  const tbodyFazendas = container.querySelector("#movTableBodyFazendas");
-  const selectAllFazendas = container.querySelector("#movSelectAllFazendas");
-
-  let animaisFazendas = [];
-  let selectedIdsFazendas = new Set();
-  let origemTipo = "pasto"; // "lote" ou "pasto"
-  let fazendaAtualId = "";
-  let fazendaAtualNome = "";
-
-  async function initMovimentacaoFazendas() {
-    const owner = await idbGet("owner", "current");
-    const fazendaAtual = await idbGet("fazenda", "current");
-    const listFazendas = (await idbGet("fazenda", "list")) || [];
-    
-    fazendaAtualId = String(owner?.management_fazenda || state.ctx.fazendaId || fazendaAtual?._id || "").trim();
-    fazendaAtualNome = fazendaAtual?.name || "Fazenda atual";
-    
-    if (fazendaOrigemNome) fazendaOrigemNome.textContent = fazendaAtualNome;
-
-    const fazendasDestino = listFazendas.filter(f => String(f._id || "") !== fazendaAtualId);
-    if (selFazendaDestino) {
-      selFazendaDestino.innerHTML = '<option value="">Selecione a fazenda de destino</option>' +
-        fazendasDestino.map(f => `<option value="${escapeHtml(f._id)}">${escapeHtml(f.name || "—")}</option>`).join("");
-    }
-
-    const lotesList = (await idbGet("lotes", "list")) || [];
-    const pastosList = (await idbGet("pastos", "list")) || [];
-    const lotesOrigem = lotesList.filter(l => String(l?.fazenda || "") === String(fazendaAtualId));
-    const pastosOrigem = pastosList.filter(p => String(p?.fazenda || "") === String(fazendaAtualId));
-
-    if (selLoteOrigemFazenda) {
-      selLoteOrigemFazenda.innerHTML = '<option value="">Selecione o lote de origem</option>' +
-        lotesOrigem.map(l => `<option value="${escapeHtml(l._id)}">${escapeHtml(l.nome_lote || "—")}</option>`).join("");
-    }
-    if (selPastoOrigemFazenda) {
-      selPastoOrigemFazenda.innerHTML = '<option value="">Selecione o pasto de origem</option>' +
-        pastosOrigem.map(p => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`).join("");
-    }
-  }
-
-  function updateToggleButtons(origem) {
-    if (origem) {
-      toggleLoteOrigem?.classList.toggle("movToggleBtnActive", origemTipo === "lote");
-      togglePastoOrigem?.classList.toggle("movToggleBtnActive", origemTipo === "pasto");
-      selLoteOrigemFazenda && (selLoteOrigemFazenda.style.display = origemTipo === "lote" ? "block" : "none");
-      selPastoOrigemFazenda && (selPastoOrigemFazenda.style.display = origemTipo === "pasto" ? "block" : "none");
-      if (origemTipo === "lote") {
-        selPastoOrigemFazenda && (selPastoOrigemFazenda.value = "");
-      } else {
-        selLoteOrigemFazenda && (selLoteOrigemFazenda.value = "");
-      }
-    } else {
-      const loteAtivo = toggleLoteDestino?.classList.contains("movToggleBtnActive");
-      const pastoAtivo = togglePastoDestino?.classList.contains("movToggleBtnActive");
-      selLoteDestinoFazenda && (selLoteDestinoFazenda.style.display = loteAtivo ? "block" : "none");
-      selPastoDestinoFazenda && (selPastoDestinoFazenda.style.display = pastoAtivo ? "block" : "none");
-    }
-    updateTransferirFazendasButton();
-  }
-
-  toggleLoteOrigem?.addEventListener("click", () => {
-    origemTipo = "lote";
-    selectedIdsFazendas.clear();
-    renderTableFazendas([]);
-    updateToggleButtons(true);
-  });
-
-  togglePastoOrigem?.addEventListener("click", () => {
-    origemTipo = "pasto";
-    selectedIdsFazendas.clear();
-    renderTableFazendas([]);
-    updateToggleButtons(true);
-  });
-
-  toggleLoteDestino?.addEventListener("click", () => {
-    toggleLoteDestino.classList.add("movToggleBtnActive");
-    togglePastoDestino?.classList.remove("movToggleBtnActive");
-    updateToggleButtons(false);
-  });
-
-  togglePastoDestino?.addEventListener("click", () => {
-    togglePastoDestino.classList.add("movToggleBtnActive");
-    toggleLoteDestino?.classList.remove("movToggleBtnActive");
-    updateToggleButtons(false);
-  });
-
-  async function loadAnimaisOrigem() {
-    const origemId = origemTipo === "lote" 
-      ? (selLoteOrigemFazenda?.value || "")
-      : (selPastoOrigemFazenda?.value || "");
-    
-    if (!origemId) {
-      renderTableFazendas([]);
-      return;
-    }
-
-    const all = (await idbGet("animais", "list")) || [];
-    let list = [];
-    
-    if (origemTipo === "lote") {
-      list = all.filter(a => {
-        if (a.deleted) return false;
-        if (String(a.fazenda || "") !== fazendaAtualId) return false;
-        const norm = normalizeAnimal(a);
-        const inLote = norm.list_lotes && norm.list_lotes.some(lid => String(lid) === String(origemId));
-        return inLote || String(a?.lote || "") === String(origemId);
-      }).map(normalizeAnimal);
-    } else {
-      list = all.filter(a => {
-        if (a.deleted) return false;
-        if (String(a.fazenda || "") !== fazendaAtualId) return false;
-        return String(a?.pasto || "") === String(origemId);
-      }).map(normalizeAnimal);
-    }
-    
-    renderTableFazendas(list);
-  }
-
-  selLoteOrigemFazenda?.addEventListener("change", loadAnimaisOrigem);
-  selPastoOrigemFazenda?.addEventListener("change", loadAnimaisOrigem);
-
-  selFazendaDestino?.addEventListener("change", async () => {
-    const fazendaDestinoId = selFazendaDestino?.value || "";
-    if (!fazendaDestinoId) {
-      selLoteDestinoFazenda && (selLoteDestinoFazenda.innerHTML = '<option value="">Selecione o lote de destino</option>');
-      selPastoDestinoFazenda && (selPastoDestinoFazenda.innerHTML = '<option value="">Selecione o pasto de destino</option>');
-      updateTransferirFazendasButton();
-      return;
-    }
-
-    const listFazendas = (await idbGet("fazenda", "list")) || [];
-    const fazendaDestino = listFazendas.find(f => String(f._id) === fazendaDestinoId);
-    if (!fazendaDestino) {
-      updateTransferirFazendasButton();
-      return;
-    }
-    const lotesListDest = (await idbGet("lotes", "list")) || [];
-    const pastosListDest = (await idbGet("pastos", "list")) || [];
-    const lotesDestino = lotesListDest.filter(l => String(l?.fazenda || "") === String(fazendaDestinoId));
-    const pastosDestino = pastosListDest.filter(p => String(p?.fazenda || "") === String(fazendaDestinoId));
-
-    if (selLoteDestinoFazenda) {
-      selLoteDestinoFazenda.innerHTML = '<option value="">Selecione o lote de destino</option>' +
-        lotesDestino.map(l => `<option value="${escapeHtml(l._id)}">${escapeHtml(l.nome_lote || "—")}</option>`).join("");
-    }
-    if (selPastoDestinoFazenda) {
-      selPastoDestinoFazenda.innerHTML = '<option value="">Selecione o pasto de destino</option>' +
-        pastosDestino.map(p => `<option value="${escapeHtml(p._id)}">${escapeHtml(p.nome || "—")}</option>`).join("");
-    }
-    updateTransferirFazendasButton();
-  });
-
-  selLoteDestinoFazenda?.addEventListener("change", updateTransferirFazendasButton);
-  selPastoDestinoFazenda?.addEventListener("change", updateTransferirFazendasButton);
-
-  function renderTableFazendas(animais) {
-    if (!tbodyFazendas) return;
-    animaisFazendas = animais;
-    tbodyFazendas.innerHTML = "";
-    if (animais.length === 0) {
-      tbodyFazendas.innerHTML = '<tr><td colspan="5" class="movTableEmpty">Nenhum animal encontrado.</td></tr>';
-      if (selectAllFazendas) selectAllFazendas.checked = false;
-      selectedIdsFazendas.clear();
-      updateTransferirFazendasButton();
-      return;
-    }
-    animais.forEach(a => {
-      const tr = document.createElement("tr");
-      tr.dataset.id = a._id || "";
-      const id = String(a._id || "");
-      const checked = selectedIdsFazendas.has(id);
-      tr.innerHTML = `
-        <td class="movTdCheck"><label class="movCheckWrap"><input type="checkbox" class="movRowCheck movRowCheckFazendas" data-id="${escapeHtml(id)}" ${checked ? "checked" : ""} /><span class="movCheckbox"></span></label></td>
-        <td>${escapeHtml(a?.brinco_padrao || "—")}</td>
-        <td>${escapeHtml(renderSex(a?.sexo))}</td>
-        <td>${escapeHtml(a?.raca || "—")}</td>
-        <td>${escapeHtml(fmtKg(a?.peso_atual_kg))}</td>
-      `;
-      const cb = tr.querySelector(".movRowCheck");
-      if (cb) {
-        cb.addEventListener("change", () => {
-          if (cb.checked) selectedIdsFazendas.add(id); else selectedIdsFazendas.delete(id);
-          if (selectAllFazendas) selectAllFazendas.checked = selectedIdsFazendas.size === animais.length;
-          updateTransferirFazendasButton();
-        });
-      }
-      tbodyFazendas.appendChild(tr);
-    });
-    if (selectAllFazendas) selectAllFazendas.checked = selectedIdsFazendas.size === animais.length;
-    updateTransferirFazendasButton();
-  }
-
-  selectAllFazendas?.addEventListener("change", () => {
-    if (selectAllFazendas.checked) animaisFazendas.forEach(a => selectedIdsFazendas.add(String(a._id)));
-    else selectedIdsFazendas.clear();
-    tbodyFazendas?.querySelectorAll(".movRowCheckFazendas").forEach(cb => { cb.checked = selectAllFazendas.checked; });
-    updateTransferirFazendasButton();
-  });
-
-  function updateTransferirFazendasButton() {
-    const fazendaDestinoId = selFazendaDestino?.value || "";
-    const loteDestinoId = selLoteDestinoFazenda?.value || "";
-    const pastoDestinoId = selPastoDestinoFazenda?.value || "";
-    const hasDestino = !!fazendaDestinoId && (!!loteDestinoId || !!pastoDestinoId);
-    const canTransfer = hasDestino && selectedIdsFazendas.size > 0;
-    if (btnTransferirFazendas) {
-      btnTransferirFazendas.classList.toggle("movBtnTransferir--disabled", !canTransfer);
-      btnTransferirFazendas.setAttribute("aria-disabled", canTransfer ? "false" : "true");
-    }
-  }
-  updateTransferirFazendasButton();
-
-  btnTransferirFazendas?.addEventListener("click", async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const fazendaDestinoId = selFazendaDestino?.value || "";
-    const loteDestinoId = selLoteDestinoFazenda?.value || "";
-    const pastoDestinoId = selPastoDestinoFazenda?.value || "";
-    const selected = animaisFazendas.filter(a => selectedIdsFazendas.has(String(a._id)));
-    
-    if (!fazendaDestinoId || selected.length === 0 || (!loteDestinoId && !pastoDestinoId)) {
-      toast("Selecione pelo menos um animal, a fazenda de destino e um lote ou pasto.");
-      return;
-    }
-
-    const listFazendas = (await idbGet("fazenda", "list")) || [];
-    const fazendaDestino = listFazendas.find(f => String(f._id) === fazendaDestinoId);
-    const lotesAll = (await idbGet("lotes", "list")) || [];
-    const pastosAll = (await idbGet("pastos", "list")) || [];
-    const origemNome = origemTipo === "lote"
-      ? (lotesAll.find(l => String(l._id) === selLoteOrigemFazenda?.value)?.nome_lote || "—")
-      : (pastosAll.find(p => String(p._id) === selPastoOrigemFazenda?.value)?.nome || "—");
-
-    let destinoNome = fazendaDestino?.name || "—";
-    if (loteDestinoId) {
-      const loteDestino = lotesAll.find(l => String(l._id) === loteDestinoId && String(l?.fazenda) === String(fazendaDestinoId));
-      destinoNome += ` - ${loteDestino?.nome_lote || "Lote"}`;
-    }
-    if (pastoDestinoId) {
-      const pastoDestino = pastosAll.find(p => String(p._id) === pastoDestinoId && String(p?.fazenda) === String(fazendaDestinoId));
-      destinoNome += ` - ${pastoDestino?.nome || "Pasto"}`;
-    }
-
-    const modalOrigem = container.querySelector("#movModalOrigem");
-    const modalDestino = container.querySelector("#movModalDestino");
-    const countEl = container.querySelector("#movModalAnimaisCount");
-    const listEl = container.querySelector("#movModalAnimais");
-    if (modalOrigem) modalOrigem.textContent = `${fazendaAtualNome} - ${origemNome}`;
-    if (modalDestino) modalDestino.textContent = destinoNome;
-    if (countEl) countEl.textContent = selected.length;
-    if (listEl) {
-      listEl.innerHTML = selected.map(a => {
-        const tag = escapeHtml(a?.brinco_padrao || "—");
-        const name = escapeHtml((a?.nome_completo || "").trim() || "—");
-        const raca = escapeHtml(a?.raca || "—");
-        const peso = escapeHtml(fmtKg(a?.peso_atual_kg));
-        const sexo = escapeHtml(renderSex(a?.sexo));
-        return `<div class="movModalAnimalRow">
-          <div class="movModalAnimalId">#${tag} ${name !== "—" ? name : ""}</div>
-          <span class="movModalAnimalRaca">${raca}</span>
-          <span class="movModalAnimalPeso">${peso}</span>
-          <span class="movModalAnimalSexo">${sexo}</span>
-        </div>`;
-      }).join("");
-    }
-    if (modalOverlay) {
-      modalOverlay.dataset.context = "fazendas";
-      modalOverlay.dataset.fazendaDestinoId = fazendaDestinoId;
-      modalOverlay.dataset.loteDestinoId = loteDestinoId || "";
-      modalOverlay.dataset.pastoDestinoId = pastoDestinoId || "";
-      modalOverlay.style.display = "flex";
-    }
-  });
-
-  modalConfirmar?.addEventListener("click", async () => {
-    const context = modalOverlay?.dataset.context;
-    if (context !== "fazendas") return;
-
-    const fazendaDestinoId = modalOverlay?.dataset.fazendaDestinoId || "";
-    const loteDestinoId = modalOverlay?.dataset.loteDestinoId || "";
-    const pastoDestinoId = modalOverlay?.dataset.pastoDestinoId || "";
-    const selected = animaisFazendas.filter(a => selectedIdsFazendas.has(String(a._id)));
-
-    if (!fazendaDestinoId || selected.length === 0) {
-      closeTransferModal();
-      if (modalOverlay) delete modalOverlay.dataset.context;
-      return;
-    }
-
-    const list = (await idbGet("animais", "list")) || [];
-    const ids = new Set(selected.map(a => String(a._id)));
-    const qKey = `queue:${fazendaDestinoId}:${state.ctx.ownerId || ""}:animal`;
-    const queue = (await idbGet("records", qKey)) || [];
-
-    for (let i = 0; i < list.length; i++) {
-      if (!ids.has(String(list[i]._id))) continue;
-      const prev = list[i];
-      const listLotesNovo = loteDestinoId ? [loteDestinoId] : [];
-      const pastoNovo = pastoDestinoId || "";
-      
-      const updated = normalizeAnimal({
-        ...prev,
-        fazenda: fazendaDestinoId,
-        list_lotes: listLotesNovo,
-        lote: loteDestinoId || "",
-        pasto: pastoNovo,
-        _local: prev._local || true,
-        _sync: "pending",
-        data_modificacao: prev.data_modificacao,
-      });
-      list[i] = updated;
-      queue.push({ op: "animal_update", at: Date.now(), payload: updated, targetId: prev._id });
-    }
-
-    await idbSet("animais", "list", list);
-    await idbSet("records", qKey, queue);
-
-    closeTransferModal();
-    if (modalOverlay) delete modalOverlay.dataset.context;
-    toast("Transferência entre fazendas registrada offline. " + selected.length + " animal(is) na fila para sincronizar.");
-
-    selectedIdsFazendas.clear();
-    await loadAnimaisOrigem();
-    updateTransferirFazendasButton();
-    updateFabSyncVisibility();
-  });
-
-  await initMovimentacaoFazendas();
+  await openDashboard();
 }
 
 // ---------------- Saída de Animais (módulo) ----------------
@@ -3111,92 +3042,25 @@ const SAIDA_ANIMAIS_TABS = [
   { id: "doacao", label: "Doação", title: "Saída por doação", sub: "Registre doações de animais da sua fazenda", btnNew: "Nova doação" }
 ];
 
-async function renderSaidaAnimaisModule(container) {
+/** Tela "Informações sobre a venda" (saída individual — apenas formulário, sem listagem).
+ * options: { preselectedAnimal, onAfterConfirm, onBack } para uso na linha de produção.
+ */
+async function renderSaidaAnimaisVendaForm(container, options = {}) {
   if (!container) return;
 
-  container.hidden = false;
-  const tabsHtml = SAIDA_ANIMAIS_TABS.map((tab, i) =>
-    `<button type="button" class="saTab ${i === 0 ? "active" : ""}" data-tab="${tab.id}" role="tab">${escapeHtml(tab.label)}</button>`
-  ).join("");
-  const contentsHtml = SAIDA_ANIMAIS_TABS.map((tab, i) => `
-    <div class="saContent saTabContent" id="saContent${tab.id}" ${i > 0 ? "hidden" : ""}>
-      <h2 class="saTitle">${escapeHtml(tab.title)}</h2>
-      <p class="saSub">${escapeHtml(tab.sub)}</p>
-      <div class="saActionBar">
-        <div class="saSearchWrap">
-          <span class="saSearchIcon" aria-hidden="true">&#128269;</span>
-          <input type="text" class="saSearch" placeholder="Buscar" aria-label="Buscar" />
-        </div>
-        <button type="button" class="btn primary saBtnNew" data-tab="${tab.id}" aria-label="${escapeHtml(tab.btnNew)}">
-          <span class="saBtnNewIcon" aria-hidden="true">+</span> ${escapeHtml(tab.btnNew)}
-        </button>
-        <button type="button" class="saFilterBtn" aria-label="Filtros" title="Filtros">
-          <svg class="saFilterIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h7"/></svg>
-        </button>
-      </div>
-      <div class="saCard saEmptyState">
-        <div class="saEmptyIcon" aria-hidden="true">🔍</div>
-        <p class="saEmptyTitle">Nenhum resultado encontrado</p>
-        <p class="saEmptySub">Sua busca não encontrou nenhum resultado. Tente novamente ou adicione um novo item.</p>
-        <button type="button" class="btn primary saBtnNew saBtnNewCenter" data-tab="${tab.id}">
-          <span class="saBtnNewIcon" aria-hidden="true">+</span> ${escapeHtml(tab.btnNew)}
-        </button>
-      </div>
-    </div>
-  `).join("");
-
-  container.innerHTML = `
-    <div class="saPage">
-      <div class="saTabs" role="tablist">
-        ${tabsHtml}
-      </div>
-      ${contentsHtml}
-    </div>
-  `;
-
-  const saTabs = container.querySelectorAll(".saTab");
-  const saContents = container.querySelectorAll(".saContent");
-
-  container.querySelectorAll(".saTab").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const tabId = btn.dataset.tab;
-      saTabs.forEach((t) => t.classList.remove("active"));
-      btn.classList.add("active");
-      saContents.forEach((c) => {
-        const isTarget = c.id === "saContent" + tabId;
-        c.hidden = !isTarget;
-      });
-    });
-  });
-
-  container.querySelectorAll(".saBtnNew, .saBtnNewCenter").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const tabId = btn.dataset.tab;
-      if (tabId === "venda") {
-        await renderSaidaAnimaisVendaForm(container);
-        return;
-      }
-      const tab = SAIDA_ANIMAIS_TABS.find((t) => t.id === tabId);
-      if (tab) toast(`Em breve: ${tab.btnNew}`);
-    });
-  });
-}
-
-/** Tela "Informações sobre a venda" (saída individual — apenas formulário, sem listagem). */
-async function renderSaidaAnimaisVendaForm(container) {
-  if (!container) return;
-
-  const condicaoOptions = CONDICAO_PAGAMENTO_LIST.map(
-    (c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`
-  ).join("");
+  // Opções dos selects (sem pré-seleção; o pré-preenchimento é aplicado dinamicamente por applyModulePrefillToContainer)
+  const condicaoOptions = CONDICAO_PAGAMENTO_LIST.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+  const movimentacaoSaidaOptions = MOVIMENTACAO_SAIDA_ANIMAL_LIST.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join("");
   const ufOptions = UF_LIST.map(
     (u) => `<option value="${escapeHtml(u.value)}">${escapeHtml(u.label)}</option>`
   ).join("");
 
   const today = new Date().toISOString().slice(0, 10);
 
+  const isPipelineContext = !!options.preselectedAnimal;
+
   container.innerHTML = `
-    <div class="saVendaForm" id="saVendaForm">
+    <div class="saVendaForm${isPipelineContext ? " saVendaFormPipeline" : ""}" id="saVendaForm">
       <div class="pageHead">
         <div class="pageHeadRow1">
           <button type="button" class="animalFormBackBtn" id="saVendaBack" aria-label="Voltar">← Voltar</button>
@@ -3246,6 +3110,10 @@ async function renderSaidaAnimaisVendaForm(container) {
             <div class="saVendaField">
               <label for="vendaCondicaoPagamento">Condição de Pagamento</label>
               <select id="vendaCondicaoPagamento" class="saVendaSelect"><option value="">Selecione a condição de pagamento</option>${condicaoOptions}</select>
+            </div>
+            <div class="saVendaField">
+              <label for="vendaMovimentacaoSaida">Tipo de saída</label>
+              <select id="vendaMovimentacaoSaida" class="saVendaSelect"><option value="">Selecione o tipo de saída</option>${movimentacaoSaidaOptions}</select>
             </div>
             <div class="saVendaField">
               <label for="vendaData">Data</label>
@@ -3332,9 +3200,51 @@ async function renderSaidaAnimaisVendaForm(container) {
     </div>
   `;
 
+  applyModulePrefillToContainer(container, "saida_animais", "Venda");
+
   const backBtn = container.querySelector("#saVendaBack");
   if (backBtn) {
-    backBtn.addEventListener("click", () => renderSaidaAnimaisModule(container));
+    backBtn.addEventListener("click", () => {
+      if (options.onBack) options.onBack();
+      else renderSaidaAnimaisModule(container);
+    });
+  }
+
+  if (options.preselectedAnimal) {
+    const animal = options.preselectedAnimal;
+    const displayName = `${animal.brinco_padrao || "—"} — ${String(animal.nome_completo || "").trim() || "—"}`;
+
+    // Mostra o animal atual no header
+    const headRow2 = container.querySelector(".pageHeadRow2");
+    if (headRow2) {
+      const info = document.createElement("p");
+      info.className = "saVendaHeaderAnimal";
+      info.textContent = displayName;
+      headRow2.appendChild(info);
+    }
+
+    const inputBrinco = container.querySelector("#vendaAnimalBrinco");
+    if (inputBrinco) {
+      inputBrinco.value = displayName;
+      inputBrinco.setAttribute("data-selected-id", animal._id || "");
+      inputBrinco.readOnly = true;
+      const wrap = container.querySelector(".saVendaFieldAnimal");
+      if (wrap) {
+        wrap.classList.add("pipeline-animal-locked");
+        // some o campo de busca de animal no fluxo da linha de produção
+        wrap.style.display = "none";
+      }
+    }
+    const pesoInput = container.querySelector("#vendaPeso");
+    if (pesoInput && (animal.peso_atual_kg != null)) pesoInput.value = animal.peso_atual_kg;
+    const valorInput = container.querySelector("#vendaValor");
+    if (valorInput && (animal.valor_animal != null)) {
+      const v = Number(animal.valor_animal);
+      if (!isNaN(v)) {
+        valorInput.setAttribute("data-raw", String(v));
+        valorInput.value = v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+    }
   }
 
   /** Formata string de dígitos em moeda BR (ex.: "120000" -> "1.200,00"). Usado no campo Valor e ao pré-preencher. */
@@ -3471,6 +3381,8 @@ async function renderSaidaAnimaisVendaForm(container) {
       const vendaValor = container.querySelector("#vendaValor");
       const valorNum = parseFloat(vendaValor?.dataset?.raw ?? vendaValor?.value ?? 0) || 0;
       const condicaoPagamento = container.querySelector("#vendaCondicaoPagamento")?.value?.trim() || "";
+      const movimentacaoSaida = container.querySelector("#vendaMovimentacaoSaida")?.value?.trim() || "";
+      const movimentacaoEntrada = movimentacaoSaida ? (MOVIMENTACAO_SAIDA_TO_ENTRADA[movimentacaoSaida] ?? "") : "";
       const numeroGTA = container.querySelector("#vendaNumeroGTA")?.value?.trim() || "";
       const serieGTA = container.querySelector("#vendaSerie")?.value?.trim() || "";
       const dataEmissaoGTA = container.querySelector("#vendaDataEmissaoGTA")?.value;
@@ -3481,7 +3393,7 @@ async function renderSaidaAnimaisVendaForm(container) {
       const dataValidadeTs = dataValidadeGTA ? dateToTimestampSync(dataValidadeGTA) : null;
       const qKey = `queue:${state.ctx.fazendaId || ""}:${state.ctx.ownerId || ""}:animal`;
       const queueBefore = (await idbGet("records", qKey)) || [];
-      const pesoCreateItem = queueBefore.find((item) => item.op === "animal_create_peso" && String(item.payload?.animal) === String(animalId));
+      const pesoCreateItem = queueBefore.find((item) => item.op === OFFLINE_OPS.ANIMAL_CREATE_PESO && String(item.payload?.animal) === String(animalId));
       const animaisList = (await idbGet("animais", "list")) || [];
       const animalRecord = animaisList.find((a) => String(a?._id) === String(animalId));
       const existingPeso = animalRecord?.animal_peso && typeof animalRecord.animal_peso === "object" ? animalRecord.animal_peso : null;
@@ -3506,6 +3418,8 @@ async function renderSaidaAnimaisVendaForm(container) {
         data_aquisicao: dataAquisicaoTs != null ? dataAquisicaoTs : null,
         valor: valorNum,
         condicao_pagamento: condicaoPagamento != null && String(condicaoPagamento).trim() !== "" ? String(condicaoPagamento).trim() : "",
+        movimentacao_saida_animal: movimentacaoSaida !== "" ? movimentacaoSaida : "",
+        movimentacao_entrada_animal: movimentacaoEntrada !== "" ? movimentacaoEntrada : "",
         numero_gta: numeroGTA != null && String(numeroGTA).trim() !== "" ? String(numeroGTA).trim() : "",
         serie_gta: serieGTA != null && String(serieGTA).trim() !== "" ? String(serieGTA).trim() : "",
         data_emissao_gta: dataEmissaoTs != null ? dataEmissaoTs : null,
@@ -3515,11 +3429,13 @@ async function renderSaidaAnimaisVendaForm(container) {
         user_atual: userAtualId || null,
         valor_saida: valorNum,
       };
-      queueBefore.push({ _id: `local:${uuid()}`, op: "create_saida_animais", at: Date.now(), payload });
+      const opSaida = SAIDA_TIPO_TO_OFFLINE_OP[movimentacaoSaida] || OFFLINE_OPS.CREATE_SAIDA_ANIMAIS_VENDA;
+      queueBefore.push({ _id: `local:${uuid()}`, op: opSaida, at: Date.now(), payload });
       await idbSet("records", qKey, queueBefore);
       updateFabSyncVisibility();
       closeVendaModal();
       toast("Saída de animais registrada. Será sincronizada quando houver conexão.");
+      options?.onAfterConfirm?.();
     });
   }
 
@@ -3794,10 +3710,10 @@ async function renderSaidaAnimaisVendaForm(container) {
       const qKey = `queue:${state.ctx.fazendaId || ""}:${state.ctx.ownerId || ""}:animal`;
       const queue = (await idbGet("records", qKey)) || [];
       const withoutValorUpdatesForThis = queue.filter(
-        (item) => !(item.op === "animal_update" && String(item.targetId) === String(animalId) && item.fromValorAnimal === true)
+        (item) => !(item.op === OFFLINE_OPS.ANIMAL_UPDATE && String(item.targetId) === String(animalId) && item.fromValorAnimal === true)
       );
       withoutValorUpdatesForThis.push({
-        op: "animal_update",
+        op: OFFLINE_OPS.ANIMAL_UPDATE,
         at: Date.now(),
         payload: updated,
         targetId: animalId,
@@ -3891,33 +3807,39 @@ async function getPendingSyncList() {
     const isTransfer = String(fazendaId) !== String(currentFazendaId);
     for (let i = 0; i < queue.length; i++) {
       const op = queue[i];
-      const opType = op?.op || "animal_update";
-      let label = opType === "animal_create" ? "Novo animal" : "Atualização de animal";
+      const opType = op?.op || OFFLINE_OPS.ANIMAL_UPDATE;
+      let label = opType === OFFLINE_OPS.ANIMAL_CREATE ? "Novo animal" : "Atualização de animal";
       if (opType === "animal_update" && isTransfer) label = "Transferência entre fazendas";
-      if (opType === "animal_create_peso") label = "Pesagem";
-      if (opType === "create_saida_animais") label = "Saída de animais";
+      if (opType === OFFLINE_OPS.ANIMAL_CREATE_PESO) label = "Pesagem";
+      if (SAIDA_OFFLINE_OP_SET.has(opType)) label = "Saída de animais";
       const payload = op?.payload || {};
       let oldAnimal = null;
-      if ((opType === "animal_update" && (op.targetId || payload._id)) || (opType === "animal_create_peso" && payload.animal)) {
+      if ((opType === OFFLINE_OPS.ANIMAL_UPDATE && (op.targetId || payload._id)) || (opType === OFFLINE_OPS.ANIMAL_CREATE_PESO && payload.animal)) {
         const animalId = op.targetId || payload._id || payload.animal;
         oldAnimal = animaisList.find(a => String(a?._id) === String(animalId));
       }
-      if (opType === "create_saida_animais" && Array.isArray(payload.animais) && payload.animais.length > 0) {
-        const animalId = payload.animais[0];
-        oldAnimal = animaisList.find(a => String(a?._id) === String(animalId));
+      if (SAIDA_OFFLINE_OP_SET.has(opType) && Array.isArray(payload.animais) && payload.animais.length > 0) {
+        const aid = payload.animais[0];
+        oldAnimal = animaisList.find(a => String(a?._id) === String(aid));
       }
+      if (opType === OFFLINE_OPS.ANIMAL_CREATE && payload._id) {
+        oldAnimal = payload;
+      }
+      const animalId = opType === OFFLINE_OPS.ANIMAL_CREATE ? (payload._id || "") : (op.targetId || payload._id || payload.animal || (Array.isArray(payload.animais) && payload.animais[0]) || "");
       const nome = String(payload.nome_completo || (oldAnimal && oldAnimal.nome_completo) || "").trim();
-      const brinco = String(payload.brinco || payload.brinco_padrao || (oldAnimal && (oldAnimal.brinco || oldAnimal.brinco_padrao)) || "").trim();
-      let detail = nome || brinco || "—";
-      if (opType === "animal_create_peso" && payload.peso_atual_kg != null) detail = (detail !== "—" ? detail + " · " : "") + payload.peso_atual_kg + " kg";
-      if (opType === "create_saida_animais") detail = (detail !== "—" ? detail + " · " : "") + (payload.animais?.length || 1) + " animal(is)";
+      const brinco = String(payload.brinco_padrao || payload.brinco || (oldAnimal && (oldAnimal.brinco_padrao || oldAnimal.brinco)) || "").trim();
+      let detail = label + (nome || brinco ? " · " + (nome || brinco) : "");
+      if (opType === OFFLINE_OPS.ANIMAL_CREATE_PESO && payload.peso_atual_kg != null) detail = (detail !== "—" ? detail + " · " : "") + payload.peso_atual_kg + " kg";
+      if (SAIDA_OFFLINE_OP_SET.has(opType)) detail = (detail !== "—" ? detail + " · " : "") + (payload.animais?.length || 1) + " animal(is)";
       items.push({
         queueOrder: globalIndex++,
         queueKey: qKey,
         queueIndex: i,
         op: opType,
         label,
-        detail
+        detail,
+        animalId: String(animalId || "").trim(),
+        animalLabel: brinco ? (nome ? `Brinco ${brinco} — ${nome}` : `Brinco ${brinco}`) : (nome || animalId || "—")
       });
     }
   }
@@ -3938,6 +3860,23 @@ function groupPendingSyncByLabel(list) {
     byLabel[item.label].push(item);
   }
   return order.map(label => ({ label, items: byLabel[label] }));
+}
+
+/** Agrupa itens por animal (linha de produção): uma linha por animal, ao clicar mostra a fila daquele animal. */
+function groupPendingSyncByAnimal(list) {
+  const byAnimal = {};
+  const order = [];
+  for (const item of list) {
+    const id = item.animalId || "__outros__";
+    const displayLabel = item.animalLabel || "Outros";
+    if (!byAnimal[id]) {
+      byAnimal[id] = { label: displayLabel, animalId: id, items: [] };
+      order.push(id);
+    }
+    byAnimal[id].items.push(item);
+    if (id !== "__outros__" && (item.animalLabel || "").trim()) byAnimal[id].label = item.animalLabel;
+  }
+  return order.map(id => ({ label: byAnimal[id].label, animalId: byAnimal[id].animalId, items: byAnimal[id].items }));
 }
 
 /** Cria ou retorna o modal de detalhes do grupo de pendências. */
@@ -3973,7 +3912,7 @@ function openPendingSyncModal(group) {
   }
   const title = document.getElementById("dashPendingSyncModalTitle");
   const body = document.getElementById("dashPendingSyncModalBody");
-  if (title) title.textContent = `${group.label} (${group.items.length})`;
+  if (title) title.textContent = group.label ? `${group.label} — Fila de sincronizações` : `Fila (${group.items.length})`;
   if (body) {
     body.innerHTML = group.items.map((item, i) =>
       `<div class="dashPendingSyncModalItem"><span class="dashPendingSyncModalItemNum">${i + 1}</span><span class="dashPendingSyncModalItemText">${escapeHtml(item.detail)}</span></div>`
@@ -3982,10 +3921,18 @@ function openPendingSyncModal(group) {
   overlay.style.display = "flex";
 }
 
-/** Renderiza apenas o card de pendências (lista agrupada + paginação), usado ao trocar de página. */
+/** Renderiza o card de pendências agrupado por animal (linha de produção). Ao clicar, abre modal com a fila daquele animal. */
+function setPendingSyncCardVisible(visible) {
+  const wrapMobile = document.getElementById("dashPendingSyncWrap");
+  const wrapDesktop = document.getElementById("dashPendingSyncWrapDesktop");
+  const display = visible ? "block" : "none";
+  if (wrapMobile) wrapMobile.style.display = display;
+  if (wrapDesktop) wrapDesktop.style.display = display;
+}
+
 function renderPendingSyncCard() {
   const list = state.pendingSyncListForCard || [];
-  const groups = groupPendingSyncByLabel(list);
+  const groups = groupPendingSyncByAnimal(list);
   state.pendingSyncGroupsForCard = groups;
 
   const page = Math.max(0, state.pendingSyncPage || 0);
@@ -4003,7 +3950,7 @@ function renderPendingSyncCard() {
   const paginationDesktop = document.getElementById("dashPendingSyncPaginationDesktop");
 
   const buildGroupRowHtml = (group, groupIndex, displayIndex) =>
-    `<div class="dashPendingSyncItem dashPendingSyncGroupRow" data-group-index="${groupIndex}" role="button" tabindex="0"><span class="dashPendingSyncOrder">${displayIndex}</span><span class="dashPendingSyncLabel">${escapeHtml(group.label)}</span><span class="dashPendingSyncDetail">${group.items.length} item(ns)</span></div>`;
+    `<div class="dashPendingSyncItem dashPendingSyncGroupRow" data-group-index="${groupIndex}" role="button" tabindex="0"><span class="dashPendingSyncOrder">${displayIndex}</span><span class="dashPendingSyncLabel">${escapeHtml(group.label)}</span><span class="dashPendingSyncDetail">Fila de sincronizações · ${group.items.length} item(ns)</span></div>`;
 
   const listHtml = pageGroups.map((g, i) => buildGroupRowHtml(g, start + i, start + i + 1)).join("");
 
@@ -4054,38 +4001,19 @@ async function renderDashboard() {
   let owner = sessionOwner;
 
   if (!owner) {
-    // Fallback: try to find in list_proprietarios
-    const ownerId = state.ctx.ownerId;
-    const owners = (await idbGet("fazenda", "list_proprietarios")) || [];
-    owner = owners.find(o => String(o._id) === String(ownerId));
+    // Fallback: colaborador_principal da fazenda atual na tabela de colaboradores
+    const fazenda = await idbGet("fazenda", "current");
+    const colaboradores = (await idbGet("colaboradores", "list")) || [];
+    const principalId = fazenda?.colaborador_principal || state.ctx.ownerId;
+    if (principalId) {
+      owner = colaboradores.find(c => String(c._id) === String(principalId)) || owner;
+    }
   }
 
   const name = owner?.nome || "Usuário";
   const firstLetter = name.charAt(0).toUpperCase();
 
-  const elName = $("#dashName");
-  const elAvatar = $("#dashAvatar");
-
-  // Check for pending sync items to show indicator in header (apenas fazenda atual)
-  const allAnimaisRaw = (await idbGet("animais", "list")) || [];
-  const allAnimais = filterByCurrentFazenda(allAnimaisRaw);
-  const hasPending = allAnimais.some(a => a._sync === "pending");
-
-  if (elName) {
-    elName.innerHTML = escapeHtml(name) + (hasPending ? " <span style='font-size:13px; vertical-align:middle' title='Dados pendentes'>☁️</span>" : "");
-  }
-  if (elAvatar) {
-    elAvatar.textContent = firstLetter;
-    // Atualiza status da bolinha baseado no status online/offline
-    const online = navigator.onLine;
-    if (online) {
-      elAvatar.classList.remove("offline");
-    } else {
-      elAvatar.classList.add("offline");
-    }
-  }
-
-  // Atualiza bloco do usuário no sidebar (desktop)
+  // Atualiza bloco do usuário no topo direito do dashboard (desktop e mobile)
   renderSidebarUser();
 
   // Módulos (carrossel mobile)
@@ -4110,14 +4038,16 @@ async function renderDashboard() {
   }
   const wrapMobile = document.getElementById("dashPendingSyncWrap");
   const wrapDesktop = document.getElementById("dashPendingSyncWrapDesktop");
-  if (pendingList.length > 0) {
-    if (wrapMobile) wrapMobile.style.display = "block";
-    if (wrapDesktop) wrapDesktop.style.display = "block";
+  const isDashboardRoot = state.view === "dashboard" && !state.pipelineAnimal;
+  const showPendingCard = pendingList.length > 0 && isDashboardRoot && navigator.onLine;
+  if (showPendingCard) {
+    setPendingSyncCardVisible(true);
     renderPendingSyncCard();
   } else {
     state.pendingSyncPage = 0;
-    if (wrapMobile) { wrapMobile.style.display = "none"; document.getElementById("dashPendingSyncList") && (document.getElementById("dashPendingSyncList").innerHTML = ""); }
-    if (wrapDesktop) { wrapDesktop.style.display = "none"; document.getElementById("dashPendingSyncListDesktop") && (document.getElementById("dashPendingSyncListDesktop").innerHTML = ""); }
+    setPendingSyncCardVisible(false);
+    if (wrapMobile) { document.getElementById("dashPendingSyncList") && (document.getElementById("dashPendingSyncList").innerHTML = ""); }
+    if (wrapDesktop) { document.getElementById("dashPendingSyncListDesktop") && (document.getElementById("dashPendingSyncListDesktop").innerHTML = ""); }
     const paginationMobile = document.getElementById("dashPendingSyncPagination");
     const paginationDesktop = document.getElementById("dashPendingSyncPaginationDesktop");
     if (paginationMobile) paginationMobile.innerHTML = "";
@@ -4499,49 +4429,24 @@ async function openDashboard() {
   // Render Data
   await renderDashboard();
 
-  // Atualiza sidebar para marcar "Início" como ativo
-  renderSidebar();
-
-  // Atualiza visibilidade do FAB Sync
-  updateFabSyncVisibility();
-
-  // Salva estado de navegação
-  await saveNavigationState();
-}
-
-async function openModule(moduleKey) {
-  state.activeKey = moduleKey;
-  state.view = "module";
-  if (moduleKey === "animal") {
-    state.animalView = "list";
-    state.animalEditingId = null;
-  }
+  // Modal da linha de produção (no dashboard): liga eventos e mostra modal ou passo atual
+  ensurePipelineModalReady();
 
   renderSidebar();
   updateFabSyncVisibility();
-
-  const dash = $("#modDashboard");
-  if (dash) dash.hidden = true;
-  const dashDesktop = document.getElementById("modDashboardDesktop");
-  if (dashDesktop) dashDesktop.hidden = true;
-
-  await renderActiveModule();
-
-  // Salva estado de navegação
   await saveNavigationState();
 }
 
-// Controla visibilidade do FAB Sync baseado na página atual
+async function openModule() {
+  await openDashboard();
+}
+
+// Controla visibilidade do FAB Sync (apenas na tela inicial do dashboard, não nos passos do pipeline)
 function updateFabSyncVisibility() {
   const btn = document.getElementById("fabSync");
   if (!btn) return;
-
-  // Mostra o FAB Sync no dashboard e no módulo Movimentações (entre lotes/pastos/fazendas)
-  // NÃO mostra no módulo animal (nem na listagem, nem nos formulários)
-  const isDashboard = state.view === "dashboard";
-  const isLotesModule = state.view === "module" && state.activeKey === "movimentacao";
-  const isAnimalModule = state.activeKey === "animal" || (state.view === "module" && state.activeKey === "animal");
-  const canShowFab = (isDashboard || isLotesModule) && !isAnimalModule;
+  const isDashboardRoot = state.view === "dashboard" && !state.pipelineAnimal;
+  const canShowFab = isDashboardRoot;
 
   if (!canShowFab) {
     btn.hidden = true;
@@ -4550,19 +4455,14 @@ function updateFabSyncVisibility() {
     return;
   }
 
-  // Verifica pendências e mostra/esconde o botão
   checkSyncStatus();
 }
 
 async function checkSyncStatus() {
   const btn = document.getElementById("fabSync");
   if (!btn) return;
-
-  // Mostra no dashboard ou no módulo Movimentações. Esconde no módulo animal.
-  const isDashboard = state.view === "dashboard";
-  const isLotesModule = state.view === "module" && state.activeKey === "movimentacao";
-  const isAnimalModule = state.activeKey === "animal" || (state.view === "module" && state.activeKey === "animal");
-  const canShowFab = (isDashboard || isLotesModule) && !isAnimalModule;
+  const isDashboardRoot = state.view === "dashboard" && !state.pipelineAnimal;
+  const canShowFab = isDashboardRoot;
 
   if (!canShowFab) {
     btn.hidden = true;
@@ -4725,8 +4625,11 @@ function hideSyncStatusBanner() {
   });
 }
 
-/** Aplica resultado da sincronização (resultados) aos animais locais e atualiza UI. */
-async function applySyncResult(result, qKey) {
+/** Aplica resultado da sincronização (resultados) aos animais locais e atualiza UI.
+ * @param options.clearMeta - se false, não limpa meta nem chama openDashboard (uso em lote: só o último aplica).
+ * @param options.skipDeleteQueue - se true, atualiza animais mas não remove o registro da fila (resposta síncrona em lote). */
+async function applySyncResult(result, qKey, options = {}) {
+  const { clearMeta = true, skipDeleteQueue = false } = options;
   if (!result || !Array.isArray(result.resultados)) return;
   let animaisList = (await idbGet("animais", "list")) || [];
 
@@ -4786,22 +4689,27 @@ async function applySyncResult(result, qKey) {
   animaisList = Array.from(byId.values());
 
   await idbSet("animais", "list", animaisList);
-  const pendingQKeysJson = await idbGet("meta", "sync_pending_qKeys");
-  if (pendingQKeysJson) {
-    try {
-      const keysToDelete = JSON.parse(pendingQKeysJson);
-      if (Array.isArray(keysToDelete)) {
-        for (const k of keysToDelete) await idbDel("records", k);
-      }
-    } catch (_) {}
-    await idbDel("meta", "sync_pending_qKeys");
-  } else {
-    await idbDel("records", qKey);
+  if (!skipDeleteQueue) {
+    const pendingQKeysJson = await idbGet("meta", "sync_pending_qKeys");
+    if (pendingQKeysJson) {
+      try {
+        const keysToDelete = JSON.parse(pendingQKeysJson);
+        if (Array.isArray(keysToDelete)) {
+          for (const k of keysToDelete) await idbDel("records", k);
+        }
+      } catch (_) {}
+      await idbDel("meta", "sync_pending_qKeys");
+    } else if (qKey) {
+      await idbDel("records", qKey);
+    }
   }
-  await idbDel("meta", "sync_pending_id");
-  await idbDel("meta", "sync_pending_qKey");
-  resetSyncNotifySound();
-  await openDashboard();
+  if (clearMeta) {
+    await idbDel("meta", "sync_pending_id");
+    await idbDel("meta", "sync_pending_qKey");
+    await idbDel("meta", "sync_pending_qKeys");
+    resetSyncNotifySound();
+    await openDashboard();
+  }
 }
 
 function restoreFabSyncIcon() {
@@ -4882,25 +4790,7 @@ function startPollSyncStatus(idResponse, qKey) {
           clearInterval(syncPollTimerId);
           syncPollTimerId = null;
         }
-        // Converte "dados" para o formato esperado por applySyncResult (resultados)
-        const resultados = dados.map(item => {
-          if (item.op === "animal_create") {
-            return {
-              op: "animal_create",
-              local_id: item.id_local || item.local_id,
-              server_id: item.targetId
-            };
-          }
-          if (item.op === "animal_update") {
-            return {
-              op: "animal_update",
-              targetId: item.targetId,
-              id_local: item.id_local || undefined,
-              status: (item.status_sync === "completed") ? "updated" : item.status_sync
-            };
-          }
-          return item;
-        });
+        const resultados = mapStatusDadosToResultados(dados);
         await applySyncResult({ resultados }, qKey);
         hideSyncProgress();
         hideSyncStatusBanner();
@@ -4971,6 +4861,86 @@ function startPollSyncStatus(idResponse, qKey) {
   });
 }
 
+/** Converte array "dados" do status_offline para formato resultados (applySyncResult). */
+function mapStatusDadosToResultados(dados) {
+  if (!Array.isArray(dados)) return [];
+  return dados.map(item => {
+    if (item.op === "animal_create") {
+      return {
+        op: "animal_create",
+        local_id: item.id_local || item.local_id,
+        server_id: item.targetId
+      };
+    }
+    if (item.op === "animal_update") {
+      return {
+        op: "animal_update",
+        targetId: item.targetId,
+        id_local: item.id_local || undefined,
+        status: (item.status_sync === "completed") ? "updated" : item.status_sync
+      };
+    }
+    return item;
+  });
+}
+
+/** Aguarda todos os id_response retornarem status finalizado no status_offline. Retorna resultados na mesma ordem dos ids. */
+function waitForAllSyncStatus(idResponses) {
+  if (!idResponses || idResponses.length === 0) return Promise.resolve([]);
+  const results = new Array(idResponses.length).fill(null);
+  let resolvedCount = 0;
+
+  const checkOne = async (idResponse, index) => {
+    if (results[index] !== null) return;
+    const url = `${API_CONFIG.getUrl(API_CONFIG.ENDPOINTS.STATUS_OFFLINE)}?id_response=${encodeURIComponent(idResponse)}`;
+    const res = await fetch(url, { method: "GET" });
+    if (!res.ok) return;
+    const rawText = await res.text();
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (_) {
+      return;
+    }
+    const dados = Array.isArray(data.dados) ? data.dados : [];
+    const qtd = parseInt(data.qtd, 10) || 0;
+    const finalizado = qtd > 0 && dados.length === qtd;
+    if (finalizado && dados.length > 0) {
+      results[index] = mapStatusDadosToResultados(dados);
+      resolvedCount += 1;
+      return;
+    }
+    if (data.success === false || data.status === "failed" || data.status === "error") {
+      throw new Error(data.message || data.error || "Sincronização falhou.");
+    }
+  };
+
+  return new Promise((resolve, reject) => {
+    let intervalId = null;
+    const runCheck = async () => {
+      try {
+        for (let i = 0; i < idResponses.length; i++) {
+          if (results[i] === null) await checkOne(idResponses[i], i);
+        }
+        if (resolvedCount === idResponses.length) {
+          if (intervalId) clearInterval(intervalId);
+          resolve(results.flat());
+        }
+      } catch (e) {
+        if (intervalId) clearInterval(intervalId);
+        reject(e);
+      }
+    };
+    (async () => {
+      await new Promise(r => setTimeout(r, 10000));
+      await runCheck();
+      if (resolvedCount < idResponses.length) {
+        intervalId = setInterval(runCheck, SYNC_CONFIG.POLL_INTERVAL_MS);
+      }
+    })();
+  });
+}
+
 /** Retorna true se há sincronização em andamento (polling ativo). */
 async function isSyncInProgress() {
   const pendingId = await idbGet("meta", "sync_pending_id");
@@ -4999,18 +4969,20 @@ const dateToTimestampSync = (dateValue) => {
 /** Constrói array de operacoes para envio a partir de uma fila (queue). */
 function buildOperacoesFromQueue(queue, dadosOp) {
   return queue.map(op => {
-        // create_saida_animais: enviado como { op, data_hora, _id/id_local, payload } para o status poder remover da fila
-        if (op.op === "create_saida_animais") {
+        // create_saida_animais_*: enviado como { op, data_hora, _id/id_local, payload } para o status poder remover da fila
+        if (SAIDA_OFFLINE_OP_SET.has(op.op)) {
           const out = {
-            op: "create_saida_animais",
+            op: op.op,
             data_hora: op.at || Date.now(),
             payload: { ...(op.payload || {}) },
           };
-          if (op._id) { out._id = op._id; out.id_local = op._id; }
+          if (op._id) {
+            out.id_local = op._id;
+          }
           return out;
         }
         // animal_create_peso: mesmo formato de payload que create_saida_animais; só animais e animal_peso preenchidos, resto null/""
-        if (op.op === "animal_create_peso") {
+        if (op.op === OFFLINE_OPS.ANIMAL_CREATE_PESO) {
           const p = op.payload || {};
           const animalPesoObj = {
             animal: p.animal,
@@ -5036,6 +5008,8 @@ function buildOperacoesFromQueue(queue, dadosOp) {
               data_aquisicao: null,
               valor: null,
               condicao_pagamento: "",
+              movimentacao_saida_animal: null,
+              movimentacao_entrada_animal: null,
               numero_gta: "",
               serie_gta: "",
               data_emissao_gta: null,
@@ -5046,7 +5020,9 @@ function buildOperacoesFromQueue(queue, dadosOp) {
               valor_saida: null,
             },
           };
-          if (op._id) { out._id = op._id; out.id_local = op._id; }
+          if (op._id) {
+            out.id_local = op._id;
+          }
           return out;
         }
         // Clona o payload e garante que proprietario está presente
@@ -5096,11 +5072,9 @@ function buildOperacoesFromQueue(queue, dadosOp) {
           payload.list_lotes = payload.lote ? [payload.lote] : [];
         }
 
-        // update_fazenda_new: list_lotes e pasto devem ser apenas os novos valores da nova fazenda (nada da fazenda antiga)
+        // update_fazenda_new: destino fica em dados.fazenda_id; no payload vão fazenda_origem, pasto, list_lotes (fazenda_origem é preenchido em processQueue)
         if (dadosOp === "update_fazenda_new") {
-          payload.list_lotes = Array.isArray(payload.list_lotes) ? payload.list_lotes : [];
-          payload.pasto = String(payload.pasto || "").trim();
-          payload.lote = payload.list_lotes.length > 0 ? payload.list_lotes[0] : "";
+          delete payload.fazenda;
         }
         
         // Remove apenas campos de sincronização local; preserva data_modificacao para o servidor comparar
@@ -5113,8 +5087,8 @@ function buildOperacoesFromQueue(queue, dadosOp) {
           payload: payload
         };
         
-        // Para UPDATE, adiciona targetId
-        if (op.op === "animal_update" && op.targetId) {
+        // Para animal_update e movimentações: adiciona targetId (id do animal)
+        if (op.targetId && (op.op === "animal_update" || op.op === OFFLINE_OPS.MOVIMENTACAO_ENTRE_LOTES || op.op === OFFLINE_OPS.MOVIMENTACAO_ENTRE_PASTOS || op.op === OFFLINE_OPS.MOVIMENTACAO_ENTRE_FAZENDAS)) {
           operacao.targetId = op.targetId;
         }
         
@@ -5122,8 +5096,10 @@ function buildOperacoesFromQueue(queue, dadosOp) {
   });
 }
 
-/** Envia um payload de sincronização e trata resposta (síncrona ou assíncrona). Retorna true se iniciou polling. */
-async function sendSyncPayload(syncPayload, qKey, qKeysToDeleteForApply = null) {
+/** Envia um payload de sincronização e trata resposta (síncrona ou assíncrona).
+ * @param collectIdOnly - se true, não grava em meta e retorna { idResponse } para o caller coletar (envio em lote).
+ * @returns true se iniciou polling (modo legado), ou { idResponse } quando collectIdOnly e servidor retornou id_response. */
+async function sendSyncPayload(syncPayload, qKey, qKeysToDeleteForApply = null, collectIdOnly = false) {
 
   console.log(syncPayload);
 
@@ -5139,6 +5115,9 @@ async function sendSyncPayload(syncPayload, qKey, qKeysToDeleteForApply = null) 
   const result = await response.json();
   const idResponse = result.id_response || result.response?.id_response;
   if (idResponse) {
+    if (collectIdOnly) {
+      return { idResponse };
+    }
     await idbSet("meta", "sync_pending_id", idResponse);
     await idbSet("meta", "sync_pending_qKey", qKey);
     if (qKeysToDeleteForApply && qKeysToDeleteForApply.length > 0) {
@@ -5149,6 +5128,10 @@ async function sendSyncPayload(syncPayload, qKey, qKeysToDeleteForApply = null) 
     return true;
   }
   if (result.success && Array.isArray(result.resultados)) {
+    if (collectIdOnly) {
+      await applySyncResult(result, qKey, { clearMeta: false, skipDeleteQueue: true });
+      return { idResponse: null };
+    }
     if (qKeysToDeleteForApply && qKeysToDeleteForApply.length > 0) {
       await idbSet("meta", "sync_pending_qKeys", JSON.stringify(qKeysToDeleteForApply));
     }
@@ -5164,7 +5147,7 @@ async function sendSyncPayload(syncPayload, qKey, qKeysToDeleteForApply = null) 
   } else if (!idResponse && !result.success) {
     throw new Error(result.message || "Erro ao processar sincronização");
   }
-  return false;
+  return collectIdOnly ? { idResponse: null } : false;
 }
 
 async function processQueue() {
@@ -5190,7 +5173,8 @@ async function processQueue() {
     // Fazenda atual = management_fazenda da organização (não da URL), para classificar corretamente
     // "Fazenda atual" = alterações dentro da mesma fazenda; "transferência" = fila com fazenda_id diferente
     const org = await idbGet("organizacao", "current");
-    const managementFazendaId = (org?.user?.management_fazenda && String(org.user.management_fazenda).trim()) || "";
+    const organizacaoId = org?._id || org?.organizacao || null;
+    const managementFazendaId = (org?.colaborador?.management_fazenda && String(org.colaborador.management_fazenda).trim()) || "";
     const currentFazendaId = managementFazendaId || getCurrentFazendaId();
 
     const currentFarmKeys = queueKeys.filter(k => {
@@ -5205,13 +5189,19 @@ async function processQueue() {
     });
 
     const pastosListRaw = (await idbGet("pastos", "list")) || [];
-    const userId = state.ctx.ownerId || "";
+    const colaboradorId = state.ctx.ownerId || "";
 
-    // ---------- Fase 1: tudo da fazenda atual em um único disparo ----------
+    // ---------- Fase 1: fazenda atual — envia CADA operação em requisição separada ----------
     if (currentFarmKeys.length > 0) {
       showSyncProgress(15, "Carregando alterações da fazenda atual...");
-      const allOperacoes = [];
+
+      const pastosDaFazenda = Array.isArray(pastosListRaw)
+        ? pastosListRaw.filter((p) => String(p?.fazenda || "") === String(currentFazendaId))
+        : [];
+
       const keysWithData = [];
+      const opsSequenciais = [];
+
       for (const qKey of currentFarmKeys) {
         const queue = await idbGet("records", qKey);
         if (!Array.isArray(queue) || queue.length === 0) {
@@ -5219,47 +5209,103 @@ async function processQueue() {
           continue;
         }
         const operacoes = buildOperacoesFromQueue(queue, "update_fazenda_old");
-        allOperacoes.push(...operacoes);
+        if (operacoes.length === 0) {
+          await idbDel("records", qKey);
+          continue;
+        }
         keysWithData.push(qKey);
+        operacoes.forEach(op => {
+          opsSequenciais.push({ qKey, op });
+        });
       }
-      if (allOperacoes.length > 0) {
-        const pastosDaFazenda = Array.isArray(pastosListRaw)
-          ? pastosListRaw.filter((p) => String(p?.fazenda || "") === String(currentFazendaId))
-          : [];
+
+      const idResponsesFase1 = [];
+      const indicesFase1 = [];
+      for (let i = 0; i < opsSequenciais.length; i++) {
+        const { qKey, op } = opsSequenciais[i];
         const syncPayload = {
           dados: {
             op: "update_fazenda_old",
             fazenda_id: currentFazendaId,
-            user_id: userId,
+            colaborador_id: colaboradorId,
+            organizacao_id: organizacaoId,
             timestamp: Date.now(),
-            qtd_itens: allOperacoes.length,
-            operacoes: allOperacoes,
+            qtd_itens: 1,
+            operacoes: [op],
             list_pasto: pastosDaFazenda
           }
         };
-        showSyncProgress(40, "Enviando alterações da fazenda atual...");
-        const startedPolling = await sendSyncPayload(syncPayload, keysWithData[0], keysWithData);
-        if (startedPolling) {
-          await startPollSyncStatus(await idbGet("meta", "sync_pending_id"), keysWithData[0]);
-          if (btn) restoreFabSyncIcon();
-          // Se ainda há transferências pendentes, continua para a Fase 2; senão encerra
-          if (transferKeys.length === 0) {
-            showSyncProgress(100, "Concluído!");
-            setTimeout(hideSyncProgress, 500);
-            resetSyncNotifySound();
-            toast("Sincronização concluída! ✅");
-            return;
-          }
-          showSyncProgress(45, "Fazenda atual sincronizada. Enviando transferências...");
+
+        const pct = 15 + ((i + 1) / Math.max(1, opsSequenciais.length)) * 25;
+        showSyncProgress(pct, `Enviando alteração ${i + 1}/${opsSequenciais.length} da fazenda atual...`);
+
+        const out = await sendSyncPayload(syncPayload, qKey, keysWithData, true);
+        if (out && out.idResponse) {
+          idResponsesFase1.push(out.idResponse);
+          indicesFase1.push(i);
         }
-        // Chaves já removidas por applySyncResult quando resposta síncrona
+
+        if (i < opsSequenciais.length - 1) {
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      }
+
+      if (idResponsesFase1.length > 0) {
+        showSyncProgressIndeterminate("Aguardando conclusão de todos no servidor...");
+        showSyncStatusBanner("Sincronização em andamento...");
+        const resultadosFase1 = await waitForAllSyncStatus(idResponsesFase1);
+        const orderedResultados = new Array(opsSequenciais.length).fill(null);
+        resultadosFase1.forEach((r, j) => {
+          if (indicesFase1[j] != null) orderedResultados[indicesFase1[j]] = r;
+        });
+        const qKeysUnicos = [...new Set(opsSequenciais.map(x => x.qKey))];
+        for (let k = 0; k < qKeysUnicos.length; k++) {
+          const qKey = qKeysUnicos[k];
+          const resultadosDoKey = opsSequenciais
+            .map((s, idx) => (s.qKey === qKey ? orderedResultados[idx] : null))
+            .filter(Boolean);
+          await applySyncResult(
+            { resultados: resultadosDoKey },
+            qKey,
+            { clearMeta: k === qKeysUnicos.length - 1 && transferKeys.length === 0 }
+          );
+        }
+        if (transferKeys.length === 0) {
+          hideSyncProgress();
+          hideSyncStatusBanner();
+          showSyncStatusBanner("Sincronização concluída com sucesso.", false);
+          toast("Sincronização concluída! ✅");
+          setTimeout(hideSyncStatusBanner, 3000);
+          resetSyncNotifySound();
+          restoreFabSyncIcon();
+          return;
+        }
+      } else if (opsSequenciais.length > 0 && transferKeys.length === 0) {
+        // Todas as respostas da fase 1 foram síncronas (já aplicadas em sendSyncPayload com skipDeleteQueue)
+        for (const qKey of keysWithData) await idbDel("records", qKey);
+        await idbDel("meta", "sync_pending_id");
+        await idbDel("meta", "sync_pending_qKey");
+        await idbDel("meta", "sync_pending_qKeys");
+        resetSyncNotifySound();
+        hideSyncProgress();
+        showSyncStatusBanner("Sincronização concluída com sucesso.", false);
+        toast("Sincronização concluída! ✅");
+        setTimeout(hideSyncStatusBanner, 3000);
+        restoreFabSyncIcon();
+        await openDashboard();
+        return;
+      }
+
+      if (opsSequenciais.length > 0 && transferKeys.length > 0) {
+        showSyncProgress(45, "Fazenda atual sincronizada. Enviando transferências...");
       }
     }
 
-    // ---------- Fase 2: cada transferência entre fazendas em disparo separado (espera um terminar para enviar o próximo) ----------
+    // ---------- Fase 2: transferências entre fazendas — envia todas, depois aguarda todos os status ----------
+    const listFazendas = (await idbGet("fazenda", "list")) || [];
+    const opsTransfer = [];
     for (let i = 0; i < transferKeys.length; i++) {
       const qKey = transferKeys[i];
-      showSyncProgress(50 + (i / Math.max(1, transferKeys.length)) * 25, `Processando transferência ${i + 1}/${transferKeys.length}...`);
       const queue = await idbGet("records", qKey);
       if (!Array.isArray(queue) || queue.length === 0) {
         await idbDel("records", qKey);
@@ -5267,33 +5313,94 @@ async function processQueue() {
       }
       const parts = qKey.split(":");
       const fazendaId = parts[1] || state.ctx.fazendaId;
-      const userIdFazenda = parts[2] || state.ctx.ownerId || "";
+      const colaboradorIdFazenda = parts[2] || state.ctx.ownerId || "";
+      const destFarm = listFazendas.find((f) => String(f?._id || "") === String(fazendaId));
+      const organizacaoIdNovaFazenda = destFarm
+        ? (destFarm.organizacao_id || (typeof destFarm.organizacao === "object" ? destFarm.organizacao?._id : destFarm.organizacao) || null)
+        : null;
+      const organizacaoIdTransfer = organizacaoIdNovaFazenda || organizacaoId;
       const operacoes = buildOperacoesFromQueue(queue, "update_fazenda_new");
+      if (operacoes.length === 0) {
+        await idbDel("records", qKey);
+        continue;
+      }
       const pastosDaFazenda = Array.isArray(pastosListRaw)
         ? pastosListRaw.filter((p) => String(p?.fazenda || "") === String(fazendaId))
         : [];
+      operacoes.forEach(op => {
+        opsTransfer.push({ qKey, op, fazendaId, colaboradorIdFazenda, pastosDaFazenda, organizacao_id: organizacaoIdTransfer });
+      });
+    }
+
+    const idResponsesFase2 = [];
+    const indicesFase2 = [];
+    for (let i = 0; i < opsTransfer.length; i++) {
+      const { qKey, op, fazendaId, colaboradorIdFazenda, pastosDaFazenda, organizacao_id: organizacaoIdPayload } = opsTransfer[i];
+      if (op.op === OFFLINE_OPS.MOVIMENTACAO_ENTRE_FAZENDAS && op.payload) {
+        op.payload.fazenda_origem = currentFazendaId;
+        op.payload.fazenda_destino = fazendaId;
+      }
       const syncPayload = {
         dados: {
           op: "update_fazenda_new",
           fazenda_id: fazendaId,
-          user_id: userIdFazenda,
+          organizacao_id: organizacaoIdPayload,
+          colaborador_id: colaboradorIdFazenda,
           timestamp: Date.now(),
-          qtd_itens: operacoes.length,
-          operacoes,
+          qtd_itens: 1,
+          operacoes: [op],
           list_pasto: pastosDaFazenda
         }
       };
-      showSyncProgress(75, "Enviando transferência entre fazendas...");
-      const startedPolling = await sendSyncPayload(syncPayload, qKey, null);
-      if (startedPolling) {
-        await startPollSyncStatus(await idbGet("meta", "sync_pending_id"), qKey);
+      const pct = 50 + ((i + 1) / Math.max(1, opsTransfer.length)) * 45;
+      showSyncProgress(pct, `Enviando transferência ${i + 1}/${opsTransfer.length}...`);
+
+      const out = await sendSyncPayload(syncPayload, qKey, null, true);
+      if (out && out.idResponse) {
+        idResponsesFase2.push(out.idResponse);
+        indicesFase2.push(i);
       }
+      if (i < opsTransfer.length - 1) {
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
+
+    if (idResponsesFase2.length > 0) {
+      showSyncProgressIndeterminate("Aguardando conclusão de todos no servidor...");
+      showSyncStatusBanner("Sincronização em andamento...");
+      const resultadosFase2 = await waitForAllSyncStatus(idResponsesFase2);
+      const orderedResultados2 = new Array(opsTransfer.length).fill(null);
+      resultadosFase2.forEach((r, j) => {
+        if (indicesFase2[j] != null) orderedResultados2[indicesFase2[j]] = r;
+      });
+      const qKeysUnicos2 = [...new Set(opsTransfer.map(x => x.qKey))];
+      for (let k = 0; k < qKeysUnicos2.length; k++) {
+        const qKey = qKeysUnicos2[k];
+        const resultadosDoKey = opsTransfer
+          .map((s, idx) => (s.qKey === qKey ? orderedResultados2[idx] : null))
+          .filter(Boolean);
+        await applySyncResult(
+          { resultados: resultadosDoKey },
+          qKey,
+          { clearMeta: k === qKeysUnicos2.length - 1 }
+        );
+      }
+    } else if (opsTransfer.length > 0) {
+      const qKeysUnicos2 = [...new Set(opsTransfer.map(x => x.qKey))];
+      for (const qKey of qKeysUnicos2) await idbDel("records", qKey);
+      await idbDel("meta", "sync_pending_id");
+      await idbDel("meta", "sync_pending_qKey");
+      await idbDel("meta", "sync_pending_qKeys");
     }
 
     showSyncProgress(100, "Concluído!");
     setTimeout(hideSyncProgress, 500);
-    resetSyncNotifySound();
+    hideSyncStatusBanner();
+    showSyncStatusBanner("Sincronização concluída com sucesso.", false);
     toast("Sincronização concluída! ✅");
+    setTimeout(hideSyncStatusBanner, 3000);
+    resetSyncNotifySound();
+    restoreFabSyncIcon();
   } catch (e) {
     console.error("Sync error:", e);
     toast("Erro ao sincronizar. Tente novamente.");
@@ -5309,14 +5416,31 @@ async function processQueue() {
 async function init() {
   showBoot("Carregando…", "Preparando o modo offline.");
   setNetBadge();
-  window.addEventListener("online", () => { setNetBadge(); updateFabSyncVisibility(); });
-  window.addEventListener("offline", () => { setNetBadge(); updateFabSyncVisibility(); });
+  window.addEventListener("online", () => {
+    setNetBadge();
+    updateFabSyncVisibility();
+    if (state.view === "dashboard" && !state.pipelineAnimal && navigator.onLine) {
+      getPendingSyncList().then((list) => {
+        if (list.length > 0 && navigator.onLine) {
+          state.pendingSyncListForCard = list;
+          setPendingSyncCardVisible(true);
+          renderPendingSyncCard();
+        }
+      });
+    }
+  });
+  window.addEventListener("offline", () => {
+    setNetBadge();
+    updateFabSyncVisibility();
+    setPendingSyncCardVisible(false);
+  });
 
   const parsed = await parseFromURL();
 
   if (parsed.fazendaId && parsed.ownerId) {
     await idbSet("meta", "session_config", {
       modules: parsed.modules,
+      moduleConfigs: parsed.moduleConfigs,
       ctx: { fazendaId: parsed.fazendaId, ownerId: parsed.ownerId },
       updatedAt: Date.now()
     });
@@ -5325,14 +5449,17 @@ async function init() {
 
     state.ctx = { fazendaId: parsed.fazendaId, ownerId: parsed.ownerId };
     state.modules = buildModules(parsed.modules);
+    state.moduleConfigs = parsed.moduleConfigs || [];
   } else {
     const saved = await idbGet("meta", "session_config");
     if (saved && saved.ctx && saved.modules) {
       state.ctx = saved.ctx;
       state.modules = buildModules(saved.modules);
+      state.moduleConfigs = saved.moduleConfigs || [];
     } else {
       state.ctx = { fazendaId: "", ownerId: "" };
       state.modules = buildModules(["animal"]);
+      state.moduleConfigs = [{ modulo: "animal" }];
     }
   }
 
@@ -5341,12 +5468,9 @@ async function init() {
 
   const dashDesktopCta = document.getElementById("dashDesktopCta");
   if (dashDesktopCta) {
-    dashDesktopCta.onclick = async () => {
-      await openModule("animal");
-      state.animalView = "form";
-      state.animalEditingId = null;
-      await renderActiveModule();
-      await openAnimalFormForCreate();
+    dashDesktopCta.onclick = () => {
+      const pipelineBtnCreate = document.getElementById("pipelineBtnCreate");
+      if (pipelineBtnCreate) pipelineBtnCreate.click();
     };
   }
 
@@ -5372,40 +5496,11 @@ async function init() {
     if (fab) fab.onclick = processQueue;
   }
 
-  // Restaura estado de navegação salvo
-  const restored = await restoreNavigationState();
-  
-  if (restored && state.view && state.bootstrapReady) {
-    // Restaura a navegação salva
-    if (state.view === "dashboard") {
-      await openDashboard();
-    } else if (state.view === "module" && state.activeKey) {
-      // Restaura o módulo ativo (esconde dashboard mobile e desktop)
-      state.view = "module";
-      const dash = $("#modDashboard");
-      if (dash) dash.hidden = true;
-      const dashDesktop = document.getElementById("modDashboardDesktop");
-      if (dashDesktop) dashDesktop.hidden = true;
+  // Opcional: restaura metadados de navegação (view/activeKey) para uso interno
+  await restoreNavigationState();
 
-      await renderActiveModule();
-      
-      // Se for módulo de animais e estava em form, restaura
-      if (state.activeKey === "animal" && state.animalView === "form") {
-        if (state.animalEditingId) {
-          await openAnimalFormForEdit(state.animalEditingId);
-        } else {
-          await openAnimalFormForCreate();
-        }
-      }
-      renderSidebar();
-    } else {
-      // Fallback para dashboard se estado inválido
-      await openDashboard();
-    }
-  } else {
-    // START AT DASHBOARD (primeira vez ou sem estado salvo)
-    await openDashboard();
-  }
+  // Inicia no dashboard (modal da linha de produção fica abaixo do "Bem-vindo de volta")
+  await openDashboard();
 
   // Retomar polling de sincronização pendente (ex.: após refresh)
   const pendingId = await idbGet("meta", "sync_pending_id");

@@ -45,179 +45,67 @@
             letter-spacing: -0.02em;
         }
 
-        /* Layout geral */
+        /* Layout geral: apenas main (sidebar removido) */
         .app {
             min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Dashboard: uma única div no topo, largura total da página, logo ao centro e usuário à direita */
+        .dashHeader.dashHeaderDesktop {
+            width: 100vw;
+            max-width: 100vw;
+            position: relative;
+            left: 50%;
+            margin-left: -50vw;
             display: grid;
-            grid-template-columns: 240px 1fr;
-            transition: grid-template-columns .2s ease;
-        }
-
-        /* Sidebar desktop */
-        .sidebar {
-            background: var(--sidebar);
-            border-right: 1px solid rgba(0, 0, 0, .06);
-            display: flex;
-            flex-direction: column;
-            position: relative;
-        }
-
-        .sidebarInner {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            padding: 28px 12px 16px;
-            min-height: 0;
-        }
-
-        .logoWrap {
-            display: flex;
-            align-items: center;
-            justify-content: flex-start;
-            gap: 8px;
-            padding: 6px 10px 20px;
-            border-bottom: 1px solid rgba(0, 0, 0, .05);
-            margin-bottom: 12px;
-        }
-
-        .logo {
-            width: 180px;
-            height: auto;
-            display: block;
-            object-fit: contain;
-        }
-
-        .nav {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            flex: 1;
-            overflow-y: auto;
-        }
-
-        /* Timeline: só os módulos (Dashboard fica fora) — espaço entre Dashboard e a timeline */
-        .navTimeline {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            flex: 1;
-            min-height: 0;
-            position: relative;
-            padding-left: 28px;
-            margin-top: 24px;
-        }
-        .navTimeline::before {
-            content: "";
-            position: absolute;
-            left: 10px;
-            top: 18px;
-            bottom: 18px;
-            width: 2px;
-            background: #e5e7eb;
-            border-radius: 1px;
-        }
-
-        .navItem {
-            display: flex;
+            grid-template-columns: 1fr auto 1fr;
             align-items: center;
             gap: 12px;
-            padding: 10px 12px 10px 14px;
-            border-radius: 10px;
-            cursor: pointer;
-            user-select: none;
-            color: var(--text);
-            font-weight: 500;
-            font-size: 12px;
-            transition: background .15s ease;
+            padding: 12px 18px 16px;
+            background: var(--sidebar);
+            box-sizing: border-box;
         }
-
-        .navItem:hover {
-            background: rgba(0, 0, 0, .04);
-        }
-
-        .navItem.active {
-            background: var(--btn);
-            color: var(--btnText);
-            box-shadow: 0 2px 8px rgba(237, 255, 119, .35);
-            border: 1px solid rgba(17, 24, 39, .6);
-        }
-
-        .navItem {
-            position: relative;
-        }
-
-        /* Círculo da timeline (número do passo) — alinhado à linha */
-        .navTimelineDot {
-            position: absolute;
-            left: -28px;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: #c6e012;
-            color: #111827;
-            font-size: 11px;
-            font-weight: 700;
+        .dashHeaderLogo {
+            grid-column: 2;
             display: flex;
-            align-items: center;
             justify-content: center;
-            flex-shrink: 0;
-            z-index: 1;
+            align-items: center;
         }
-        .navItem.active .navTimelineDot {
-            background: #111827;
-            color: var(--btn);
+        .dashHeaderLogo .dashDesktopLogoImg {
+            max-width: 180px;
+            height: auto;
+            display: block;
         }
-
-        .navIcon {
-            width: 22px;
-            height: 22px;
-            border-radius: 8px;
-            background: rgba(17, 24, 39, .08);
+        .dashHeader.dashHeaderDesktop .dashHeaderUser {
+            grid-column: 3;
+            justify-self: end;
+        }
+        .dashHeader {
             display: flex;
+            justify-content: flex-end;
             align-items: center;
-            justify-content: center;
-            font-size: 12px;
-            flex-shrink: 0;
+            padding: 12px 18px 8px;
         }
 
-        .navItem.active .navIcon {
-            background: rgba(18, 24, 38, .12);
-        }
-
-        .navLabel {
-            flex: 1;
-            min-width: 0;
-        }
-
-        /* Rodapé do sidebar: usuário + logout */
-        .sidebarFooter {
-            padding-top: 16px;
-            margin-top: auto;
-            border-top: 1px solid rgba(0, 0, 0, .05);
-        }
-
-        .sidebarUser {
+        .dashHeaderUser {
             display: flex;
             align-items: center;
             gap: 10px;
-            padding: 10px 8px;
+            padding: 8px 12px;
             border-radius: 12px;
+            background: rgba(0, 0, 0, .04);
         }
 
-        .sidebarUser:hover {
-            background: rgba(0, 0, 0, .03);
-        }
-
-        .sidebarAvatar {
+        .dashUserAvatar {
             width: 40px;
             height: 40px;
             border-radius: 50%;
             background: #e5e7eb;
             color: var(--text);
             font-weight: 700;
-            font-size: 12px;
+            font-size: 14px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -225,28 +113,28 @@
             border: 2px solid #22c55e;
             box-sizing: border-box;
         }
-        .sidebarAvatar.offline {
+        .dashUserAvatar.offline {
             border-color: #ef4444;
         }
 
-        .sidebarUserInfo {
+        .dashUserInfo {
             display: flex;
             flex-direction: column;
             gap: 2px;
             min-width: 0;
-            flex: 1;
+            text-align: right;
         }
 
-        .sidebarUserName {
+        .dashUserName {
             font-weight: 700;
-            font-size: 12px;
+            font-size: 13px;
             color: var(--text);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
         }
 
-        .sidebarUserEmail {
+        .dashFarmName {
             font-size: 12px;
             color: var(--muted);
             white-space: nowrap;
@@ -254,7 +142,7 @@
             text-overflow: ellipsis;
         }
 
-        /* Main: ocupa o espaço restante da grid para a área de conteúdo não ficar em branco */
+        /* Main: área de conteúdo */
         .main {
             display: flex;
             flex-direction: column;
@@ -1608,12 +1496,32 @@
         .dashDesktopTop {
             margin-bottom: 20px;
         }
+        .dashDesktopTop.dashDesktopTopLogo {
+            margin-top: 2rem;
+            margin-bottom: 24px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .dashDesktopLogoImg {
+            max-width: 180px;
+            height: auto;
+            display: block;
+        }
         .dashDesktopTitle {
             font-size: 20px;
             font-weight: 800;
             color: var(--text);
             margin: 0;
             letter-spacing: -0.02em;
+        }
+        .dashDesktopDataSection {
+            margin-top: 80px;
+        }
+        /* Esconde Total de Animais/Lotes e gráficos; só mostra logo, bem-vindo, pipeline e (quando houver) sync/pendentes */
+        .dashDesktopDataSection .dashDesktopCards,
+        .dashDesktopDataSection .dashDesktopCharts {
+            display: none !important;
         }
         .dashDesktopWelcome {
             display: flex;
@@ -2637,7 +2545,8 @@
                 color: var(--text);
             }
             /* Header venda (mesmo layout do form animal) */
-            #saVendaForm .pageHead {
+            #saVendaForm .pageHead,
+            #saMovForm .pageHead {
                 display: grid;
                 grid-template-columns: 1fr auto;
                 grid-template-rows: auto auto;
@@ -2648,27 +2557,49 @@
                 min-height: 72px;
                 border-radius: 10px;
             }
-            #saVendaForm .pageHeadRow1 {
+            #saVendaForm .pageHeadRow1,
+            #saMovForm .pageHeadRow1 {
                 grid-column: 1 / -1;
             }
-            #saVendaForm .pageHeadRow2 {
+            #saVendaForm .pageHeadRow2,
+            #saMovForm .pageHeadRow2 {
                 grid-column: 1;
                 text-align: left;
             }
             #saVendaForm .pageHeadRow2 .pageTitle,
-            #saVendaForm .pageHeadRow2 .pageSub {
+            #saVendaForm .pageHeadRow2 .pageSub,
+            #saMovForm .pageHeadRow2 .pageTitle,
+            #saMovForm .pageHeadRow2 .pageSub {
                 text-align: left;
             }
-            #saVendaForm .pageTitle {
+            #saVendaForm .pageTitle,
+            #saMovForm .pageTitle {
                 font-size: 14px;
                 font-weight: 700;
             }
-            #saVendaForm .pageSub {
+            #saVendaForm .pageSub,
+            #saMovForm .pageSub {
                 font-size: 11px;
                 margin-top: 2px;
             }
+            #saVendaForm .saVendaHeaderAnimal,
+            #saMovForm .saVendaHeaderAnimal {
+                font-size: 11px;
+                margin-top: 4px;
+                color: #4b5563;
+                font-weight: 500;
+            }
+
+            /* Grid da forma de movimentação no pipeline (2 linhas empilhadas) */
+            .saMovForm .saMovFormGrid {
+                grid-template-columns: 1fr;
+            }
             #saVendaForm .animalFormBackBtn,
-            #saVendaForm .animalFormHeaderBtn {
+            #saVendaForm .animalFormHeaderBtn,
+            #saMovForm .animalFormBackBtn,
+            #saMovForm .animalFormHeaderBtn,
+            #saMovFormSaida .animalFormBackBtn,
+            #saMovFormSaida .animalFormHeaderBtn {
                 height: 36px;
                 padding: 0 14px;
                 font-size: 12px;
@@ -2679,7 +2610,9 @@
                 justify-content: center;
                 min-width: 0;
             }
-            #saVendaForm .animalFormBackBtn {
+            #saVendaForm .animalFormBackBtn,
+            #saMovForm .animalFormBackBtn,
+            #saMovFormSaida .animalFormBackBtn {
                 background: transparent;
                 border: 1px solid var(--text);
                 color: var(--text);
@@ -2691,6 +2624,59 @@
                 box-shadow: 0 4px 12px rgba(237, 255, 119, 0.3);
             }
             #saVendaForm #saVendaBtnRealizar:hover {
+                filter: brightness(0.97);
+            }
+            /* Botão Avançar da movimentação: cinza quando desabilitado, amarelo quando dados preenchidos */
+            #saMovForm #saMovBtnAvançar {
+                background: #e5e7eb;
+                border: 1px solid #9ca3af;
+                color: #6b7280;
+                cursor: not-allowed;
+            }
+            #saMovForm #saMovBtnAvançar:disabled {
+                background: #e5e7eb;
+                border: 1px solid #9ca3af;
+                color: #6b7280;
+                cursor: not-allowed;
+            }
+            #saMovForm #saMovBtnAvançar.pipelineBtnAvançarActive:not(:disabled) {
+                background: var(--btn, #c6e012);
+                border: none;
+                color: var(--btnText, #121826);
+                box-shadow: 0 4px 12px rgba(198, 224, 18, 0.35);
+                cursor: pointer;
+            }
+            #saMovForm #saMovBtnAvançar.pipelineBtnAvançarActive:hover {
+                filter: brightness(0.97);
+            }
+            /* Botão Concluir da movimentação no pipeline: mesma cara do botão de saída de animais */
+            #saMovForm #saMovBtnConcluir {
+                background: var(--btn, #edff77);
+                border: none;
+                color: var(--btnText, #121826);
+                box-shadow: 0 4px 12px rgba(237, 255, 119, 0.3);
+            }
+            #saMovForm #saMovBtnConcluir:hover {
+                filter: brightness(0.97);
+            }
+            /* Botão "Registrar morte" (Saída – aba Morte): inativo = cinza, ativo = amarelo (igual Venda) */
+            #saMovFormSaida #saidaBtnConcluir:disabled {
+                background: #e5e7eb;
+                border: 1px solid #9ca3af;
+                color: #6b7280;
+                cursor: not-allowed;
+                box-shadow: none;
+            }
+            #saMovFormSaida #saidaBtnConcluir.pipelineBtnAvançarActive:not(:disabled),
+            #saMovFormSaida #saidaBtnConcluir:not(:disabled) {
+                background: var(--btn, #edff77);
+                border: none;
+                color: var(--btnText, #121826);
+                box-shadow: 0 4px 12px rgba(237, 255, 119, 0.3);
+                cursor: pointer;
+            }
+            #saMovFormSaida #saidaBtnConcluir.pipelineBtnAvançarActive:not(:disabled):hover,
+            #saMovFormSaida #saidaBtnConcluir:not(:disabled):hover {
                 filter: brightness(0.97);
             }
             /* Modal Confirmar venda de animais */
@@ -2913,6 +2899,16 @@
                 padding: 0 10px;
                 font-size: 11px;
                 border-radius: 10px;
+            }
+            /* Quando o formulário de animal é usado dentro do fluxo da linha de produção,
+               aumentamos altura/padding/fonte para seguir o padrão dos outros módulos. */
+            #modAnimaisForm.animalFormPipeline input,
+            #modAnimaisForm.animalFormPipeline select,
+            #modAnimaisForm.animalFormPipeline textarea {
+                height: auto;
+                min-height: 40px;
+                padding: 0.6rem 0.75rem;
+                font-size: 1rem;
             }
             #modAnimaisForm select {
                 padding-right: 32px;
@@ -4127,6 +4123,23 @@
   gap: 16px 20px;
 }
 
+/* No fluxo da linha de produção (saída pipeline), usamos menos colunas para inputs maiores */
+.saVendaForm.saVendaFormPipeline .saVendaFormGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 1024px) {
+  .saVendaForm.saVendaFormPipeline .saVendaFormGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .saVendaForm.saVendaFormPipeline .saVendaFormGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* 1ª linha: 5 campos; 2ª linha: 6 campos */
 @media (max-width: 699px) {
   .saVendaFormGrid {
@@ -4489,6 +4502,29 @@
   font-size: 11px;
 }
 
+/* Estado travado do animal no fluxo da linha de produção:
+   - some a lupa
+   - desabilita foco/hover de busca
+   - mantém aparência de campo somente leitura */
+.saVendaForm .pipeline-animal-locked .saVendaAnimalSearchWrap {
+  border-color: var(--border, #e5e7eb);
+  box-shadow: none;
+  cursor: default;
+}
+
+.saVendaForm .pipeline-animal-locked .saVendaAnimalSearchWrap:focus-within {
+  border-color: var(--border, #e5e7eb);
+  box-shadow: none;
+}
+
+.saVendaForm .pipeline-animal-locked .saVendaAnimalSearchIcon {
+  display: none;
+}
+
+.saVendaForm .pipeline-animal-locked #vendaAnimalBrinco {
+  cursor: default;
+}
+
 .saVendaFormCard .saVendaInput[type="number"]::-webkit-outer-spin-button,
 .saVendaFormCard .saVendaInput[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
@@ -4593,4 +4629,308 @@
 @keyframes syncProgressIndeterminate {
   0% { transform: translateX(0); }
   100% { transform: translateX(233%); }
+}
+
+/* ========== Linha de produção (Pipeline) ========== */
+.pipelineWrap {
+  padding: 1rem 0;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+/* Na etapa Saída de animais: mesma largura da tela original do módulo */
+.pipelineWrap.pipelineWrap--saida {
+  max-width: 1220px;
+}
+
+/* Na etapa Movimentação entre lotes: usa a mesma largura grande do módulo */
+.pipelineWrap.pipelineWrap--movimentacao {
+  max-width: 1220px;
+}
+
+.pipelineStepContent {
+  padding: 0.5rem 0;
+}
+
+.pipelineStepContent.pipelineStepContent--saida {
+  max-width: 100%;
+}
+
+.pipelineStepContent.pipelineStepContent--movimentacao {
+  max-width: 100%;
+}
+
+.pipelineSaidaFormWrap {
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.pipelineModal {
+  text-align: center;
+}
+
+.pipelineModalTitle {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 0.25rem;
+  color: #111827;
+}
+
+.pipelineModalSub {
+  color: #6b7280;
+  font-size: 0.95rem;
+  margin: 0 0 1.5rem;
+}
+
+.pipelineModalSub.pipelineModalSubOnly {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 0 0 1.25rem;
+}
+
+.dashMobileDataSection {
+  margin-top: 80px;
+}
+/* Esconde Módulos e gráficos no mobile; só mostra logo, bem-vindo, pipeline e (quando houver) sync/pendentes */
+.dashMobileDataSection > .dashSectionTitle,
+.dashMobileDataSection > .dashModules,
+.dashMobileDataSection > .dashContainer {
+  display: none !important;
+}
+
+.pipelineModalCards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 560px) {
+  .pipelineModalCards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pipelineCard {
+  background: #fff;
+  border: 2px solid #e5e7eb;
+  border-radius: 16px;
+  padding: 1.5rem;
+  text-align: center;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.pipelineCard:hover {
+  border-color: #edff77;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+}
+
+.pipelineCardIcon {
+  font-size: 2.5rem;
+  display: block;
+  margin-bottom: 0.75rem;
+}
+
+.pipelineCardTitle {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0 0 0.35rem;
+  color: #111827;
+}
+
+.pipelineCardSub {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0 0 1rem;
+}
+
+.pipelineSearchWrap {
+  margin-top: 0.5rem;
+}
+
+.pipelineSearchInput {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 1rem;
+}
+
+.pipelineSearchInput:focus {
+  outline: none;
+  border-color: #edff77;
+  box-shadow: 0 0 0 2px rgba(237, 255, 119, 0.3);
+}
+
+.pipelineSearchResults {
+  margin-top: 0.5rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  text-align: left;
+}
+
+.pipelineResultItem {
+  display: block;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: none;
+  background: #fff;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.pipelineResultItem:hover {
+  background: #f3f4f6;
+}
+
+.pipelineResultItem.pipelineResultEmpty {
+  cursor: default;
+  color: #6b7280;
+}
+
+.pipelineCardBtn {
+  margin-top: 0.5rem;
+  padding: 0.6rem 1.25rem;
+  background: #edff77;
+  color: #111827;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.pipelineCardBtn:hover {
+  filter: brightness(0.97);
+}
+
+.pipelineStepHead {
+  margin-bottom: 1.25rem;
+}
+
+.pipelineBackBtn {
+  background: none;
+  border: none;
+  color: #6b7280;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0.25rem 0;
+  margin-bottom: 0.5rem;
+}
+
+.pipelineBackBtn:hover {
+  color: #111827;
+}
+
+.pipelineStepTitle {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0 0 0.25rem;
+  color: #111827;
+}
+
+.pipelineStepAnimal {
+  font-size: 0.9rem;
+  color: #6b7280;
+  margin: 0;
+}
+
+.pipelineStepBody .pipelineField {
+  margin-bottom: 1rem;
+}
+
+.pipelineStepBody .pipelineField label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 0.35rem;
+}
+
+.pipelineFieldValue {
+  margin: 0;
+  padding: 0.5rem 0;
+  font-size: 1rem;
+  color: #111827;
+}
+
+  .pipelineSelect,
+  .pipelineInput {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 1rem;
+}
+
+.pipelineStepBody .pipelineCardBtn {
+  margin-top: 1rem;
+}
+
+.pipelineStepDone {
+  text-align: center;
+  padding: 2rem 0;
+}
+
+.pipelineStepDoneTitle {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 0.25rem;
+  color: #111827;
+}
+
+.pipelineStepDoneSub {
+  color: #6b7280;
+  margin: 0 0 1.25rem;
+}
+
+.pipelineStepHint {
+  font-size: 0.9rem;
+  color: #6b7280;
+  margin: 0 0 1rem;
+}
+
+/* ---------- Inputs maiores para fluxo da linha de produção ---------- */
+/* Usa o mesmo tamanho visual do campo de busca inicial (pipelineSearchInput) */
+.saVendaForm.saVendaFormPipeline .saVendaFormCard .saVendaInput,
+.saVendaForm.saVendaFormPipeline .saVendaFormCard .saVendaSelect,
+.saVendaForm.saVendaFormPipeline .saVendaFormCard .saVendaAnimalSearchInput,
+.saVendaForm.saVendaFormPipeline .saVendaFormCard .saVendaAnimalSearchWrap,
+.saMovForm .saVendaFormCard .saVendaInput,
+.saMovForm .saVendaFormCard .saVendaSelect {
+  height: auto;
+  min-height: 40px;
+  padding: 0.6rem 0.75rem;
+  font-size: 1rem;
+}
+
+.saVendaForm.saVendaFormPipeline .saVendaCurrencyWrap {
+  min-height: 40px;
+}
+
+.pipeline-animal-locked .pipelineSearchInput,
+.saVendaForm .pipeline-animal-locked #vendaAnimalBrinco {
+  background: #f9fafb;
+}
+
+/* Abas de movimentação no pipeline (lotes / pastos / fazendas) – fluxo sequencial: só "Avançar" muda de aba */
+.pipelineMovTabs {
+  margin-bottom: 1rem;
+}
+.pipelineMovTabs .movTab {
+  flex: 1;
+  text-align: center;
+}
+.pipelineMovTab.pipelineMovTab--step {
+  cursor: default;
+  pointer-events: none;
+}
+.movContent.pipelineMovContent {
+  padding: 1rem 0 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
 }
