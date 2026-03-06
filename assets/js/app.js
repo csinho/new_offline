@@ -606,11 +606,32 @@ function applyModulePrefillToContainer(container, moduleKey, abaKey) {
     const el = container.querySelector(`#${elementId}`);
     if (!el) continue;
     const val = campo.value != null ? String(campo.value).trim() : "";
+
+    // Sempre aplica o valor vindo do backend ao elemento (para uso no payload),
+    // mas se o valor vier pré-definido (não vazio), o campo fica oculto na UI
+    // para o usuário não ver nem editar.
     if (el.tagName === "SELECT") {
       el.value = val;
     } else {
       el.value = val;
-      if (el.classList.contains("saVendaInputCurrency") && el.dataset) el.dataset.raw = val;
+      if (el.classList.contains("saVendaInputCurrency") && el.dataset) {
+        el.dataset.raw = val;
+      }
+    }
+
+    // Quando há valor pré-definido, escondemos o campo visualmente.
+    if (val !== "") {
+      el.dataset.prefillLocked = "1";
+      const wrapper =
+        el.closest(".saVendaField") ||
+        el.closest(".saMovField") ||
+        el.closest(".field");
+      if (wrapper) {
+        wrapper.style.display = "none";
+        wrapper.setAttribute("data-prefill-hidden", "1");
+      } else {
+        el.style.display = "none";
+      }
     }
   }
 }
@@ -4224,6 +4245,7 @@ async function renderSaidaAnimaisVendaForm(container, options = {}) {
         fazenda_origem: fazendaOrigemId || null,
         user_atual: userAtualId || null,
         valor_saida: valorNum,
+        fazenda_fora_sistema: !!isFazendaForaSistemaDestino,
       };
       const opSaida = SAIDA_TIPO_TO_OFFLINE_OP[movimentacaoSaida] || OFFLINE_OPS.CREATE_SAIDA_ANIMAIS_VENDA;
       queueBefore.push({ _id: `local:${uuid()}`, op: opSaida, at: Date.now(), payload });
@@ -4324,6 +4346,7 @@ async function renderSaidaAnimaisVendaForm(container, options = {}) {
   const wrapFazendaDestino = container.querySelector("#saVendaFazendaDestinoWrap");
   const selectFazendaDestino = container.querySelector("#vendaFazendaDestino");
   let selectedColaborador = null;
+  let isFazendaForaSistemaDestino = false;
   let searchProprietarioDebounce = null;
 
   async function searchColaboradoresByName(query) {
@@ -4371,6 +4394,7 @@ async function renderSaidaAnimaisVendaForm(container, options = {}) {
       wrapFazendaDestino.setAttribute("hidden", "");
       wrapFazendaDestino.style.display = "none";
     }
+    isFazendaForaSistemaDestino = false;
     if (selectFazendaDestino) {
       selectFazendaDestino.innerHTML = '<option value="">Selecione a fazenda de destino</option>';
       selectFazendaDestino.value = "";
@@ -4388,6 +4412,7 @@ async function renderSaidaAnimaisVendaForm(container, options = {}) {
     const listFazendas = (await idbGet("fazenda", "list")) || [];
     const fazendasDoColaborador = listFazendas.filter((f) => fazendaIds.includes(String(f._id || "")));
     const temFazendaFora = fazendasDoColaborador.some((f) => String(f.name || "").trim() === FAZENDA_FORA_SISTEMA);
+    isFazendaForaSistemaDestino = !!temFazendaFora;
     if (temFazendaFora) {
       hideFazendaDestinoWrap();
       return;

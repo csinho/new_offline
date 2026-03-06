@@ -4241,7 +4241,7 @@
   border: 1px solid var(--border, #e5e7eb);
   border-radius: 8px;
   padding: 8px 12px;
-  min-height: 40px;
+  min-height: 36px;
   transition: border-color 0.2s;
 }
 
@@ -5017,6 +5017,8 @@
 .saVendaForm.saVendaFormPipeline .saVendaFormCard .saVendaSelect,
 .saVendaForm.saVendaFormPipeline .saVendaFormCard .saVendaAnimalSearchInput,
 .saVendaForm.saVendaFormPipeline .saVendaFormCard .saVendaAnimalSearchWrap,
+.saVendaForm.saVendaFormPipeline .saVendaFormCard .saVendaInput,
+.saVendaForm.saVendaFormPipeline .saVendaFormCard .saVendaSelect,
 .saMovForm .saVendaFormCard .saVendaInput,
 .saMovForm .saVendaFormCard .saVendaSelect {
   height: auto;
