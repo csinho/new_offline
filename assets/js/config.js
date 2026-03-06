@@ -8,11 +8,14 @@
 // ========================================================
 
 export const API_CONFIG = {
+
+  VERSION_BUBBLE: "735lp",
+
   // Base URL para endpoints do Bubble
-  BASE_URL: "https://bovichain-g3.bubbleapps.io/version-8350x/api/1.1/wf",
+  BASE_URL: `https://bovichain-g3.bubbleapps.io/version-${API_CONFIG.VERSION_BUBBLE}/api/1.1/wf`,
   
   // Base URL para busca de dados (endpoint diferente)
-  BOOTSTRAP_BASE_URL: "https://app.bovichain.com/version-8350x/api/1.1/wf",
+  BOOTSTRAP_BASE_URL: `https://app.bovichain.com/version-${API_CONFIG.VERSION_BUBBLE}/api/1.1/wf`,
   
   // Endpoints
   ENDPOINTS: {
